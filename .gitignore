@@ -1,0 +1,19 @@
+# Dependencies and build output
+node_modules/
+target/
+dist/
+
+# Models (download at runtime, never commit)
+models/*.bin
+models/*.gguf
+models/*.onnx
+
+# Recordings and captured data
+recordings/
+
+# Secrets
+.env
+.env.*
+
+# OS
+.DS_Store
