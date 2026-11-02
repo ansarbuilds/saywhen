@@ -19,3 +19,4 @@ Status: pre-prototype. Read `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/R
 
 - Do not use em dashes in docs or code comments.
 - Model files (`*.bin`, `*.gguf`, `*.onnx`) and recordings never get committed.
+- **Model selection guidance:** At the end of each response proposing or guiding next steps, always specify which model to run for the next action (Gemini 3.8 Flash vs Gemini 4) and explain why in one clear sentence.
