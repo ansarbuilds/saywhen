@@ -7,9 +7,16 @@ dist/
 models/*.bin
 models/*.gguf
 models/*.onnx
+*.task
+*.wasm
 
 # Recordings and captured data
 recordings/
+*.csv
+
+# MediaPipe / Vision assets (copied at runtime or generated)
+**/public/wasm/
+**/public/models/
 
 # Secrets
 .env
