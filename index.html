@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>saywhen - Hands-Free Voice Input for Developers</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-logo">
+            <span class="brand-dot"></span>
+          </div>
+          <div>
+            <div class="brand-title-row">
+              <h1>saywhen</h1>
+              <span class="stage-tag">STAGE 4: CLEANUP, PREVIEW &amp; AUTO-ENTER</span>
+            </div>
+            <p class="brand-sub">
+              Webcam intent gate + 500 ms ring buffer + Metal Whisper + Developer code cleanup + Cancelable preview + Per-app rules
+            </p>
+          </div>
+        </div>
+
+        <div class="topbar-Cluster">
+          <button class="metric-pill pill-button" id="onboarding-open-btn" title="Open Setup &amp; Permissions Checklist">
+            <span class="dot dot-emerald"></span>
+            <span>Onboarding &amp; Setup</span>
+          </button>
+          <div class="metric-pill" id="preroll-pill">
+            <span class="dot dot-emerald"></span>
+            <span>Pre-Roll: <strong id="preroll-val">500 ms</strong></span>
+          </div>
+          <button class="metric-pill pill-button" id="accessibility-pill" title="Click to open macOS Accessibility Settings">
+            <span class="dot" id="ax-dot"></span>
+            <span id="ax-text">Checking Accessibility...</span>
+          </button>
+          <div class="gate-status-badge" id="pipeline-badge">
+            <span class="gate-pulse"></span>
+            <span id="pipeline-state-label">IDLE</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="state-stepper-bar">
+        <div class="state-step active" id="step-idle">
+          <span class="step-num">1</span>
+          <div>
+            <div class="step-name">IDLE</div>
+            <div class="step-desc">Camera paused or looking away</div>
+          </div>
+        </div>
+        <div class="step-arrow">&rarr;</div>
+        <div class="state-step" id="step-armed">
+          <span class="step-num">2</span>
+          <div>
+            <div class="step-name">ARMED</div>
+            <div class="step-desc">Face present &amp; facing screen</div>
+          </div>
+        </div>
+        <div class="step-arrow">&rarr;</div>
+        <div class="state-step" id="step-listening">
+          <span class="step-num">3</span>
+          <div>
+            <div class="step-name">LISTENING</div>
+            <div class="step-desc">Lips + VAD (500ms pre-roll)</div>
+          </div>
+        </div>
+        <div class="step-arrow">&rarr;</div>
+        <div class="state-step" id="step-transcribing">
+          <span class="step-num">4</span>
+          <div>
+            <div class="step-name">TRANSCRIBING</div>
+            <div class="step-desc">Metal Whisper + Code Cleanup</div>
+          </div>
+        </div>
+        <div class="step-arrow">&rarr;</div>
+        <div class="state-step" id="step-preview">
+          <span class="step-num">5</span>
+          <div>
+            <div class="step-name">PREVIEW</div>
+            <div class="step-desc">Cancelable countdown &rarr; Send</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="preview-hud hidden" id="preview-hud">
+        <div class="preview-hud-top">
+          <div class="preview-title-cluster">
+            <span class="preview-live-pill">CANCELABLE PREVIEW</span>
+            <span class="preview-policy-badge" id="preview-policy-badge">Target: Terminal (Paste + Enter)</span>
+            <span class="preview-countdown-text" id="preview-countdown-text">Sending in 1.8s...</span>
+          </div>
+          <div class="preview-actions">
+            <button id="preview-send-btn" class="btn btn-record-start">
+              <span>Send Now (Enter / Nod)</span>
+            </button>
+            <button id="preview-cancel-btn" class="btn btn-record-stop">
+              <span>Cancel (Esc / Shake)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="preview-body">
+          <input
+            type="text"
+            id="preview-text-input"
+            class="preview-text-input"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <div class="preview-raw-diff hidden" id="preview-raw-diff">
+            <span>Raw Whisper:</span>
+            <code id="preview-raw-text"></code>
+          </div>
+        </div>
+
+        <div class="preview-progress-track">
+          <div class="preview-progress-fill" id="preview-progress-fill"></div>
+        </div>
+      </section>
+
+      <section class="command-deck" id="command-deck">
+        <div class="deck-left">
+          <div class="rec-indicator-wrap">
+            <span class="rec-live-dot" id="rec-live-dot"></span>
+            <div>
+              <div class="deck-title" id="deck-status">Ready for Voice Input</div>
+              <div class="deck-subtitle" id="deck-subtitle">
+                Enable Camera Gate for hands-free look-and-talk, or press <kbd>Option</kbd> + <kbd>Space</kbd>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="deck-center">
+          <div class="timer-display">
+            <span class="timer-label">UTTERANCE</span>
+            <span class="timer-value" id="utterance-timer">00:00.0</span>
+          </div>
+          <div class="sample-counter-display">
+            <span class="timer-label">CANCELED SENDS</span>
+            <span class="sample-counter-value" id="canceled-sends-stat">0 saved</span>
+          </div>
+          <div class="sample-counter-display">
+            <span class="timer-label">FALSE TRIGGERS</span>
+            <span class="sample-counter-value" id="false-trigger-stat">0 (0.0%)</span>
+          </div>
+          <div class="active-tag-display">
+            <span class="timer-label">MODEL</span>
+            <span class="active-tag-pill" id="active-model-pill">whisper-tiny.en</span>
+          </div>
+        </div>
+
+        <div class="deck-actions">
+          <button id="toggle-camera-btn" class="btn btn-camera">
+            <span class="btn-icon-circle"></span>
+            <span id="toggle-camera-label">Enable Camera Gate</span>
+          </button>
+          <button id="start-listen-btn" class="btn btn-record-start">
+            <span>Manual Start</span>
+          </button>
+          <button id="stop-listen-btn" class="btn btn-record-stop" disabled>
+            <span class="btn-icon-square"></span>
+            <span>Stop &amp; Transcribe</span>
+          </button>
+          <button id="cancel-listen-btn" class="btn btn-ghost" disabled>
+            Cancel
+          </button>
+        </div>
+      </section>
+
+      <div id="error-banner" class="error-banner hidden">
+        <div class="error-banner-content">
+          <span class="error-badge">ALERT</span>
+          <span id="error-banner-text"></span>
+        </div>
+        <button id="error-dismiss-btn" class="btn-xs">Dismiss</button>
+      </div>
+
+      <main class="workspace-grid">
+        <section class="left-col">
+          <div class="vision-audio-split">
+            <div class="panel vision-panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2>Webcam Intent Gate (15 FPS In-Memory)</h2>
+                  <span class="panel-hint">Frames stay in webview memory; only derived numbers cross IPC</span>
+                </div>
+                <div class="vision-pills">
+                  <span class="gauge-tag" id="gaze-pill">GAZE: OFF</span>
+                  <span class="gauge-tag" id="lip-pill">LIPS: STILL</span>
+                </div>
+              </div>
+              <div class="webcam-stage">
+                <video id="webcam-video" autoplay playsinline muted></video>
+                <canvas id="webcam-overlay"></canvas>
+                <div class="webcam-placeholder" id="webcam-placeholder">
+                  <p>Camera Gate Paused</p>
+                  <span>Click <strong>Enable Camera Gate</strong> above to activate hands-free look-and-talk</span>
+                </div>
+              </div>
+              <div class="vision-metrics-row">
+                <div class="v-metric">
+                  <span class="v-label">Yaw / Pitch</span>
+                  <span class="v-val" id="val-pose">0.0&deg; / 0.0&deg;</span>
+                </div>
+                <div class="v-metric">
+                  <span class="v-label">MAR / Var</span>
+                  <span class="v-val" id="val-mar">0.000 / 0.00</span>
+                </div>
+                <div class="v-metric">
+                  <span class="v-label">Head Gesture</span>
+                  <span class="v-val" id="val-gesture">None</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel chart-panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2>Multimodal Fusion Timeline</h2>
+                  <span class="panel-hint">Silero VAD + Mic RMS + Speech Gate</span>
+                </div>
+                <div class="chart-legend">
+                  <span class="legend-item"><i class="swatch swatch-vad"></i>VAD</span>
+                  <span class="legend-item"><i class="swatch swatch-rms"></i>RMS</span>
+                  <span class="legend-item"><i class="swatch swatch-thresh"></i>Gate</span>
+                </div>
+              </div>
+              <div class="chart-container">
+                <canvas id="vad-canvas"></canvas>
+              </div>
+              <div class="mini-gauges-row">
+                <div class="mini-gauge">
+                  <span class="v-label">Silero VAD</span>
+                  <strong id="val-vad-prob">0.00</strong>
+                  <span class="gauge-tag" id="vad-state-tag">SILENCE</span>
+                </div>
+                <div class="mini-gauge">
+                  <span class="v-label">Mic RMS</span>
+                  <strong id="val-rms">0.000</strong>
+                  <span class="gauge-tag" id="mic-device-tag">Default Mic</span>
+                </div>
+                <div class="mini-gauge">
+                  <span class="v-label">Metal Whisper</span>
+                  <strong id="val-latency">-- ms</strong>
+                  <span class="gauge-tag" id="rtf-tag">RTF --</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel terminal-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2>Interactive Terminal &amp; Cleanup Sandbox</h2>
+                <span class="panel-hint">Try saying: "Um, cargo test dash dash release" and watch Cleanup + Preview in action</span>
+              </div>
+              <div class="terminal-header-actions">
+                <button id="demo-cleanup-btn" class="btn-xs btn-accent" title="Simulate a spoken developer command through Cleanup + Preview">
+                  Simulate Cleanup Preview
+                </button>
+                <button id="clear-terminal-btn" class="btn-xs">Clear Log</button>
+              </div>
+            </div>
+            <div class="terminal-box">
+              <div class="terminal-history" id="terminal-history">
+                <div class="term-line term-muted"># Focus the input line below, speak or click "Simulate Cleanup Preview"</div>
+              </div>
+              <div class="terminal-input-row">
+                <span class="term-prompt">saywhen@mac ~ %</span>
+                <input
+                  type="text"
+                  id="terminal-input"
+                  class="terminal-input"
+                  placeholder="Click here, look at the screen, and speak..."
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="right-col">
+          <div class="panel settings-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2>Stage 4: Cleanup, Preview &amp; Per-App Rules</h2>
+                <span class="panel-hint">Safe auto-submit with cancelable countdown and app allowlist</span>
+              </div>
+            </div>
+
+            <div class="settings-body">
+              <div class="two-col-fields">
+                <div class="field-group">
+                  <label class="field-label" for="device-select">Microphone (cpal)</label>
+                  <select id="device-select" class="select-control"></select>
+                </div>
+
+                <div class="field-group">
+                  <div class="field-label-row">
+                    <label class="field-label" for="model-select">Whisper Model</label>
+                    <button id="download-model-btn" class="btn-xs btn-accent hidden">Download</button>
+                  </div>
+                  <select id="model-select" class="select-control"></select>
+                </div>
+              </div>
+
+              <div class="two-col-fields">
+                <div class="field-group">
+                  <div class="field-label-row">
+                    <label class="field-label" for="vad-thresh-slider">VAD Threshold</label>
+                    <span class="mono-val" id="vad-thresh-display">0.45</span>
+                  </div>
+                  <input
+                    type="range"
+                    id="vad-thresh-slider"
+                    min="0.20"
+                    max="0.80"
+                    step="0.05"
+                    value="0.45"
+                    class="range-slider"
+                  />
+                </div>
+
+                <div class="field-group">
+                  <div class="field-label-row">
+                    <label class="field-label" for="preview-countdown-slider">Preview Window</label>
+                    <span class="mono-val" id="preview-countdown-display">1800 ms</span>
+                  </div>
+                  <input
+                    type="range"
+                    id="preview-countdown-slider"
+                    min="800"
+                    max="3500"
+                    step="100"
+                    value="1800"
+                    class="range-slider"
+                  />
+                </div>
+              </div>
+
+              <div class="field-group">
+                <label class="field-label" for="allowlist-input">Auto-Enter Terminal &amp; Agent Allowlist (Paste-Only elsewhere)</label>
+                <input
+                  type="text"
+                  id="allowlist-input"
+                  class="text-control"
+                  value="saywhen, Terminal, iTerm2, Warp, Ghostty, Cursor, Code, Zed, Antigravity, Claude"
+                />
+              </div>
+
+              <div class="toggles-list">
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Developer Code Cleanup Pass</div>
+                    <div class="toggle-desc">Strips "um/uh", converts "dash dash" &rarr; "--", preserves CLI tokens</div>
+                  </div>
+                  <input type="checkbox" id="toggle-cleanup" checked />
+                </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Cancelable Countdown Preview Before Send</div>
+                    <div class="toggle-desc">Cancel with Esc, head shake, or button before injection</div>
+                  </div>
+                  <input type="checkbox" id="toggle-preview" checked />
+                </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Per-App Auto-Enter Rules &amp; Destructive Guard</div>
+                    <div class="toggle-desc">Auto-Enter in terminals/agents; Paste-Only in chat/email &amp; rm -rf</div>
+                  </div>
+                  <input type="checkbox" id="toggle-per-app" checked />
+                </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Hands-Free Visual Gate (IDLE &rarr; ARMED &rarr; LISTENING)</div>
+                    <div class="toggle-desc">Start when facing screen + lips moving + VAD speech</div>
+                  </div>
+                  <input type="checkbox" id="toggle-hands-free" checked />
+                </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Auto-Press Enter in Allowed Apps</div>
+                    <div class="toggle-desc">Press Return after pasting into allowed terminals and agents</div>
+                  </div>
+                  <input type="checkbox" id="toggle-auto-enter" checked />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel transcript-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2>Utterance Feed &amp; Cleanup Audit</h2>
+                <span class="panel-hint">Shows cleaned code output, target app policy, and latency</span>
+              </div>
+              <button id="clear-feed-btn" class="btn-xs">Clear</button>
+            </div>
+
+            <div class="transcript-list" id="transcript-list">
+              <div class="empty-feed" id="empty-feed">
+                No utterances yet. Speak a command or click <strong>Simulate Cleanup Preview</strong> to test Stage 4.
+              </div>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="modal-backdrop hidden" id="onboarding-modal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <span class="stage-tag">STAGE 5: ONBOARDING &amp; PRIVACY CHECKLIST</span>
+            <h2 class="modal-title">Welcome to saywhen</h2>
+            <p class="modal-sub">
+              100% local, hotkey-free voice input for coding agents and terminals (macOS &amp; Windows)
+            </p>
+          </div>
+          <button id="onboarding-close-btn" class="btn-xs">Close</button>
+        </div>
+
+        <div class="onboarding-steps">
+          <div class="ob-step">
+            <div class="ob-badge ob-ok">READY</div>
+            <div>
+              <div class="ob-title">1. Local On-Device Models (Silero VAD + Whisper Metal)</div>
+              <div class="ob-desc">
+                Audio is processed locally at 16 kHz with a 500 ms circular pre-roll ring buffer so your first syllable is never lost.
+              </div>
+            </div>
+          </div>
+
+          <div class="ob-step">
+            <div class="ob-badge ob-ok">IN-MEMORY</div>
+            <div>
+              <div class="ob-title">2. Privacy-First Webcam Intent Gate (MediaPipe 15 FPS)</div>
+              <div class="ob-desc">
+                Camera frames stay inside webview memory and are immediately dropped. Only derived numbers (MAR, yaw, pitch) cross IPC.
+              </div>
+            </div>
+          </div>
+
+          <div class="ob-step">
+            <div class="ob-badge ob-ok" id="ob-ax-badge">TRUSTED</div>
+            <div>
+              <div class="ob-title">3. OS Accessibility &amp; Per-App Auto-Enter Rules</div>
+              <div class="ob-desc">
+                Terminals and coding agents receive Paste + Enter after a cancelable 1.8s preview window. Chat apps and destructive commands stay Paste-Only.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <span class="panel-hint">Settings persist automatically to settings.local.json</span>
+          <button id="onboarding-done-btn" class="btn btn-record-start"> Ready to Dictate </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
