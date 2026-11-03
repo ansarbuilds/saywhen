@@ -2,6 +2,7 @@
 node_modules/
 target/
 dist/
+src-tauri/gen/
 
 # Models (download at runtime, never commit)
 models/*.bin
@@ -18,9 +19,10 @@ recordings/
 **/public/wasm/
 **/public/models/
 
-# Secrets
+# Secrets and local user config
 .env
 .env.*
+settings.local.json
 
 # OS
 .DS_Store
