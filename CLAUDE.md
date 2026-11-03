@@ -4,7 +4,23 @@
 
 saywhen is a Tauri v2 + Rust + TypeScript desktop app for hands-free, hotkey-free voice input aimed at developers using coding agents and terminals. It gates listening on webcam signals (face present, facing the screen, lips moving) plus audio speech detection, transcribes locally, runs an AI cleanup pass, shows a short cancelable preview, injects the text into the focused app and presses Enter.
 
-Status: pre-prototype. Read `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
+Status: Stages 1 through 5 are implemented and verified. Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
+
+## Architecture & Key Files
+
+- `src-tauri/src/audio.rs`: 16 kHz `cpal` capture worker thread, 500 ms (`8,000`-sample) circular pre-roll ring buffer, Silero VAD v5 ONNX (`voice_activity_detector`), 5-state multimodal machine (`IDLE -> ARMED -> LISTENING -> TRANSCRIBING -> PREVIEW`), head gesture handling (`nod` / `shake`), and `settings.local.json` persistence.
+- `src-tauri/src/transcribe.rs`: `whisper-rs` (`0.16.0`) Metal GPU engine (`use_gpu(true)`), model downloader, hallucination filter, and `"send it"` / `"submit it"` end-phrase stripping.
+- `src-tauri/src/cleanup.rs`: Local deterministic developer CLI/code cleanup pass (`run_local_developer_cleanup`) and destructive command guard (`check_destructive_command`).
+- `src-tauri/src/inject.rs`: Main-thread `enigo` + `arboard` clipboard injection (`run_on_main_thread`), macOS `lsappinfo` + Windows PowerShell frontmost app detection, and per-app allowlist policy.
+- `src/main.ts`: 15 FPS MediaPipe Face Landmarker vision gate, head gesture detector, live VAD/RMS oscilloscope, and cancelable Preview HUD.
+- `scripts/capture-screenshots.sh`: Headless Chrome screenshot generator for `docs/screenshots/stage1..stage5.png`.
+
+## Commands
+
+- Build frontend: `npm run build`
+- Run Rust unit & Metal benchmark tests: `export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" && cargo test --manifest-path src-tauri/Cargo.toml`
+- Run desktop app in dev mode: `export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" && npx tauri dev`
+- Regenerate documentation screenshots: `./scripts/capture-screenshots.sh`
 
 ## Principles
 
