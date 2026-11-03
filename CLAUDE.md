@@ -12,6 +12,8 @@ Status: Stages 1 through 5 are implemented and verified. Read `README.md`, `docs
 - `src-tauri/src/transcribe.rs`: `whisper-rs` (`0.16.0`) Metal GPU engine (`use_gpu(true)`), model downloader, hallucination filter, and `"send it"` / `"submit it"` end-phrase stripping.
 - `src-tauri/src/cleanup.rs`: Local deterministic developer CLI/code cleanup pass (`run_local_developer_cleanup`) and destructive command guard (`check_destructive_command`).
 - `src-tauri/src/inject.rs`: Main-thread `enigo` + `arboard` clipboard injection (`run_on_main_thread`), macOS `lsappinfo` + Windows PowerShell frontmost app detection, and per-app allowlist policy.
+- `src-tauri/src/hud.rs`: Floating HUD pill window placement and click-through, preview-only global `Esc` cancel, tray menu, close-to-background.
+- `src/hud.ts` + `hud.html`: Transparent, non-focusable HUD pill and preview card (event listener only).
 - `src/main.ts`: 15 FPS MediaPipe Face Landmarker vision gate, head gesture detector, live VAD/RMS oscilloscope, and cancelable Preview HUD.
 - `scripts/capture-screenshots.sh`: Headless Chrome screenshot generator for `docs/screenshots/stage1..stage5.png`.
 

@@ -17,6 +17,7 @@ interface DictationConfig {
   autoPressEnter: boolean;
   useClipboardPaste: boolean;
   preferredDevice: string | null;
+  hudEnabled: boolean;
 }
 
 interface VisionTelemetryPayload {
@@ -65,6 +66,8 @@ interface AudioTelemetryEvent {
   visionActive: boolean;
   visionArmed: boolean;
   visionLipsMoving: boolean;
+  cameraEnabled: boolean;
+  hudEnabled: boolean;
 }
 
 interface TranscriptionResult {
@@ -147,6 +150,7 @@ let currentConfig: DictationConfig = {
   autoPressEnter: true,
   useClipboardPaste: true,
   preferredDevice: null,
+  hudEnabled: true,
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -166,6 +170,60 @@ let mediaStream: MediaStream | null = null;
 let lastVisionFrameTime = 0;
 let lastLipsMovingTimestamp = 0;
 let lastGestureTime = 0;
+let visionTicker: Worker | null = null;
+let releaseVisionKeepAlive: (() => void) | null = null;
+
+// The vision loop is driven by a Worker timer instead of requestAnimationFrame.
+// rAF stops entirely when the main window is hidden or occluded, and main-thread
+// timers get throttled, but messages posted from a dedicated worker keep arriving.
+// This is what lets the camera gate keep working while saywhen runs in the background.
+const VISION_TICK_MS = 66; // ~15 FPS
+const VISION_TICKER_SRC = `
+  let id = null;
+  onmessage = (e) => {
+    if (id !== null) { clearInterval(id); id = null; }
+    if (e.data && e.data.intervalMs) {
+      id = setInterval(() => postMessage(0), e.data.intervalMs);
+    }
+  };
+`;
+
+function startVisionTicker() {
+  stopVisionTicker();
+  const url = URL.createObjectURL(new Blob([VISION_TICKER_SRC], { type: 'text/javascript' }));
+  visionTicker = new Worker(url);
+  URL.revokeObjectURL(url);
+  visionTicker.onmessage = () => processVisionFrame(performance.now());
+  visionTicker.postMessage({ intervalMs: VISION_TICK_MS });
+
+  // A held Web Lock exempts the page from tab freezing in Chromium based webviews
+  // (WebView2 on Windows), which the backgroundThrottling config cannot control there.
+  if (navigator.locks && !releaseVisionKeepAlive) {
+    void navigator.locks
+      .request(
+        'saywhen-vision-keepalive',
+        () =>
+          new Promise<void>((resolve) => {
+            releaseVisionKeepAlive = resolve;
+          })
+      )
+      .catch(() => {
+        releaseVisionKeepAlive = null;
+      });
+  }
+}
+
+function stopVisionTicker() {
+  if (visionTicker) {
+    visionTicker.postMessage({ intervalMs: 0 });
+    visionTicker.terminate();
+    visionTicker = null;
+  }
+  if (releaseVisionKeepAlive) {
+    releaseVisionKeepAlive();
+    releaseVisionKeepAlive = null;
+  }
+}
 
 const marWindow: { timestamp: number; mar: number }[] = [];
 const poseWindow: { timestamp: number; yaw: number; pitch: number }[] = [];
@@ -254,6 +312,7 @@ const togglePreview = document.getElementById('toggle-preview') as HTMLInputElem
 const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputElement;
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleAutoEnter = document.getElementById('toggle-auto-enter') as HTMLInputElement;
+const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 
 const transcriptList = document.getElementById('transcript-list') as HTMLElement;
 const emptyFeed = document.getElementById('empty-feed') as HTMLElement;
@@ -501,6 +560,7 @@ async function ensureFaceLandmarker(): Promise<FaceLandmarker> {
 async function toggleCameraGate() {
   if (cameraRunning) {
     cameraRunning = false;
+    stopVisionTicker();
     if (mediaStream) {
       mediaStream.getTracks().forEach((t) => t.stop());
       mediaStream = null;
@@ -514,20 +574,11 @@ async function toggleCameraGate() {
     lipPill.textContent = 'LIPS: STILL';
     lipPill.className = 'gauge-tag';
 
-    await invoke('update_vision_telemetry', {
-      telemetry: {
-        facePresent: false,
-        facingScreen: false,
-        lipsMoving: false,
-        mouthClosed: true,
-        mar: 0,
-        marVariance: 0,
-        yaw: 0,
-        pitch: 0,
-        jawOpen: 0,
-        gesture: 'none',
-      } satisfies VisionTelemetryPayload,
-    });
+    try {
+      await invoke('set_camera_gate_enabled', { enabled: false });
+    } catch (err) {
+      showError(`Failed to pause camera gate in backend: ${String(err)}`);
+    }
     return;
   }
 
@@ -543,11 +594,12 @@ async function toggleCameraGate() {
     webcamVideo.srcObject = mediaStream;
     await webcamVideo.play();
 
+    await invoke('set_camera_gate_enabled', { enabled: true });
     cameraRunning = true;
     webcamPlaceholder.classList.add('hidden');
     toggleCameraBtn.classList.add('camera-active');
     toggleCameraLabel.textContent = 'Pause Camera Gate';
-    requestAnimationFrame(processVisionLoop);
+    startVisionTicker();
   } catch (err) {
     showError(`Camera initialization error: ${String(err)}`);
     toggleCameraLabel.textContent = 'Enable Camera Gate';
@@ -572,19 +624,26 @@ function drawLipLandmarks(landmarks: NormalizedLandmark[], facing: boolean, lips
   }
 }
 
-function processVisionLoop(now: number) {
+function processVisionFrame(now: number) {
   if (!cameraRunning || !faceLandmarker) return;
 
-  if (now - lastVisionFrameTime < 64) {
-    requestAnimationFrame(processVisionLoop);
-    return;
-  }
+  // Drop ticks that bunch up after a stall; detectForVideo needs increasing timestamps.
+  if (now - lastVisionFrameTime < VISION_TICK_MS * 0.8) return;
   lastVisionFrameTime = now;
+
+  // Some webviews pause <video> playback when the window is hidden. Resume it so frames keep flowing.
+  if (webcamVideo.paused && mediaStream) {
+    void webcamVideo.play().catch(() => undefined);
+  }
+
+  // When the main window is hidden, skip DOM and canvas work and only feed the gate.
+  const renderUi = !document.hidden;
 
   if (webcamVideo.readyState >= 2) {
     if (
-      webcamOverlay.width !== webcamVideo.videoWidth ||
-      webcamOverlay.height !== webcamVideo.videoHeight
+      renderUi &&
+      (webcamOverlay.width !== webcamVideo.videoWidth ||
+        webcamOverlay.height !== webcamVideo.videoHeight)
     ) {
       webcamOverlay.width = webcamVideo.videoWidth || 640;
       webcamOverlay.height = webcamVideo.videoHeight || 360;
@@ -639,23 +698,25 @@ function processVisionLoop(now: number) {
       const mouthClosed = mar < 0.032 && marVariance < 0.00004;
       const gesture = detectHeadGesture(now);
 
-      drawLipLandmarks(landmarks, facingScreen, lipsMoving);
+      if (renderUi) {
+        drawLipLandmarks(landmarks, facingScreen, lipsMoving);
 
-      valPose.textContent = `${yaw.toFixed(1)}° / ${pitch.toFixed(1)}°`;
-      valMar.textContent = `${mar.toFixed(3)} / ${(marVariance * 1000).toFixed(2)}`;
-      if (gesture !== 'none') {
-        valGesture.textContent = gesture.toUpperCase();
+        valPose.textContent = `${yaw.toFixed(1)}° / ${pitch.toFixed(1)}°`;
+        valMar.textContent = `${mar.toFixed(3)} / ${(marVariance * 1000).toFixed(2)}`;
+        if (gesture !== 'none') {
+          valGesture.textContent = gesture.toUpperCase();
+        }
+
+        gazePill.textContent = facingScreen ? 'GAZE: ON SCREEN' : 'GAZE: AWAY';
+        gazePill.className = facingScreen ? 'gauge-tag tag-ok' : 'gauge-tag tag-warn';
+
+        lipPill.textContent = isYawning
+          ? 'LIPS: YAWN CEILING'
+          : lipsMoving
+            ? 'LIPS: MOVING'
+            : 'LIPS: STILL';
+        lipPill.className = lipsMoving ? 'gauge-tag tag-ok' : 'gauge-tag';
       }
-
-      gazePill.textContent = facingScreen ? 'GAZE: ON SCREEN' : 'GAZE: AWAY';
-      gazePill.className = facingScreen ? 'gauge-tag tag-ok' : 'gauge-tag tag-warn';
-
-      lipPill.textContent = isYawning
-        ? 'LIPS: YAWN CEILING'
-        : lipsMoving
-          ? 'LIPS: MOVING'
-          : 'LIPS: STILL';
-      lipPill.className = lipsMoving ? 'gauge-tag tag-ok' : 'gauge-tag';
 
       void invoke('update_vision_telemetry', {
         telemetry: {
@@ -672,11 +733,13 @@ function processVisionLoop(now: number) {
         } satisfies VisionTelemetryPayload,
       });
     } else {
-      overlayCtx.clearRect(0, 0, webcamOverlay.width, webcamOverlay.height);
-      gazePill.textContent = 'NO FACE';
-      gazePill.className = 'gauge-tag tag-warn';
-      lipPill.textContent = 'LIPS: --';
-      lipPill.className = 'gauge-tag';
+      if (renderUi) {
+        overlayCtx.clearRect(0, 0, webcamOverlay.width, webcamOverlay.height);
+        gazePill.textContent = 'NO FACE';
+        gazePill.className = 'gauge-tag tag-warn';
+        lipPill.textContent = 'LIPS: --';
+        lipPill.className = 'gauge-tag';
+      }
 
       void invoke('update_vision_telemetry', {
         telemetry: {
@@ -694,8 +757,6 @@ function processVisionLoop(now: number) {
       });
     }
   }
-
-  requestAnimationFrame(processVisionLoop);
 }
 
 function drawVadChart() {
@@ -879,6 +940,7 @@ async function syncConfigToBackend() {
     perAppRulesEnabled: togglePerApp.checked,
     autoSendAllowlist: allowlist,
     autoPressEnter: toggleAutoEnter.checked,
+    hudEnabled: toggleHud.checked,
     preferredDevice: deviceSelect.value ? deviceSelect.value : null,
   };
 
@@ -930,6 +992,7 @@ async function initApp() {
     togglePerApp.checked = currentConfig.perAppRulesEnabled;
     toggleHandsFree.checked = currentConfig.handsFreeEnabled;
     toggleAutoEnter.checked = currentConfig.autoPressEnter;
+    toggleHud.checked = currentConfig.hudEnabled;
 
     updatePipelineUiState(snapshot.state, 0, 0);
   } catch (err) {
@@ -957,7 +1020,9 @@ async function initApp() {
     if (chartHistory.length > MAX_CHART_POINTS) {
       chartHistory.shift();
     }
-    drawVadChart();
+    if (!document.hidden) {
+      drawVadChart();
+    }
   });
 
   await listen<PreviewStartedEvent>('preview-started', (event) => {
@@ -976,6 +1041,15 @@ async function initApp() {
 
   await listen<string>('pipeline-error', (event) => {
     showError(event.payload);
+  });
+
+  await listen('tray-toggle-camera', () => {
+    void toggleCameraGate();
+  });
+
+  await listen<DictationConfig>('dictation-config-updated', (event) => {
+    currentConfig = event.payload;
+    toggleHud.checked = currentConfig.hudEnabled;
   });
 }
 
@@ -1125,6 +1199,7 @@ togglePreview.addEventListener('change', syncConfigToBackend);
 togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleAutoEnter.addEventListener('change', syncConfigToBackend);
+toggleHud.addEventListener('change', syncConfigToBackend);
 
 modelSelect.addEventListener('change', async () => {
   const chosenId = modelSelect.value;

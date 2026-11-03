@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>saywhen HUD</title>
+    <link rel="stylesheet" href="/src/hud.css" />
+  </head>
+  <body>
+    <div class="hud-root" id="hud-root" data-state="IDLE">
+      <section class="preview-card hidden" id="hud-preview" aria-live="polite">
+        <div class="preview-head">
+          <span class="preview-target" id="hud-preview-target">Target</span>
+          <span class="preview-countdown" id="hud-preview-countdown">1.8s</span>
+        </div>
+        <p class="preview-text" id="hud-preview-text"></p>
+        <div class="preview-bar"><div class="preview-bar-fill" id="hud-preview-fill"></div></div>
+        <div class="preview-hint" id="hud-preview-hint">Esc or shake head to cancel. Nod to send now.</div>
+      </section>
+
+      <div class="pill" id="hud-pill">
+        <span class="pill-dot" id="hud-dot"></span>
+        <span class="pill-label" id="hud-label">IDLE</span>
+        <span class="pill-meter" id="hud-meter" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i>
+        </span>
+        <span class="pill-detail" id="hud-detail">Starting...</span>
+      </div>
+    </div>
+    <script type="module" src="/src/hud.ts"></script>
+  </body>
+</html>
