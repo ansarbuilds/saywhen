@@ -25,6 +25,9 @@ pub struct TranscriptionResult {
     pub model_used: String,
     pub peak_vad_prob: f32,
     pub end_phrase_triggered: bool,
+    /// Set when the transcript was dropped as a likely Whisper hallucination on non-speech audio.
+    #[serde(default)]
+    pub discarded_reason: Option<String>,
 }
 
 pub struct TranscriberEngine {
@@ -243,7 +246,16 @@ impl TranscriberEngine {
         }
 
         let cleaned_raw = clean_whisper_hallucinations(&raw_text);
-        let (cleaned, end_phrase_triggered) = strip_end_phrase(&cleaned_raw);
+        let (mut cleaned, end_phrase_triggered) = strip_end_phrase(&cleaned_raw);
+        let mut discarded_reason = None;
+        if is_likely_silence_hallucination(&cleaned, peak_vad_prob) {
+            discarded_reason = Some(format!(
+                "Discarded \"{}\" as a likely Whisper hallucination (peak VAD {:.2})",
+                cleaned.trim(),
+                peak_vad_prob
+            ));
+            cleaned.clear();
+        }
         let inference_ms = start.elapsed().as_millis() as u64;
         let audio_duration_ms = ((samples_16k.len() as f64 / 16000.0) * 1000.0) as u64;
         let rtf = if audio_duration_ms > 0 {
@@ -260,6 +272,7 @@ impl TranscriberEngine {
             model_used: selected_id,
             peak_vad_prob,
             end_phrase_triggered,
+            discarded_reason,
         })
     }
 }
@@ -283,6 +296,47 @@ fn strip_end_phrase(input: &str) -> (String, bool) {
         }
     }
     (trimmed.to_string(), false)
+}
+
+/// Peak Silero VAD probability at or above which a stock phrase is trusted as real speech.
+/// Assumed value, not yet measured: tune with recorded false triggers (see docs/prompts/next-03).
+const HALLUCINATION_TRUST_VAD: f32 = 0.85;
+
+/// Phrases Whisper commonly invents on silence, noise, coughs or keyboard sounds.
+/// Matched against the whole transcript only, never as a substring.
+const SILENCE_HALLUCINATION_PHRASES: &[&str] = &[
+    "thank you",
+    "thank you very much",
+    "thanks",
+    "thanks for watching",
+    "thank you for watching",
+    "thank you so much for watching",
+    "please subscribe",
+    "subscribe",
+    "bye",
+    "bye bye",
+    "you",
+];
+
+fn normalize_for_phrase_match(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c.to_ascii_lowercase() } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// True when the whole transcript is a stock hallucination phrase and the audio did not
+/// contain confident speech. A lone "you" is always dropped: it is the most common
+/// hallucination and is not a useful command on its own.
+fn is_likely_silence_hallucination(text: &str, peak_vad_prob: f32) -> bool {
+    let norm = normalize_for_phrase_match(text);
+    if norm.is_empty() || !SILENCE_HALLUCINATION_PHRASES.contains(&norm.as_str()) {
+        return false;
+    }
+    norm == "you" || peak_vad_prob < HALLUCINATION_TRUST_VAD
 }
 
 fn clean_whisper_hallucinations(input: &str) -> String {
@@ -319,6 +373,23 @@ mod tests {
             clean_whisper_hallucinations("[BLANK_AUDIO] cargo test --release"),
             "cargo test --release"
         );
+    }
+
+    #[test]
+    fn test_silence_hallucination_filter() {
+        // Stock phrases on weak speech evidence are dropped.
+        assert!(is_likely_silence_hallucination("Thank you.", 0.55));
+        assert!(is_likely_silence_hallucination(" Thanks for watching! ", 0.7));
+        assert!(is_likely_silence_hallucination("you", 0.99));
+        // A confidently spoken "thank you" is kept.
+        assert!(!is_likely_silence_hallucination("Thank you.", 0.97));
+        // Short real replies to coding agents are never dropped.
+        assert!(!is_likely_silence_hallucination("yes", 0.5));
+        assert!(!is_likely_silence_hallucination("no", 0.5));
+        assert!(!is_likely_silence_hallucination("okay", 0.5));
+        // Phrases inside a longer command are never touched.
+        assert!(!is_likely_silence_hallucination("thank you, now run cargo test", 0.5));
+        assert!(!is_likely_silence_hallucination("", 0.1));
     }
 
     #[test]
