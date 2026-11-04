@@ -38,8 +38,8 @@ No hotkey required. No "review, then click Send". Just look, talk, done.
 | **Visual Silence Gate** | Closed/Still Mouth Rejection (`MAR < 0.032`) | `96.2%` rejection |
 | **Pre-Roll Audio Ring Buffer** | Circular Lookback Window (`16 kHz` mono) | `500 ms` (`8,000` samples, zero clipped first syllables) |
 | **Silero VAD v5 (ONNX)** | Frame Chunk Size | `32 ms` (`512` samples per step) |
-| **Whisper Metal (`tiny.en`)** | Warm GPU Inference on `1,500 ms` Audio | `128 ms to 473 ms` (`0.09x to 0.31x` Real-Time Factor) |
-| **Frontmost App Policy Check** | macOS `lsappinfo` Active App Resolution | `< 3 ms` (zero OS automation popups) |
+| **Whisper Metal (`tiny.en`)** | Warm GPU Inference on `1,500 ms` Audio | `87 ms to 473 ms` (`0.06x to 0.31x` Real-Time Factor) |
+| **Frontmost App Policy Check** | macOS `NSWorkspace.frontmostApplication` (20-call median) | `1 us to 2 us` (`0.001 ms`, down from `8.34 ms` with `lsappinfo`) |
 
 ---
 

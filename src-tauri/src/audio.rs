@@ -1,12 +1,13 @@
 use crate::cleanup::{run_local_developer_cleanup, CleanupResult};
 use crate::inject::{
     default_auto_send_allowlist, detect_frontmost_app, evaluate_app_injection_policy,
-    inject_text_into_focused_app, AppTargetPolicy, InjectionOutcome,
+    inject_text_into_focused_app, AppTargetPolicy, InjectionOutcome, InjectionTimingConfig,
+    TargetChangePolicy, DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -92,10 +93,30 @@ pub struct DictationConfig {
     /// Show the floating always-on-top HUD pill. Defaulted so older settings files still load.
     #[serde(default = "default_true")]
     pub hud_enabled: bool,
+    /// Action when the focused app changes during the preview countdown ("abort" | "paste_only").
+    #[serde(default)]
+    pub on_target_changed: TargetChangePolicy,
+    /// Base delay (ms) between Cmd/Ctrl+V and pressing Return. Scaled with text length.
+    #[serde(default = "default_enter_delay_ms")]
+    pub enter_delay_ms: u64,
+    /// Optional per-app base Enter delay overrides keyed by app name, bundle id, or exe.
+    #[serde(default)]
+    pub per_app_enter_delay_ms: HashMap<String, u64>,
+    /// Delay (ms) before restoring the previous clipboard if unchanged.
+    #[serde(default = "default_clipboard_restore_delay_ms")]
+    pub clipboard_restore_delay_ms: u64,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_enter_delay_ms() -> u64 {
+    DEFAULT_ENTER_DELAY_MS
+}
+
+fn default_clipboard_restore_delay_ms() -> u64 {
+    DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
 }
 
 impl Default for DictationConfig {
@@ -116,11 +137,25 @@ impl Default for DictationConfig {
             use_clipboard_paste: true,
             preferred_device: None,
             hud_enabled: true,
+            on_target_changed: TargetChangePolicy::Abort,
+            enter_delay_ms: DEFAULT_ENTER_DELAY_MS,
+            per_app_enter_delay_ms: HashMap::new(),
+            clipboard_restore_delay_ms: DEFAULT_CLIPBOARD_RESTORE_DELAY_MS,
         }
     }
 }
 
 impl DictationConfig {
+    pub fn to_injection_timing(&self) -> InjectionTimingConfig {
+        InjectionTimingConfig {
+            use_clipboard_paste: self.use_clipboard_paste,
+            enter_delay_ms: self.enter_delay_ms,
+            per_app_enter_delay_ms: self.per_app_enter_delay_ms.clone(),
+            clipboard_restore_delay_ms: self.clipboard_restore_delay_ms,
+            on_target_changed: self.on_target_changed,
+        }
+    }
+
     pub fn config_file_path() -> std::path::PathBuf {
         let candidates = [
             std::path::PathBuf::from("../settings.local.json"),
@@ -137,7 +172,10 @@ impl DictationConfig {
     pub fn load_or_default() -> Self {
         let path = Self::config_file_path();
         if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(parsed) = serde_json::from_str::<DictationConfig>(&raw) {
+            if let Ok(mut parsed) = serde_json::from_str::<DictationConfig>(&raw) {
+                parsed
+                    .auto_send_allowlist
+                    .retain(|entry| !entry.trim().eq_ignore_ascii_case("saywhen"));
                 return parsed;
             }
         }
@@ -581,17 +619,17 @@ fn finalize_preview_and_inject(
     let final_text = override_text.unwrap_or_else(|| item.cleanup.cleaned_text.clone());
     let mut injection_outcome = None;
     let mut injection_error = None;
+    let mut final_policy = item.target_policy.clone();
 
     if !final_text.trim().is_empty() && cfg.auto_inject {
-        match inject_text_into_focused_app(
-            app_handle,
-            &final_text,
-            item.target_policy.will_press_enter,
-            cfg.use_clipboard_paste,
-            &item.target_policy.app_name,
-            &item.target_policy.policy,
-        ) {
-            Ok(outcome) => injection_outcome = Some(outcome),
+        let timing = cfg.to_injection_timing();
+        match inject_text_into_focused_app(app_handle, &final_text, &item.target_policy, &timing) {
+            Ok(outcome) => {
+                final_policy.app_name = outcome.target_app.clone();
+                final_policy.policy = outcome.policy_applied.clone();
+                final_policy.will_press_enter = outcome.pressed_enter;
+                injection_outcome = Some(outcome);
+            }
             Err(err) => {
                 injection_error = Some(err.clone());
                 let _ = app_handle.emit("pipeline-error", err);
@@ -612,7 +650,7 @@ fn finalize_preview_and_inject(
         UtteranceCompleteEvent {
             transcription: item.transcription,
             cleanup: final_cleanup,
-            target_policy: item.target_policy,
+            target_policy: final_policy,
             injection: injection_outcome,
             injection_error,
             trigger_source: item.trigger_source,
@@ -1102,12 +1140,24 @@ mod tests {
 
     #[test]
     fn test_settings_without_hud_field_still_load() {
-        // A settings.local.json written before the HUD existed must not fall back to defaults.
+        // A settings.local.json written before the HUD and injection reliability fields existed must still load.
         let mut legacy = serde_json::to_value(DictationConfig::default()).unwrap();
-        legacy.as_object_mut().unwrap().remove("hudEnabled");
+        let obj = legacy.as_object_mut().unwrap();
+        obj.remove("hudEnabled");
+        obj.remove("onTargetChanged");
+        obj.remove("enterDelayMs");
+        obj.remove("perAppEnterDelayMs");
+        obj.remove("clipboardRestoreDelayMs");
         legacy["vadThreshold"] = serde_json::json!(0.7);
         let parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
         assert!(parsed.hud_enabled);
+        assert_eq!(parsed.on_target_changed, TargetChangePolicy::Abort);
+        assert_eq!(parsed.enter_delay_ms, DEFAULT_ENTER_DELAY_MS);
+        assert!(parsed.per_app_enter_delay_ms.is_empty());
+        assert_eq!(
+            parsed.clipboard_restore_delay_ms,
+            DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
+        );
         assert!((parsed.vad_threshold - 0.7).abs() < f32::EPSILON);
     }
 }

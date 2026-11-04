@@ -24,7 +24,13 @@ interface PreviewStartedEvent {
 
 interface UtteranceCompleteEvent {
   targetPolicy: { appName: string };
-  injection: { success: boolean; pressedEnter: boolean; targetApp: string } | null;
+  injection: {
+    success: boolean;
+    pressedEnter: boolean;
+    targetApp: string;
+    policyApplied: string;
+    message: string;
+  } | null;
   injectionError: string | null;
 }
 
@@ -135,7 +141,10 @@ function showPreview(ev: PreviewStartedEvent) {
   previewText.textContent = ev.cleanup.cleanedText;
   previewTarget.className = 'preview-target';
   const app = ev.targetPolicy.appName || 'focused app';
-  if (ev.targetPolicy.policy === 'destructive_guard') {
+  if (ev.targetPolicy.policy === 'self_guard') {
+    previewTarget.classList.add('policy-danger');
+    previewTarget.textContent = 'Target is saywhen: focus a terminal or editor';
+  } else if (ev.targetPolicy.policy === 'destructive_guard') {
     previewTarget.classList.add('policy-danger');
     previewTarget.textContent = `Destructive command: paste only into ${app}`;
   } else if (!ev.targetPolicy.willPressEnter) {
@@ -155,7 +164,14 @@ function onUtteranceComplete(ev: UtteranceCompleteEvent) {
     setFlash(`Injection failed: ${ev.injectionError}`, 'error');
   } else if (ev.injection) {
     const app = ev.injection.targetApp || ev.targetPolicy.appName;
-    setFlash(ev.injection.pressedEnter ? `Sent to ${app}` : `Pasted into ${app}`, 'ok');
+    if (ev.injection.policyApplied === 'target_changed_paste_only') {
+      setFlash(ev.injection.message || `Target changed: pasted into ${app} without Enter`, 'error');
+    } else {
+      setFlash(
+        ev.injection.message || (ev.injection.pressedEnter ? `Sent to ${app}` : `Pasted into ${app}`),
+        'ok'
+      );
+    }
   } else {
     setFlash('Transcribed (auto-inject off)', 'ok');
   }
