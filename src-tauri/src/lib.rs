@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod cleanup;
+pub mod hud;
 pub mod inject;
 pub mod transcribe;
 
@@ -14,7 +15,7 @@ use inject::{
 };
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use transcribe::{ModelInfo, TranscriberEngine};
 
@@ -110,6 +111,13 @@ fn update_vision_telemetry(
 }
 
 #[tauri::command]
+fn set_camera_gate_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    state
+        .audio
+        .send_command(AudioCommand::SetCameraGateEnabled(enabled))
+}
+
+#[tauri::command]
 fn select_whisper_model(state: State<'_, AppState>, model_id: String) -> Result<String, String> {
     state.transcriber.set_selected_model(&model_id)
 }
@@ -169,13 +177,22 @@ pub fn run() {
 
             let audio_for_shortcut = Arc::clone(&audio_controller);
             let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+            let escape = hud::escape_shortcut();
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |_app, sc, event| {
-                        if sc == &shortcut && event.state() == ShortcutState::Pressed {
+                        if event.state() != ShortcutState::Pressed {
+                            return;
+                        }
+                        if sc == &shortcut {
                             let _ = audio_for_shortcut.send_command(AudioCommand::ToggleListening(
                                 "hotkey (Option+Space)".to_string(),
+                            ));
+                        } else if sc == &escape {
+                            // Only registered while in PREVIEW (see hud::spawn_preview_escape_guard).
+                            let _ = audio_for_shortcut.send_command(AudioCommand::CancelPreview(
+                                "Esc pressed (global)".to_string(),
                             ));
                         }
                     })
@@ -186,6 +203,20 @@ pub fn run() {
                 eprintln!("Warning: could not register Option+Space shortcut: {}", err);
             }
 
+            hud::spawn_preview_escape_guard(app_handle.clone(), Arc::clone(&audio_controller));
+
+            if let Err(err) = hud::build_tray(&app_handle, Arc::clone(&audio_controller)) {
+                eprintln!(
+                    "Warning: tray icon unavailable ({}); closing the main window will quit.",
+                    err
+                );
+            }
+
+            if let Err(err) = hud::setup_hud_window(&app_handle) {
+                eprintln!("Warning: {}", err);
+                let _ = app_handle.emit("pipeline-error", err);
+            }
+
             app.manage(AppState {
                 audio: audio_controller,
                 transcriber,
@@ -194,12 +225,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if matches!(
-                event,
-                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
-            ) {
-                let state = window.app_handle().state::<AppState>();
-                state.transcriber.unload();
+            if window.label() != hud::MAIN_LABEL {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if hud::should_hide_on_close() {
+                    // Keep running in the background: HUD pill + camera gate stay live.
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    // The HUD window would otherwise keep an invisible app alive.
+                    hud::request_quit(window.app_handle());
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -212,6 +249,7 @@ pub fn run() {
             test_cleanup_pass,
             update_dictation_config,
             update_vision_telemetry,
+            set_camera_gate_enabled,
             select_whisper_model,
             download_whisper_model,
             manual_inject_text,
@@ -219,13 +257,13 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building saywhen tauri application")
-        .run(|app_handle, event| {
-            if matches!(
-                event,
-                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
-            ) {
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. } => {
                 let state = app_handle.state::<AppState>();
                 state.transcriber.unload();
             }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => hud::show_main_window(app_handle),
+            _ => {}
         });
 }

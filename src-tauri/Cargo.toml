@@ -14,13 +14,20 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
 voice_activity_detector = "0.2.1"
-whisper-rs = { version = "0.16.0", features = ["metal"] }
 enigo = "0.6.1"
 arboard = "3.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+
+# Metal is macOS only. Enabling it unconditionally breaks Windows and Linux builds
+# (ggml's CMake looks for the Metal framework).
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16.0", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = "0.16.0"

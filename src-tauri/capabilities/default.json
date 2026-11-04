@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for saywhen desktop window",
-  "windows": ["main"],
+  "description": "Default permissions for the saywhen main window and HUD pill",
+  "windows": [
+    "main",
+    "hud"
+  ],
   "permissions": [
     "core:default",
     "core:event:default",

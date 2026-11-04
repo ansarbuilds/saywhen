@@ -59,6 +59,16 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 - Automated headless Chrome screenshot pipeline (`scripts/capture-screenshots.sh`) capturing Stages 1 to 5 in `docs/screenshots/`.
 - Exit: documented, cross-platform ready, and pushed to GitHub.
 
+## Post-Stage 5: Floating HUD pill and background vision
+- **Status:** Implemented on 2026-11-03. Compiles and unit tests pass on Linux. Manually checked on macOS on 2026-11-04 (pill visible, injection lands in Terminal, global Esc cancel, close-to-background with camera gate, tray menu). Not yet measured: 10+ minute hidden-window vision run. Not yet tested on Windows.
+- Transparent, always-on-top, non-focusable, click-through `hud` window (`hud.html`, `src/hud.ts`, `src-tauri/src/hud.rs`) placed bottom-center of the primary work area. Shows state, mic level, listening timer, preview text with countdown, injection result, and a loud warning when the camera gate is on but vision frames stopped.
+- Global `Esc` registered only while in `PREVIEW`, so the click-through HUD is still cancelable without stealing focus from the target app.
+- Closing the main window hides it; saywhen keeps running with the HUD and camera gate. Tray menu: open, pause/resume camera gate, show/hide HUD, cancel, quit. macOS Dock reopen shows the window. Without a tray (and outside macOS) closing quits.
+- Vision loop driven by a Worker timer instead of `requestAnimationFrame`, `backgroundThrottling: disabled` (macOS 14+), WebView2 anti-throttling browser args and a held Web Lock (Windows). DOM and canvas work is skipped while hidden.
+- `whisper-rs` `metal` feature now only enabled on macOS targets, which unblocks Windows and Linux builds.
+- Screenshot of all HUD states: `docs/screenshots/hud-states.png` (browser demo mode, `hud.html?demo=<state>`).
+- **To measure:** vision FPS with the main window hidden for 10+ minutes on macOS 14/15 and Windows 11, HUD CPU cost, and whether clicking near the HUD ever changes the frontmost app.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
