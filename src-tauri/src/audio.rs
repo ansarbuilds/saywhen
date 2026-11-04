@@ -924,6 +924,12 @@ fn run_audio_worker(
                                     let mut guard = shared_after.lock().unwrap();
                                     guard.state =
                                         guard.resting_state(cfg_snapshot.hands_free_enabled);
+                                    drop(guard);
+                                    // Say why nothing was sent instead of silently going idle.
+                                    let reason = transcription.discarded_reason.clone().unwrap_or_else(|| {
+                                        "No speech recognized: nothing was sent".to_string()
+                                    });
+                                    let _ = app_for_tx.emit("utterance-discarded", reason);
                                     return;
                                 }
 

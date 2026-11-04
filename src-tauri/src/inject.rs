@@ -16,7 +16,10 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-pub const SAYWHEN_BUNDLE_ID: &str = "dev.saywhen.desktop";
+/// Must match `identifier` in `tauri.conf.json` (checked by a unit test).
+pub const SAYWHEN_BUNDLE_ID: &str = "dev.saywhen.app";
+/// How long to wait for each main-thread keystroke dispatch before giving up.
+const MAIN_THREAD_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
 pub const DEFAULT_ENTER_DELAY_MS: u64 = 120;
 pub const MAX_ENTER_DELAY_MS: u64 = 400;
 pub const CHARS_PER_EXTRA_MS: usize = 20;
@@ -558,7 +561,7 @@ fn release_held_modifiers(enigo: &mut Enigo) {
 }
 
 pub fn format_main_thread_timeout_error() -> String {
-    "Timed out waiting 3s for main-thread keystroke dispatch (injection may have happened late). Transcript was left on your clipboard.".to_string()
+    "Timed out waiting 3s for main-thread keystroke dispatch; the queued keystrokes were cancelled so nothing is typed late. Transcript was left on your clipboard.".to_string()
 }
 
 pub fn inject_text_into_focused_app(
@@ -632,61 +635,52 @@ pub fn inject_text_into_focused_app(
         None
     };
 
-    let (tx, rx) = mpsc::channel::<Result<(), String>>();
+    // Step 1: paste (or type) on the main thread. The Enter delay is slept on this worker
+    // thread, not the main thread, so the app event loop never blocks for up to 400 ms.
     let text_for_main = text_owned.clone();
-    let timed_out = Arc::new(AtomicBool::new(false));
-    let timed_out_for_main = Arc::clone(&timed_out);
-    let app_for_late_warning = app_handle.clone();
+    let step_one = dispatch_keystrokes_on_main_thread(app_handle, move |enigo| {
+        release_held_modifiers(enigo);
+        if use_clipboard_paste {
+            let paste_mod = if cfg!(target_os = "macos") { Key::Meta } else { Key::Control };
+            enigo.key(paste_mod, Direction::Press).map_err(|e| format!("Failed to press paste modifier: {}", e))?;
+            enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| format!("Failed to press V key: {}", e))?;
+            enigo.key(paste_mod, Direction::Release).map_err(|e| format!("Failed to release paste modifier: {}", e))?;
+        } else {
+            enigo.text(&text_for_main).map_err(|e| format!("Enigo text injection failed: {}", e))?;
+        }
+        Ok(())
+    });
 
-    app_handle
-        .run_on_main_thread(move || {
-            let res = (|| -> Result<(), String> {
-                let settings = Settings {
-                    open_prompt_to_get_permissions: false,
-                    independent_of_keyboard_state: true,
-                    ..Settings::default()
-                };
-                let mut enigo = Enigo::new(&settings)
-                    .map_err(|e| format!("Failed to initialize Enigo input controller: {}", e))?;
-
-                release_held_modifiers(&mut enigo);
-
-                if use_clipboard_paste {
-                    let paste_mod = if cfg!(target_os = "macos") { Key::Meta } else { Key::Control };
-                    enigo.key(paste_mod, Direction::Press).map_err(|e| format!("Failed to press paste modifier: {}", e))?;
-                    enigo.key(Key::Unicode('v'), Direction::Click).map_err(|e| format!("Failed to press V key: {}", e))?;
-                    enigo.key(paste_mod, Direction::Release).map_err(|e| format!("Failed to release paste modifier: {}", e))?;
-                } else {
-                    enigo.text(&text_for_main).map_err(|e| format!("Enigo text injection failed: {}", e))?;
-                }
-
-                if press_enter {
-                    thread::sleep(Duration::from_millis(enter_delay_ms));
-                    release_held_modifiers(&mut enigo);
-                    enigo.key(Key::Return, Direction::Click).map_err(|e| format!("Failed to press Return key: {}", e))?;
-                }
-                Ok(())
-            })();
-
-            if timed_out_for_main.load(Ordering::SeqCst) {
-                let _ = app_for_late_warning.emit(
-                    "pipeline-error",
-                    "Main-thread keystroke dispatch finished after 3s timeout: injection may have happened late",
-                );
-            }
-            let _ = tx.send(res);
-        })
-        .map_err(|e| {
-            copy_transcript_fallback(trimmed);
-            format!("Failed to dispatch injection onto main thread: {}", e)
+    // Step 2: wait, re-check focus, then press Enter only if the same app is still frontmost.
+    let mut enter_skipped_notice: Option<String> = None;
+    let mut pressed_enter = false;
+    let result = step_one.and_then(|()| {
+        if !press_enter {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(enter_delay_ms));
+        let now_front = detect_frontmost_app();
+        if !should_press_enter_after_paste(&target_app, &now_front) {
+            enter_skipped_notice = Some(format!(
+                "Focus moved from {} to {} before Enter: pasted but Enter was not pressed",
+                target_app.name, now_front.name
+            ));
+            return Ok(());
+        }
+        dispatch_keystrokes_on_main_thread(app_handle, |enigo| {
+            release_held_modifiers(enigo);
+            enigo.key(Key::Return, Direction::Click).map_err(|e| format!("Failed to press Return key: {}", e))
         })?;
+        pressed_enter = true;
+        Ok(())
+    });
 
-    match rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => {
+    match result {
+        Ok(()) => {
             if let Some(snapshot) = saved_clipboard {
                 let restore_wait_ms = timing
                     .clipboard_restore_delay_ms
-                    .max(if press_enter { enter_delay_ms + 150 } else { 200 });
+                    .max(if press_enter { 150 } else { 200 });
                 let injected_copy = text_owned.clone();
                 thread::spawn(move || {
                     thread::sleep(Duration::from_millis(restore_wait_ms));
@@ -712,13 +706,14 @@ pub fn inject_text_into_focused_app(
                 });
             }
 
-            if let Some(ref notice) = target_changed_notice {
+            let notice = target_changed_notice.or(enter_skipped_notice);
+            if let Some(ref notice) = notice {
                 let _ = app_handle.emit("pipeline-error", notice.clone());
             }
 
-            let mut msg = if let Some(notice) = target_changed_notice {
+            let mut msg = if let Some(notice) = notice {
                 notice
-            } else if press_enter {
+            } else if pressed_enter {
                 format!(
                     "Injected into {} and pressed Enter ({} ms delay)",
                     target_app.name, enter_delay_ms
@@ -734,21 +729,70 @@ pub fn inject_text_into_focused_app(
             Ok(InjectionOutcome {
                 success: true,
                 method: method_name,
-                pressed_enter: press_enter,
+                pressed_enter,
                 target_app: target_app.name,
                 policy_applied,
                 accessibility_trusted: trusted,
                 message: msg,
             })
         }
-        Ok(Err(err)) => {
+        Err(err) => {
             copy_transcript_fallback(trimmed);
             Err(err)
         }
+    }
+}
+
+/// Enter is only pressed if the app we pasted into is still frontmost after the delay.
+pub fn should_press_enter_after_paste(pasted_into: &FrontmostApp, now_frontmost: &FrontmostApp) -> bool {
+    !is_saywhen_app(now_frontmost) && same_target_app(pasted_into, now_frontmost)
+}
+
+/// Run keystrokes on the main thread and wait up to `MAIN_THREAD_DISPATCH_TIMEOUT`.
+/// If the wait times out, the queued closure is cancelled before it sends any key, so a
+/// stalled main thread can never paste or press Enter seconds later into another app.
+fn dispatch_keystrokes_on_main_thread<F>(app_handle: &AppHandle, keystrokes: F) -> Result<(), String>
+where
+    F: FnOnce(&mut Enigo) -> Result<(), String> + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel::<Result<(), String>>();
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timed_out_for_main = Arc::clone(&timed_out);
+    let started = Arc::new(AtomicBool::new(false));
+    let started_for_main = Arc::clone(&started);
+
+    app_handle
+        .run_on_main_thread(move || {
+            if timed_out_for_main.load(Ordering::SeqCst) {
+                return;
+            }
+            started_for_main.store(true, Ordering::SeqCst);
+            let res = (|| -> Result<(), String> {
+                let settings = Settings {
+                    open_prompt_to_get_permissions: false,
+                    independent_of_keyboard_state: true,
+                    ..Settings::default()
+                };
+                let mut enigo = Enigo::new(&settings)
+                    .map_err(|e| format!("Failed to initialize Enigo input controller: {}", e))?;
+                keystrokes(&mut enigo)
+            })();
+            let _ = tx.send(res);
+        })
+        .map_err(|e| format!("Failed to dispatch injection onto main thread: {}", e))?;
+
+    match rx.recv_timeout(MAIN_THREAD_DISPATCH_TIMEOUT) {
+        Ok(res) => res,
         Err(_) => {
             timed_out.store(true, Ordering::SeqCst);
-            copy_transcript_fallback(trimmed);
-            Err(format_main_thread_timeout_error())
+            // The flag is checked before any key is sent; a result that raced in is still honored.
+            match rx.try_recv() {
+                Ok(res) => res,
+                Err(_) if started.load(Ordering::SeqCst) => Err(
+                    "Main-thread keystroke dispatch was still running after 3s: injection may have happened late. Transcript was left on your clipboard.".to_string(),
+                ),
+                Err(_) => Err(format_main_thread_timeout_error()),
+            }
         }
     }
 }

@@ -835,6 +835,16 @@ function drawVadChart() {
   ctx.stroke();
 }
 
+// App names, window titles and error text come from other processes: never put them in HTML raw.
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function appendUtteranceCard(ev: UtteranceCompleteEvent) {
   hidePreviewBanner();
   emptyFeed.classList.add('hidden');
@@ -856,9 +866,9 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
     cleanup.cleanedText.length > 0 ? cleanup.cleanedText : '(No speech detected in audio segment)';
 
   const injectBadgeHtml = injection?.success
-    ? `<span class="u-badge u-badge-ok" title="${injection.message}">${injection.targetApp || targetPolicy.appName}: ${injection.pressedEnter ? 'Pasted + Enter' : 'Paste-Only'}</span>`
+    ? `<span class="u-badge u-badge-ok" title="${escapeHtml(injection.message)}">${escapeHtml(injection.targetApp || targetPolicy.appName)}: ${injection.pressedEnter ? 'Pasted + Enter' : 'Paste-Only'}</span>`
     : injectionError
-      ? `<span class="u-badge" title="${injectionError}">Aborted (On Clipboard)</span>`
+      ? `<span class="u-badge" title="${escapeHtml(injectionError)}">Aborted (On Clipboard)</span>`
       : `<span class="u-badge">Transcribed</span>`;
 
   const cleanupBadgeHtml = cleanup.modified
@@ -867,7 +877,7 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
 
   card.innerHTML = `
     <div class="utterance-meta">
-      <span>${timeStr} (${triggerSource})</span>
+      <span>${escapeHtml(timeStr)} (${escapeHtml(triggerSource)})</span>
       <div class="utterance-badges">
         <span class="u-badge">${transcription.inferenceMs} ms (${transcription.rtf.toFixed(2)}x)</span>
         ${cleanupBadgeHtml}

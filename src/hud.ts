@@ -186,6 +186,7 @@ async function initHud() {
     setFlash(`Canceled: ${e.payload}`, 'ok');
   });
   await listen<string>('utterance-canceled', () => setFlash('Utterance canceled', 'ok'));
+  await listen<string>('utterance-discarded', (e) => setFlash(e.payload, 'ok'));
   await listen<UtteranceCompleteEvent>('utterance-complete', (e) => onUtteranceComplete(e.payload));
   await listen<string>('pipeline-error', (e) => setFlash(e.payload, 'error'));
   await listen<DictationConfigLite>('dictation-config-updated', (e) => {
