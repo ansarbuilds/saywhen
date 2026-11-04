@@ -18,6 +18,10 @@ interface DictationConfig {
   useClipboardPaste: boolean;
   preferredDevice: string | null;
   hudEnabled: boolean;
+  onTargetChanged: 'abort' | 'paste_only';
+  enterDelayMs: number;
+  perAppEnterDelayMs: Record<string, number>;
+  clipboardRestoreDelayMs: number;
 }
 
 interface VisionTelemetryPayload {
@@ -135,7 +139,6 @@ let currentConfig: DictationConfig = {
   cancelOnLookAway: false,
   perAppRulesEnabled: true,
   autoSendAllowlist: [
-    'saywhen',
     'Terminal',
     'iTerm2',
     'Warp',
@@ -151,6 +154,10 @@ let currentConfig: DictationConfig = {
   useClipboardPaste: true,
   preferredDevice: null,
   hudEnabled: true,
+  onTargetChanged: 'abort',
+  enterDelayMs: 120,
+  perAppEnterDelayMs: {},
+  clipboardRestoreDelayMs: 600,
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -406,7 +413,10 @@ function showPreviewBanner(ev: PreviewStartedEvent) {
   }
 
   previewPolicyBadge.className = 'preview-policy-badge';
-  if (ev.targetPolicy.policy === 'destructive_guard') {
+  if (ev.targetPolicy.policy === 'self_guard') {
+    previewPolicyBadge.classList.add('policy-danger');
+    previewPolicyBadge.textContent = 'SELF-WINDOW GUARD: Focus a terminal or editor to inject';
+  } else if (ev.targetPolicy.policy === 'destructive_guard') {
     previewPolicyBadge.classList.add('policy-danger');
     previewPolicyBadge.textContent = `DESTRUCTIVE GUARD: Paste-Only (${ev.targetPolicy.appName})`;
   } else if (ev.targetPolicy.policy === 'paste_only' || !ev.targetPolicy.willPressEnter) {
@@ -832,6 +842,9 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
   updateStatsDisplay();
 
   const { transcription, cleanup, targetPolicy, injection, injectionError, triggerSource, timestampMs } = ev;
+  if (injectionError) {
+    showError(injectionError);
+  }
   valLatency.textContent = `${transcription.inferenceMs} ms`;
   rtfTag.textContent = `RTF ${transcription.rtf.toFixed(2)}x`;
 
@@ -843,9 +856,9 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
     cleanup.cleanedText.length > 0 ? cleanup.cleanedText : '(No speech detected in audio segment)';
 
   const injectBadgeHtml = injection?.success
-    ? `<span class="u-badge u-badge-ok">${targetPolicy.appName}: ${injection.pressedEnter ? 'Pasted + Enter' : 'Paste-Only'}</span>`
+    ? `<span class="u-badge u-badge-ok" title="${injection.message}">${injection.targetApp || targetPolicy.appName}: ${injection.pressedEnter ? 'Pasted + Enter' : 'Paste-Only'}</span>`
     : injectionError
-      ? `<span class="u-badge">Clipboard Fallback</span>`
+      ? `<span class="u-badge" title="${injectionError}">Aborted (On Clipboard)</span>`
       : `<span class="u-badge">Transcribed</span>`;
 
   const cleanupBadgeHtml = cleanup.modified

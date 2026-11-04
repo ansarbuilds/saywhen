@@ -10,8 +10,8 @@ use audio::{
 };
 use cleanup::{run_local_developer_cleanup, CleanupResult};
 use inject::{
-    check_accessibility_permission, detect_frontmost_app, inject_text_into_focused_app,
-    open_accessibility_settings, InjectionOutcome,
+    check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
+    inject_text_into_focused_app, open_accessibility_settings, InjectionOutcome,
 };
 use serde::Serialize;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ fn get_system_status(state: State<'_, AppState>) -> SystemStatusSnapshot {
         models: state.transcriber.list_models(),
         selected_model_id: state.transcriber.get_selected_model_id(),
         hotkey_label: "Option + Space".to_string(),
-        frontmost_app: detect_frontmost_app(),
+        frontmost_app: detect_frontmost_app().name,
     }
 }
 
@@ -136,6 +136,7 @@ async fn download_whisper_model(
 #[tauri::command]
 async fn manual_inject_text(
     app: AppHandle,
+    state: State<'_, AppState>,
     text: String,
     press_enter: bool,
     use_clipboard_paste: bool,
@@ -146,15 +147,26 @@ async fn manual_inject_text(
             tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
         }
     }
+    let cfg = state.audio.get_config();
+    let cleanup = run_local_developer_cleanup(&text, false);
     let target_app = detect_frontmost_app();
-    inject_text_into_focused_app(
-        &app,
-        &text,
-        press_enter,
-        use_clipboard_paste,
+    let policy = evaluate_app_injection_policy(
         &target_app,
-        "manual_override",
-    )
+        press_enter,
+        cfg.per_app_rules_enabled,
+        cleanup.is_destructive_command,
+        &cfg.auto_send_allowlist,
+    );
+    let mut timing = cfg.to_injection_timing();
+    timing.use_clipboard_paste = use_clipboard_paste;
+
+    match inject_text_into_focused_app(&app, &text, &policy, &timing) {
+        Ok(outcome) => Ok(outcome),
+        Err(err) => {
+            let _ = app.emit("pipeline-error", err.clone());
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]

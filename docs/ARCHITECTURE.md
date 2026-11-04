@@ -10,7 +10,7 @@ Status: draft, pre-prototype. Everything here is a plan, not a measured result.
 - **Voice activity detection:** Silero VAD (ONNX).
 - **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run, never committed.
 - **AI cleanup:** local LLM or bring-your-own-key provider. Optional, off by default until configured.
-- **Text injection:** `enigo` for keystrokes, clipboard paste as the default path for longer text, then a synthetic Enter.
+- **Text injection:** `enigo` for keystrokes (`src-tauri/src/inject.rs`, `inject/macos.rs`, `inject/windows.rs`), clipboard paste via `arboard` as the default path, then a synthetic Enter after a length-scaled delay.
 - **Storage:** SQLite for transcript history, auto-purged after 7 days. Settings in a local config file.
 
 ## Pipeline
@@ -39,6 +39,25 @@ The webview sends only derived numbers (landmark-based features such as MAR, yaw
 - `hud` window: transparent, always-on-top, non-focusable and click-through (`set_ignore_cursor_events(true)`). It only listens to backend events (`audio-telemetry`, `preview-started`, `utterance-complete`, ...) and never takes focus, so the frontmost app stays the injection target.
 - Because the HUD cannot be clicked, `src-tauri/src/hud.rs` registers a global `Esc` shortcut only while the pipeline is in `PREVIEW` and unregisters it right after, so saywhen never swallows `Esc` outside the countdown.
 - The backend tracks whether the camera gate is switched on (`set_camera_gate_enabled`). Telemetry carries `cameraEnabled` and `visionActive`, and the HUD shows a stall warning when the gate is on but frames stopped arriving.
+
+### Reliable text injection and safety guards
+
+- **Native frontmost app detection (`FrontmostApp { name, bundle_id, exe, pid, detection_us }`):**
+  - macOS (`src-tauri/src/inject/macos.rs`): queries `NSWorkspace.sharedWorkspace.frontmostApplication` via `objc2-app-kit` inside an autorelease pool (`1 us to 2 us` warm median latency over 20 calls, down from `8,336 us` with two `/usr/bin/lsappinfo` subprocesses).
+  - Windows (`src-tauri/src/inject/windows.rs`): queries `GetForegroundWindow` + `GetWindowThreadProcessId` + `QueryFullProcessImageNameW` via `windows-sys` without spawning PowerShell.
+- **Exact allowlist and self-injection guard:**
+  - Matches exact app names (case-insensitive), macOS bundle identifiers (such as `com.apple.Terminal`, `com.googlecode.iterm2`, `dev.warp.Warp-Stable`, `com.mitchellh.ghostty`, `com.microsoft.VSCode`, `com.todesktop.230313mzl4w4u92`, `dev.zed.Zed`, `com.anthropic.claudefordesktop`), and Windows executable names (`WindowsTerminal.exe`, `Code.exe`, `Cursor.exe`, etc.). Substring matches (such as `"Xcode"` matching `"Code"`) are rejected.
+  - `saywhen` itself (`dev.saywhen.desktop`, `saywhen.exe`, or matching PID) is removed from the default allowlist and unconditionally refused so `saywhen` never types into or presses Enter on its own windows.
+- **Pre-injection target verification (`onTargetChanged: "abort" | "paste_only"`, default `"abort"`):**
+  - Right before injecting at the end of the preview countdown, `saywhen` re-detects the frontmost app and compares PID, bundle ID, executable, and name against the preview target. If the user switched apps during the countdown, `saywhen` never presses Enter: it either aborts (leaving the transcript on the clipboard and surfacing an error) or pastes without Enter (`"paste_only"`).
+- **Length-scaled Enter delay (`enterDelayMs` + `perAppEnterDelayMs`):**
+  - Defaults to `120 ms` base delay plus `1 ms` per `20` characters, capped at `400 ms` (with optional per-app overrides), giving Electron apps and terminals time to process the clipboard paste before `Return` arrives.
+- **Held-modifier protection and private event state:**
+  - Uses `independent_of_keyboard_state: true` (`CGEventSourceStateID::Private` on macOS) and explicitly releases `Shift`, `Control`, `Alt`, and `Meta` (`LShift`/`RShift`/`LControl`/`RControl`) before pasting and before pressing `Return`.
+- **Safe clipboard restoration (`clipboardRestoreDelayMs`, default `600 ms`):**
+  - Snapshots plain text or RGBA image data (`arboard`) before writing the transcript. Waits `600 ms` (after Enter) and only restores the previous clipboard if the clipboard still equals the injected transcript, preventing race conditions and preserving user copies made during the window.
+- **Loud failure guards:**
+  - Detects macOS `IsSecureEventInputEnabled()` (Carbon) and Windows UIPI privilege mismatch (target process elevated while `saywhen` is not), plus 3-second main-thread dispatch timeouts (reporting honestly that injection may have happened late). Every failure path copies the transcript to the clipboard and emits both `pipeline-error` and `utterance-complete.injectionError`.
 
 ## State machine
 
