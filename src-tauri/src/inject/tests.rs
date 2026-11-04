@@ -295,3 +295,21 @@ fn test_clipboard_image_preservation_roundtrip() {
         });
     }
 }
+
+#[test]
+fn test_saywhen_bundle_id_matches_tauri_identifier() {
+    let conf: serde_json::Value =
+        serde_json::from_str(include_str!("../../tauri.conf.json")).expect("tauri.conf.json parses");
+    assert_eq!(conf["identifier"].as_str(), Some(SAYWHEN_BUNDLE_ID));
+}
+
+#[test]
+fn test_enter_skipped_when_focus_moves_after_paste() {
+    let terminal = app("Terminal", Some("com.apple.Terminal"), Some("Terminal"), Some(8001));
+    let slack = app("Slack", Some("com.tinyspeck.slackmacgap"), Some("Slack"), Some(8002));
+    let own = app("saywhen", Some(SAYWHEN_BUNDLE_ID), None, Some(std::process::id()));
+
+    assert!(should_press_enter_after_paste(&terminal, &terminal.clone()));
+    assert!(!should_press_enter_after_paste(&terminal, &slack));
+    assert!(!should_press_enter_after_paste(&terminal, &own));
+}
