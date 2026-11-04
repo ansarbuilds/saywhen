@@ -89,6 +89,13 @@ pub struct DictationConfig {
     pub auto_press_enter: bool,
     pub use_clipboard_paste: bool,
     pub preferred_device: Option<String>,
+    /// Show the floating always-on-top HUD pill. Defaulted so older settings files still load.
+    #[serde(default = "default_true")]
+    pub hud_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for DictationConfig {
@@ -108,6 +115,7 @@ impl Default for DictationConfig {
             auto_press_enter: true,
             use_clipboard_paste: true,
             preferred_device: None,
+            hud_enabled: true,
         }
     }
 }
@@ -159,6 +167,10 @@ pub struct AudioTelemetryEvent {
     pub vision_active: bool,
     pub vision_armed: bool,
     pub vision_lips_moving: bool,
+    /// The user turned the camera gate on in the UI. Combined with `vision_active == false`
+    /// this means vision frames stopped arriving (for example a throttled hidden webview).
+    pub camera_enabled: bool,
+    pub hud_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +221,7 @@ struct SharedCaptureBuffer {
     trigger_source: String,
     vision: VisionTelemetryPayload,
     last_vision_update: Option<Instant>,
+    camera_enabled: bool,
 }
 
 impl SharedCaptureBuffer {
@@ -229,6 +242,7 @@ impl SharedCaptureBuffer {
             trigger_source: "manual".to_string(),
             vision: VisionTelemetryPayload::default(),
             last_vision_update: None,
+            camera_enabled: false,
         }
     }
 
@@ -296,6 +310,7 @@ pub enum AudioCommand {
     BeginPreview(PendingPreviewItem),
     SwitchDevice(Option<String>),
     UpdateVision(VisionTelemetryPayload),
+    SetCameraGateEnabled(bool),
 }
 
 pub struct AudioPipelineController {
@@ -361,6 +376,21 @@ impl AudioPipelineController {
 
     pub fn current_state(&self) -> String {
         self.shared.lock().unwrap().state.as_str().to_string()
+    }
+
+    pub fn is_in_preview(&self) -> bool {
+        self.shared.lock().unwrap().state == PipelineState::PREVIEW
+    }
+
+    /// Flip the HUD pill visibility setting, persist it, and return the updated config.
+    pub fn toggle_hud_enabled(&self) -> DictationConfig {
+        let updated = {
+            let mut guard = self.config.lock().unwrap();
+            guard.hud_enabled = !guard.hud_enabled;
+            guard.clone()
+        };
+        updated.save_to_disk();
+        updated
     }
 }
 
@@ -710,6 +740,10 @@ fn run_audio_worker(
                 }
                 AudioCommand::UpdateVision(vision_payload) => {
                     let mut guard = shared.lock().unwrap();
+                    if !guard.camera_enabled {
+                        // Drop frames that were in flight when the camera gate was paused.
+                        continue;
+                    }
                     let gesture = vision_payload.gesture.clone();
                     guard.vision = vision_payload;
                     guard.last_vision_update = Some(Instant::now());
@@ -760,6 +794,17 @@ fn run_audio_worker(
                         PipelineState::TRANSCRIBING => {}
                     }
                 }
+                AudioCommand::SetCameraGateEnabled(enabled) => {
+                    let mut guard = shared.lock().unwrap();
+                    guard.camera_enabled = enabled;
+                    if !enabled {
+                        guard.vision = VisionTelemetryPayload::default();
+                        guard.last_vision_update = None;
+                        if guard.state == PipelineState::ARMED {
+                            guard.state = PipelineState::IDLE;
+                        }
+                    }
+                }
                 AudioCommand::SwitchDevice(pref) => {
                     drop(active_stream.take());
                     match build_cpal_stream(
@@ -805,6 +850,8 @@ fn run_audio_worker(
                             vision_active: false,
                             vision_armed: false,
                             vision_lips_moving: false,
+                            camera_enabled: shared.lock().unwrap().camera_enabled,
+                            hud_enabled: cfg.hud_enabled,
                         },
                     );
 
@@ -1038,11 +1085,29 @@ fn run_audio_worker(
                         && guard.vision.face_present
                         && guard.vision.facing_screen,
                     vision_lips_moving: vision_fresh && guard.vision.lips_moving,
+                    camera_enabled: guard.camera_enabled,
+                    hud_enabled: cfg.hud_enabled,
                 }
             };
             let _ = app_handle.emit("audio-telemetry", payload);
         }
 
         thread::sleep(Duration::from_millis(12));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settings_without_hud_field_still_load() {
+        // A settings.local.json written before the HUD existed must not fall back to defaults.
+        let mut legacy = serde_json::to_value(DictationConfig::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("hudEnabled");
+        legacy["vadThreshold"] = serde_json::json!(0.7);
+        let parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
+        assert!(parsed.hud_enabled);
+        assert!((parsed.vad_threshold - 0.7).abs() < f32::EPSILON);
     }
 }

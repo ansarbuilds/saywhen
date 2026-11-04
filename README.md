@@ -103,7 +103,9 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | [src-tauri/src/transcribe.rs](src-tauri/src/transcribe.rs) | `whisper-rs` Metal GPU engine, model downloader, end-phrase stripping |
 | [src-tauri/src/cleanup.rs](src-tauri/src/cleanup.rs) | Deterministic developer CLI/code cleanup pass and destructive command guard |
 | [src-tauri/src/inject.rs](src-tauri/src/inject.rs) | Main-thread `enigo` + `arboard` clipboard injection and macOS/Windows frontmost app policy engine |
-| [src/main.ts](src/main.ts) | 15 FPS MediaPipe Face Landmarker gate, head gesture detector, VAD oscilloscope, Preview HUD |
+| [src-tauri/src/hud.rs](src-tauri/src/hud.rs) | Floating HUD pill placement, preview-only global `Esc` cancel, tray menu, close-to-background |
+| [src/main.ts](src/main.ts) | 15 FPS MediaPipe Face Landmarker gate (Worker-ticked so it survives a hidden window), head gesture detector, VAD oscilloscope, Preview HUD |
+| [src/hud.ts](src/hud.ts) / [hud.html](hud.html) | Click-through, always-on-top HUD pill and preview card |
 | [spikes/stage1-mediapipe/](spikes/stage1-mediapipe/) | Standalone Stage 1 MediaPipe feasibility sensor bench |
 | [docs/VISION.md](docs/VISION.md) | Problem, trigger and stop logic, user flow, the demo |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Stack, pipeline, state machine, privacy design |

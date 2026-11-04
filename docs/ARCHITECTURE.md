@@ -33,6 +33,13 @@ mic -> cpal -> ring buffer -> Silero VAD ----------------+--> intent gate (Rust)
 
 The webview sends only derived numbers (landmark-based features such as MAR, yaw, pitch, face present, gesture events) to Rust over Tauri IPC. Raw frames never leave the webview process memory.
 
+### Windows and background run
+
+- `main` window: settings, webcam preview and the vision loop. Closing it hides it; the app keeps running (tray menu or macOS Dock reopen brings it back). The vision loop is ticked by a dedicated Worker timer so it keeps running when the window is hidden, and skips DOM work while hidden.
+- `hud` window: transparent, always-on-top, non-focusable and click-through (`set_ignore_cursor_events(true)`). It only listens to backend events (`audio-telemetry`, `preview-started`, `utterance-complete`, ...) and never takes focus, so the frontmost app stays the injection target.
+- Because the HUD cannot be clicked, `src-tauri/src/hud.rs` registers a global `Esc` shortcut only while the pipeline is in `PREVIEW` and unregisters it right after, so saywhen never swallows `Esc` outside the countdown.
+- The backend tracks whether the camera gate is switched on (`set_camera_gate_enabled`). Telemetry carries `cameraEnabled` and `visionActive`, and the HUD shows a stall warning when the gate is on but frames stopped arriving.
+
 ## State machine
 
 ```
