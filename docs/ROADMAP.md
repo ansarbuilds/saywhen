@@ -89,6 +89,17 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   - [x] **6. Record frontmost detection time before and after (median of 20 calls):** **Verified on macOS (Apple M4):**
     - **Before (`/usr/bin/lsappinfo` two-subprocess pipeline):** median **`8,336.0 us` (`8.336 ms`)**, min `7,018 us` (`7.018 ms`), max `13,518 us` (`13.518 ms`).
     - **After (`NSWorkspace.sharedWorkspace.frontmostApplication` via `objc2-app-kit`):** median **`1.0 us to 2.0 us` (`0.001 ms to 0.002 ms`)**, min `1 us`, max `1,886 us` (`1.886 ms` on first cold call). Over **4,000x faster** median latency on macOS. (Windows Win32 `QueryFullProcessImageNameW` implementation is not yet benchmarked on Windows hardware.)
+- **Follow-up review fixes (2026-11-04, branch `main-bjms27`):**
+  1. `SAYWHEN_BUNDLE_ID` was `dev.saywhen.desktop` but the real identifier in `tauri.conf.json` is `dev.saywhen.app`, so self-detection by bundle id never matched (the PID check still covered the normal case). Fixed, with a test that reads `tauri.conf.json`.
+  2. After a 3 s main-thread timeout, the queued paste and Enter could still run later, possibly into another app. The queued keystrokes are now cancelled before any key is sent; if they had already started, the error says injection may have happened late.
+  3. The paste-to-Enter delay (up to 400 ms) was slept on the main thread, blocking the app event loop. Paste and Enter are now two separate main-thread dispatches with the delay slept on the worker thread, and the frontmost app is re-checked before Enter: if focus moved, Enter is skipped with a HUD notice (`should_press_enter_after_paste`, tested).
+  4. Security: injection messages, error text and app names (which come from other processes) were inserted into the main window with `innerHTML` unescaped, so a crafted app name could run script with access to saywhen commands. Now escaped (`escapeHtml` in `src/main.ts`).
+  5. Notes: `src-tauri/src/inject.rs` is about 800 lines, above the 500-line split target. The macOS and Windows modules were type-checked on Linux with `cargo check --target aarch64-apple-darwin` and `--target x86_64-pc-windows-msvc` in an isolated crate; they have not been run on Windows.
+
+## Improvement #3: Turn-taking robustness
+- **Status:** Partly started 2026-11-04. Full pass specified in `docs/prompts/next-03-turn-taking.md`.
+- **Done now:** Whisper often invents "Thank you.", "Thanks for watching!" or "you" on coughs, noise and silence, and in hands-free mode those could be auto-sent with Enter. Whole-transcript matches are now dropped when peak VAD is below `0.85` (a lone "you" is always dropped), and an `utterance-discarded` event tells the HUD why nothing was sent. Short real replies such as "yes", "no", "okay" are never dropped (unit tested). The `0.85` threshold is assumed, not measured.
+- **Next:** measurement harness and replay set, arming hysteresis, minimum speech evidence, adaptive end of turn, post-roll, data-driven hallucination threshold.
 
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
