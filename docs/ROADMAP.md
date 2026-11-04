@@ -60,7 +60,7 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 - Exit: documented, cross-platform ready, and pushed to GitHub.
 
 ## Post-Stage 5: Floating HUD pill and background vision
-- **Status:** Implemented on 2026-11-03. Compiles and unit tests pass on Linux; not yet verified on macOS or Windows hardware.
+- **Status:** Implemented on 2026-11-03. Compiles and unit tests pass on Linux. Manually checked on macOS on 2026-11-04 (pill visible, injection lands in Terminal, global Esc cancel, close-to-background with camera gate, tray menu). Not yet measured: 10+ minute hidden-window vision run. Not yet tested on Windows.
 - Transparent, always-on-top, non-focusable, click-through `hud` window (`hud.html`, `src/hud.ts`, `src-tauri/src/hud.rs`) placed bottom-center of the primary work area. Shows state, mic level, listening timer, preview text with countdown, injection result, and a loud warning when the camera gate is on but vision frames stopped.
 - Global `Esc` registered only while in `PREVIEW`, so the click-through HUD is still cancelable without stealing focus from the target app.
 - Closing the main window hides it; saywhen keeps running with the HUD and camera gate. Tray menu: open, pause/resume camera gate, show/hide HUD, cancel, quit. macOS Dock reopen shows the window. Without a tray (and outside macOS) closing quits.
