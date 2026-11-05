@@ -3,584 +3,650 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>saywhen - Hands-Free Voice Input for Developers</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="color-scheme" content="dark" />
+    <title>saywhen</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body>
+  <body data-state="IDLE">
+    <div class="ambient" aria-hidden="true"></div>
+
     <div class="app-shell">
-      <header class="topbar">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-drag" data-tauri-drag-region></div>
+
         <div class="brand">
-          <div class="brand-logo">
-            <span class="brand-dot"></span>
+          <div class="brand-mark" aria-hidden="true">
+            <span class="brand-mark-core"></span>
           </div>
-          <div>
-            <div class="brand-title-row">
-              <h1>saywhen</h1>
-              <span class="stage-tag">STAGE 4: CLEANUP, PREVIEW &amp; AUTO-ENTER</span>
-            </div>
-            <p class="brand-sub">
-              Webcam intent gate + 500 ms ring buffer + Metal Whisper + Developer code cleanup + Cancelable preview + Per-app rules
-            </p>
+          <div class="brand-text">
+            <h1>saywhen</h1>
+            <span class="brand-sub">Look. Talk. Sent.</span>
           </div>
         </div>
 
-        <div class="topbar-Cluster">
-          <button class="metric-pill pill-button" id="onboarding-open-btn" title="Open Setup &amp; Permissions Checklist">
-            <span class="dot dot-emerald"></span>
-            <span>Onboarding &amp; Setup</span>
+        <nav class="nav" id="app-nav" aria-label="Sections">
+          <span class="nav-indicator" id="nav-indicator" aria-hidden="true"></span>
+          <button class="nav-item is-active" data-tab="home" aria-current="page">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 8.6 10 3.5l6.5 5.1V16a.9.9 0 0 1-.9.9h-3.3v-4.6H7.7v4.6H4.4a.9.9 0 0 1-.9-.9z" /></svg>
+            <span>Home</span>
+            <kbd class="nav-kbd" data-mod>1</kbd>
           </button>
-          <div class="metric-pill" id="preroll-pill">
-            <span class="dot dot-emerald"></span>
-            <span>Pre-Roll: <strong id="preroll-val">500 ms</strong></span>
-          </div>
-          <button class="metric-pill pill-button" id="accessibility-pill" title="Click to open macOS Accessibility Settings">
+          <button class="nav-item" data-tab="preferences">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h7M15 5.5h1M4 10h2M10 10h6M4 14.5h8M16 14.5h0" /><circle cx="13" cy="5.5" r="1.8" /><circle cx="8" cy="10" r="1.8" /><circle cx="14" cy="14.5" r="1.8" /></svg>
+            <span>Preferences</span>
+            <kbd class="nav-kbd" data-mod>2</kbd>
+          </button>
+          <button class="nav-item" data-tab="lab">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 3.5h4M8.6 3.5v4.4L4.3 15a1.1 1.1 0 0 0 .95 1.6h9.5a1.1 1.1 0 0 0 .95-1.6L11.4 7.9V3.5M6.2 12.2h7.6" /></svg>
+            <span>Lab</span>
+            <kbd class="nav-kbd" data-mod>3</kbd>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="sidebar-label">System</span>
+          <button class="status-row" id="accessibility-pill" title="Open Accessibility settings">
             <span class="dot" id="ax-dot"></span>
             <span id="ax-text">Checking Accessibility...</span>
           </button>
-          <div class="gate-status-badge" id="pipeline-badge">
+          <div class="status-row status-static" id="preroll-pill" title="Audio captured before speech was detected">
+            <span class="dot dot-emerald"></span>
+            <span>Pre-roll <strong id="preroll-val">500 ms</strong></span>
+          </div>
+          <button class="status-row" id="onboarding-open-btn" title="Setup and permissions checklist">
+            <svg class="status-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" /><path d="M10 9.2v4M10 6.6v.1" /></svg>
+            <span>Setup guide</span>
+          </button>
+          <div class="privacy-note">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8 4.5 5v4.4c0 3.6 2.4 6.4 5.5 7.8 3.1-1.4 5.5-4.2 5.5-7.8V5z" /></svg>
+            <span>Everything runs on this device</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Content -->
+      <div class="content">
+        <header class="content-header" data-tauri-drag-region>
+          <div class="page-heading" data-tauri-drag-region>
+            <h2 id="page-title" data-tauri-drag-region>Home</h2>
+            <span id="page-subtitle" data-tauri-drag-region>Dictation and recent history</span>
+          </div>
+          <div class="gate-status-badge" id="pipeline-badge" aria-live="polite">
             <span class="gate-pulse"></span>
             <span id="pipeline-state-label">IDLE</span>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <section class="state-stepper-bar">
-        <div class="state-step active" id="step-idle">
-          <span class="step-num">1</span>
-          <div>
-            <div class="step-name">IDLE</div>
-            <div class="step-desc">Camera paused or looking away</div>
-          </div>
-        </div>
-        <div class="step-arrow">&rarr;</div>
-        <div class="state-step" id="step-armed">
-          <span class="step-num">2</span>
-          <div>
-            <div class="step-name">ARMED</div>
-            <div class="step-desc">Face present &amp; facing screen</div>
-          </div>
-        </div>
-        <div class="step-arrow">&rarr;</div>
-        <div class="state-step" id="step-listening">
-          <span class="step-num">3</span>
-          <div>
-            <div class="step-name">LISTENING</div>
-            <div class="step-desc">Lips + VAD (500ms pre-roll)</div>
-          </div>
-        </div>
-        <div class="step-arrow">&rarr;</div>
-        <div class="state-step" id="step-transcribing">
-          <span class="step-num">4</span>
-          <div>
-            <div class="step-name">TRANSCRIBING</div>
-            <div class="step-desc">Metal Whisper + Code Cleanup</div>
-          </div>
-        </div>
-        <div class="step-arrow">&rarr;</div>
-        <div class="state-step" id="step-preview">
-          <span class="step-num">5</span>
-          <div>
-            <div class="step-name">PREVIEW</div>
-            <div class="step-desc">Cancelable countdown &rarr; Send</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="preview-hud hidden" id="preview-hud">
-        <div class="preview-hud-top">
-          <div class="preview-title-cluster">
-            <span class="preview-live-pill">CANCELABLE PREVIEW</span>
-            <span class="preview-policy-badge" id="preview-policy-badge">Target: Terminal (Paste + Enter)</span>
-            <span class="preview-countdown-text" id="preview-countdown-text">Sending in 1.8s...</span>
-          </div>
-          <div class="preview-actions">
-            <button id="preview-send-btn" class="btn btn-record-start">
-              <span>Send Now (Enter / Nod)</span>
-            </button>
-            <button id="preview-cancel-btn" class="btn btn-record-stop">
-              <span>Cancel (Esc / Shake)</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="preview-body">
-          <input
-            type="text"
-            id="preview-text-input"
-            class="preview-text-input"
-            spellcheck="false"
-            autocomplete="off"
-          />
-          <div class="preview-raw-diff hidden" id="preview-raw-diff">
-            <span>Raw Whisper:</span>
-            <code id="preview-raw-text"></code>
-          </div>
-        </div>
-
-        <div class="preview-progress-track">
-          <div class="preview-progress-fill" id="preview-progress-fill"></div>
-        </div>
-      </section>
-
-      <section class="command-deck" id="command-deck">
-        <div class="deck-left">
-          <div class="rec-indicator-wrap">
-            <span class="rec-live-dot" id="rec-live-dot"></span>
-            <div>
-              <div class="deck-title" id="deck-status">Ready for Voice Input</div>
-              <div class="deck-subtitle" id="deck-subtitle">
-                Enable Camera Gate for hands-free look-and-talk, or press <kbd>Option</kbd> + <kbd>Space</kbd>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="deck-center">
-          <div class="timer-display">
-            <span class="timer-label">UTTERANCE</span>
-            <span class="timer-value" id="utterance-timer">00:00.0</span>
-          </div>
-          <div class="sample-counter-display">
-            <span class="timer-label">CANCELED SENDS</span>
-            <span class="sample-counter-value" id="canceled-sends-stat">0 saved</span>
-          </div>
-          <div class="sample-counter-display">
-            <span class="timer-label">FALSE TRIGGERS</span>
-            <span class="sample-counter-value" id="false-trigger-stat">0 (0.0%)</span>
-          </div>
-          <div class="active-tag-display">
-            <span class="timer-label">MODEL</span>
-            <span class="active-tag-pill" id="active-model-pill">whisper-tiny.en</span>
-          </div>
-        </div>
-
-        <div class="deck-actions">
-          <button id="toggle-camera-btn" class="btn btn-camera">
-            <span class="btn-icon-circle"></span>
-            <span id="toggle-camera-label">Enable Camera Gate</span>
-          </button>
-          <button id="start-listen-btn" class="btn btn-record-start">
-            <span>Manual Start</span>
-          </button>
-          <button id="stop-listen-btn" class="btn btn-record-stop" disabled>
-            <span class="btn-icon-square"></span>
-            <span>Stop &amp; Transcribe</span>
-          </button>
-          <button id="cancel-listen-btn" class="btn btn-ghost" disabled>
-            Cancel
-          </button>
-        </div>
-      </section>
-
-      <div id="error-banner" class="error-banner hidden">
-        <div class="error-banner-content">
-          <span class="error-badge">ALERT</span>
-          <span id="error-banner-text"></span>
-        </div>
-        <button id="error-dismiss-btn" class="btn-xs">Dismiss</button>
-      </div>
-
-      <main class="workspace-grid">
-        <section class="left-col">
-          <div class="vision-audio-split">
-            <div class="panel vision-panel">
-              <div class="panel-header">
-                <div class="panel-title-group">
-                  <h2>Webcam Intent Gate (15 FPS In-Memory)</h2>
-                  <span class="panel-hint">Frames stay in webview memory; only derived numbers cross IPC</span>
+        <div class="views">
+          <!-- HOME -->
+          <section class="view is-active" data-view="home" id="view-home">
+            <section class="hero" id="command-deck">
+              <div class="hero-main">
+                <div class="orb" aria-hidden="true">
+                  <span class="orb-ripple"></span>
+                  <span class="orb-ripple orb-ripple-2"></span>
+                  <span class="orb-ring"></span>
+                  <span class="orb-spinner"></span>
+                  <span class="orb-core">
+                    <span class="orb-bars"><i></i><i></i><i></i><i></i><i></i></span>
+                  </span>
                 </div>
-                <div class="vision-pills">
+
+                <div class="hero-copy">
+                  <div class="hero-eyebrow">
+                    <span class="rec-live-dot" id="rec-live-dot"></span>
+                    <span class="hero-state-word" id="hero-state-word">Idle</span>
+                    <span class="hero-sep" aria-hidden="true"></span>
+                    <span class="timer-value" id="utterance-timer">00:00.0</span>
+                    <span class="active-tag-pill" id="active-model-pill" title="Active Whisper model">whisper-tiny.en</span>
+                  </div>
+                  <h3 class="deck-title" id="deck-status">Ready when you are</h3>
+                  <p class="deck-subtitle" id="deck-subtitle">
+                    Turn on the camera gate for hands-free dictation, or press <kbd>Option</kbd> <kbd>Space</kbd>
+                  </p>
+                </div>
+
+                <div class="hero-actions">
+                  <button id="toggle-camera-btn" class="btn btn-camera">
+                    <span class="btn-icon-circle"></span>
+                    <span id="toggle-camera-label">Enable Camera Gate</span>
+                  </button>
                   <button
                     id="calibrate-vision-btn"
-                    class="btn-xs btn-accent"
-                    title="Look at your target coding screen with a relaxed closed mouth for 1.5s to calibrate neutral yaw, pitch, and resting MAR"
+                    class="btn btn-secondary"
+                    title="Look at your coding screen with a relaxed, closed mouth for 1.5s to calibrate neutral yaw, pitch and resting lip opening"
                   >
-                    Calibrate Gaze (1.5s)
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.2" /><path d="M10 2.8v2.4M10 14.8v2.4M2.8 10h2.4M14.8 10h2.4" /></svg>
+                    <span>Calibrate Gaze (1.5s)</span>
                   </button>
+                </div>
+              </div>
+
+              <div class="hero-footer">
+                <ol class="state-stepper-bar" aria-label="Pipeline">
+                  <li class="state-step active" id="step-idle">
+                    <span class="step-num">1</span>
+                    <div>
+                      <div class="step-name">Idle</div>
+                      <div class="step-desc">Waiting for you</div>
+                    </div>
+                  </li>
+                  <li class="state-step" id="step-armed">
+                    <span class="step-num">2</span>
+                    <div>
+                      <div class="step-name">Armed</div>
+                      <div class="step-desc">Facing the screen</div>
+                    </div>
+                  </li>
+                  <li class="state-step" id="step-listening">
+                    <span class="step-num">3</span>
+                    <div>
+                      <div class="step-name">Listening</div>
+                      <div class="step-desc">Lips and voice</div>
+                    </div>
+                  </li>
+                  <li class="state-step" id="step-transcribing">
+                    <span class="step-num">4</span>
+                    <div>
+                      <div class="step-name">Transcribing</div>
+                      <div class="step-desc">Whisper and cleanup</div>
+                    </div>
+                  </li>
+                  <li class="state-step" id="step-preview">
+                    <span class="step-num">5</span>
+                    <div>
+                      <div class="step-name">Preview</div>
+                      <div class="step-desc">Cancel or send</div>
+                    </div>
+                  </li>
+                </ol>
+
+                <div class="manual-controls">
+                  <div class="segmented">
+                    <button id="start-listen-btn" class="seg-btn" title="Start recording manually">
+                      <span class="seg-dot"></span><span>Record</span>
+                    </button>
+                    <button id="stop-listen-btn" class="seg-btn" title="Stop and transcribe" disabled>
+                      <span class="btn-icon-square"></span><span>Stop</span>
+                    </button>
+                    <button id="cancel-listen-btn" class="seg-btn" title="Discard this utterance" disabled>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="preview-hud hidden" id="preview-hud" aria-live="polite">
+              <div class="preview-hud-top">
+                <div class="preview-title-cluster">
+                  <span class="preview-live-pill">Preview</span>
+                  <span class="preview-policy-badge" id="preview-policy-badge">Target: Terminal (Paste + Enter)</span>
+                </div>
+                <span class="preview-countdown-text" id="preview-countdown-text">Sending in 1.8s...</span>
+              </div>
+
+              <div class="preview-body">
+                <input
+                  type="text"
+                  id="preview-text-input"
+                  class="preview-text-input"
+                  spellcheck="false"
+                  autocomplete="off"
+                  aria-label="Text to send"
+                />
+                <div class="preview-raw-diff hidden" id="preview-raw-diff">
+                  <span>Heard</span>
+                  <code id="preview-raw-text"></code>
+                </div>
+              </div>
+
+              <div class="preview-footer">
+                <div class="preview-progress-track">
+                  <div class="preview-progress-fill" id="preview-progress-fill"></div>
+                </div>
+                <div class="preview-actions">
+                  <button id="preview-cancel-btn" class="btn btn-ghost btn-sm">
+                    <span>Cancel</span><kbd>Esc</kbd>
+                  </button>
+                  <button id="preview-send-btn" class="btn btn-primary btn-sm">
+                    <span>Send now</span><kbd>Enter</kbd>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <div class="home-grid">
+              <section class="card vision-panel">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Camera</h4>
+                    <span class="card-hint">In memory only</span>
+                  </div>
                   <button
                     id="reset-calibration-btn"
-                    class="btn-xs"
-                    title="Reset calibrated head pose and resting MAR offsets to defaults"
+                    class="btn-xs btn-quiet"
+                    title="Reset calibrated head pose and resting lip offsets to defaults"
                   >
-                    Reset
+                    Reset calibration
                   </button>
-                  <span class="gauge-tag" id="fps-pill">FPS: OFF</span>
-                  <span class="gauge-tag" id="gaze-pill">GAZE: OFF</span>
-                  <span class="gauge-tag" id="lip-pill">LIPS: STILL</span>
                 </div>
-              </div>
-              <div class="webcam-stage">
-                <video id="webcam-video" autoplay playsinline muted></video>
-                <canvas id="webcam-overlay"></canvas>
-                <div class="webcam-placeholder" id="webcam-placeholder">
-                  <p>Camera Gate Paused</p>
-                  <span>Click <strong>Enable Camera Gate</strong> above to activate hands-free look-and-talk</span>
+                <div class="webcam-stage">
+                  <video id="webcam-video" autoplay playsinline muted></video>
+                  <canvas id="webcam-overlay"></canvas>
+                  <div class="webcam-vignette" aria-hidden="true"></div>
+                  <div class="webcam-placeholder" id="webcam-placeholder">
+                    <div class="placeholder-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h9a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 14 18H5a1.5 1.5 0 0 1-1.5-1.5zM15.5 10.5 20.5 7.5v9l-5-3" /></svg>
+                    </div>
+                    <p>Camera gate is off</p>
+                    <span>Turn it on to dictate just by looking at the screen and talking.</span>
+                  </div>
+                  <div class="vision-pills">
+                    <span class="gauge-tag" id="gaze-pill">GAZE: OFF</span>
+                    <span class="gauge-tag" id="lip-pill">LIPS: STILL</span>
+                    <span class="gauge-tag" id="fps-pill">FPS: OFF</span>
+                  </div>
                 </div>
-              </div>
-              <div class="vision-metrics-row">
-                <div class="v-metric">
-                  <span class="v-label">Yaw / Pitch</span>
-                  <span class="v-val" id="val-pose">0.0&deg; / 0.0&deg;</span>
-                </div>
-                <div class="v-metric">
-                  <span class="v-label">MAR / Var</span>
-                  <span class="v-val" id="val-mar">0.000 / 0.00</span>
-                </div>
-                <div class="v-metric">
-                  <span class="v-label">Head Gesture</span>
+                <div class="card-footer-row">
+                  <span class="v-label">Head gesture</span>
                   <span class="v-val" id="val-gesture">None</span>
+                  <span class="card-footer-hint">Nod to send, shake to cancel</span>
                 </div>
-                <div class="v-metric">
-                  <span class="v-label">Calibrated Center</span>
-                  <span class="v-val" id="val-calibration">0.0&deg; / 0.0&deg; | 0.016</span>
+              </section>
+
+              <section class="card transcript-panel">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Recent</h4>
+                    <span class="gauge-tag tag-ok" id="history-ttl-badge" title="Utterances older than 7 days are deleted automatically">7d Local</span>
+                  </div>
+                  <div class="feed-tools">
+                    <label class="search-field">
+                      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5" /><path d="m13 13 3.5 3.5" /></svg>
+                      <input
+                        type="search"
+                        id="history-search-input"
+                        class="history-search-input"
+                        placeholder="Search"
+                        autocomplete="off"
+                        spellcheck="false"
+                      />
+                    </label>
+                    <button id="clear-feed-btn" class="btn-xs btn-quiet" title="Clear the feed and delete local history">Clear</button>
+                  </div>
                 </div>
-              </div>
+
+                <div class="transcript-list" id="transcript-list">
+                  <div class="empty-feed" id="empty-feed">
+                    <div class="empty-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                    <strong>Nothing dictated yet</strong>
+                    <span>Your last 7 days of dictation will appear here, searchable and one click to copy.</span>
+                  </div>
+                </div>
+              </section>
             </div>
+          </section>
 
-            <div class="panel chart-panel">
-              <div class="panel-header">
-                <div class="panel-title-group">
-                  <h2>Multimodal Fusion Timeline</h2>
-                  <span class="panel-hint">Silero VAD + Mic RMS + Speech Gate</span>
-                </div>
-                <div class="chart-legend">
-                  <span class="legend-item"><i class="swatch swatch-vad"></i>VAD</span>
-                  <span class="legend-item"><i class="swatch swatch-rms"></i>RMS</span>
-                  <span class="legend-item"><i class="swatch swatch-thresh"></i>Gate</span>
-                </div>
-              </div>
-              <div class="chart-container">
-                <canvas id="vad-canvas"></canvas>
-              </div>
-              <div class="mini-gauges-row">
-                <div class="mini-gauge">
-                  <span class="v-label">Silero VAD</span>
-                  <strong id="val-vad-prob">0.00</strong>
-                  <span class="gauge-tag" id="vad-state-tag">SILENCE</span>
-                </div>
-                <div class="mini-gauge">
-                  <span class="v-label">Mic RMS</span>
-                  <strong id="val-rms">0.000</strong>
-                  <span class="gauge-tag" id="mic-device-tag">Default Mic</span>
-                </div>
-                <div class="mini-gauge">
-                  <span class="v-label">Metal Whisper</span>
-                  <strong id="val-latency">-- ms</strong>
-                  <span class="gauge-tag" id="rtf-tag">RTF --</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="panel terminal-panel">
-            <div class="panel-header">
-              <div class="panel-title-group">
-                <h2>Interactive Terminal &amp; Cleanup Sandbox</h2>
-                <span class="panel-hint">Try saying: "Um, cargo test dash dash release" and watch Cleanup + Preview in action</span>
-              </div>
-              <div class="terminal-header-actions">
-                <button id="demo-cleanup-btn" class="btn-xs btn-accent" title="Simulate a spoken developer command through Cleanup + Preview">
-                  Simulate Cleanup Preview
-                </button>
-                <button id="clear-terminal-btn" class="btn-xs">Clear Log</button>
-              </div>
-            </div>
-            <div class="terminal-box">
-              <div class="terminal-history" id="terminal-history">
-                <div class="term-line term-muted"># Focus the input line below, speak or click "Simulate Cleanup Preview"</div>
-              </div>
-              <div class="terminal-input-row">
-                <span class="term-prompt">saywhen@mac ~ %</span>
-                <input
-                  type="text"
-                  id="terminal-input"
-                  class="terminal-input"
-                  placeholder="Click here, look at the screen, and speak..."
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <aside class="right-col">
-          <div class="panel settings-panel">
-            <div class="panel-header">
-              <div class="panel-title-group">
-                <h2>Stage 4: Cleanup, Preview &amp; Per-App Rules</h2>
-                <span class="panel-hint">Safe auto-submit with cancelable countdown and app allowlist</span>
-              </div>
-            </div>
-
-            <div class="settings-body">
-              <div class="two-col-fields">
-                <div class="field-group">
-                  <label class="field-label" for="device-select">Microphone (cpal)</label>
-                  <select id="device-select" class="select-control"></select>
-                </div>
-
-                <div class="field-group">
-                  <div class="field-label-row">
-                    <label class="field-label" for="model-select">Whisper Model</label>
-                    <button id="download-model-btn" class="btn-xs btn-accent hidden">Download</button>
-                  </div>
-                  <select id="model-select" class="select-control"></select>
-                </div>
-              </div>
-
-              <div class="two-col-fields">
-                <div class="field-group">
-                  <div class="field-label-row">
-                    <label class="field-label" for="vad-thresh-slider">VAD Threshold</label>
-                    <span class="mono-val" id="vad-thresh-display">0.45</span>
-                  </div>
-                  <input
-                    type="range"
-                    id="vad-thresh-slider"
-                    min="0.20"
-                    max="0.80"
-                    step="0.05"
-                    value="0.45"
-                    class="range-slider"
-                  />
-                </div>
-
-                <div class="field-group">
-                  <div class="field-label-row">
-                    <label class="field-label" for="preview-countdown-slider">Preview Window</label>
-                    <span class="mono-val" id="preview-countdown-display">1800 ms</span>
-                  </div>
-                  <input
-                    type="range"
-                    id="preview-countdown-slider"
-                    min="800"
-                    max="3500"
-                    step="100"
-                    value="1800"
-                    class="range-slider"
-                  />
-                </div>
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="allowlist-input">Auto-Enter Terminal &amp; Agent Allowlist (Paste-Only elsewhere)</label>
-                <input
-                  type="text"
-                  id="allowlist-input"
-                  class="text-control"
-                  value="Terminal, iTerm2, Warp, Ghostty, Cursor, Code, Zed, Antigravity, Claude"
-                />
-              </div>
-
-              <div class="field-group">
-                <label class="field-label" for="custom-vocab-input">Custom Developer Vocabulary (Exact Casing &amp; Compound Terms)</label>
-                <input
-                  type="text"
-                  id="custom-vocab-input"
-                  class="text-control"
-                  placeholder="e.g. saywhen, MediaPipe, Silero, whisper-rs, TypeScript"
-                  value=""
-                />
-              </div>
-
-              <div class="toggles-list">
-                <label class="toggle-row">
+          <!-- PREFERENCES -->
+          <section class="view" data-view="preferences" id="view-preferences">
+            <div class="prefs">
+              <section class="pref-section">
+                <header class="pref-section-head">
+                  <span class="pref-icon pref-icon-voice" aria-hidden="true">
+                    <svg viewBox="0 0 20 20"><rect x="7.5" y="3" width="5" height="9" rx="2.5" /><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5V17" /></svg>
+                  </span>
                   <div>
-                    <div class="toggle-title">Developer Code Cleanup Pass</div>
-                    <div class="toggle-desc">Fixes CLI homophones (kubectl, git, npm), stitches thinking pauses, converts "dash dash" &rarr; "--", applies custom vocab</div>
+                    <h3>Voice &amp; Turn-Taking</h3>
+                    <p>How saywhen hears you and decides you are done talking.</p>
                   </div>
-                  <input type="checkbox" id="toggle-cleanup" checked />
-                </label>
+                </header>
+                <div class="pref-group">
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="device-select">Microphone</label>
+                    </div>
+                    <div class="pref-control">
+                      <select id="device-select" class="select-control"></select>
+                    </div>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="model-select">Whisper model</label>
+                      <span class="pref-desc">Runs locally on the GPU</span>
+                    </div>
+                    <div class="pref-control pref-control-inline">
+                      <button id="download-model-btn" class="btn-xs btn-accent hidden">Download</button>
+                      <select id="model-select" class="select-control"></select>
+                    </div>
+                  </div>
+                  <div class="pref-row pref-row-slider">
+                    <div class="pref-text">
+                      <label class="field-label" for="vad-thresh-slider">Speech sensitivity</label>
+                      <span class="pref-desc">Voice activity threshold. Higher ignores more background noise.</span>
+                    </div>
+                    <div class="pref-control slider-control">
+                      <input type="range" id="vad-thresh-slider" min="0.20" max="0.80" step="0.05" value="0.45" class="range-slider" />
+                      <span class="mono-val" id="vad-thresh-display">0.45</span>
+                    </div>
+                  </div>
+                  <div class="pref-row pref-row-slider">
+                    <div class="pref-text">
+                      <label class="field-label" for="preview-countdown-slider">Preview countdown</label>
+                      <span class="pref-desc">How long you get to cancel before text is sent.</span>
+                    </div>
+                    <div class="pref-control slider-control">
+                      <input type="range" id="preview-countdown-slider" min="800" max="3500" step="100" value="1800" class="range-slider" />
+                      <span class="mono-val" id="preview-countdown-display">1800 ms</span>
+                    </div>
+                  </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Hands-free camera gate</div>
+                      <div class="toggle-desc">Start listening when you face the screen, your lips move and speech is detected.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-hands-free" checked />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Battery saver frame rate</div>
+                      <div class="toggle-desc">15 FPS while active, dropping to 8 or 5 FPS when you look away.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-adaptive-fps" checked />
+                  </label>
+                </div>
+              </section>
 
-                <label class="toggle-row">
+              <section class="pref-section">
+                <header class="pref-section-head">
+                  <span class="pref-icon pref-icon-delivery" aria-hidden="true">
+                    <svg viewBox="0 0 20 20"><path d="M3.5 10 16.5 4l-4.5 12.5-2.6-5.1z" /><path d="m9.4 11.4 7.1-7.4" /></svg>
+                  </span>
                   <div>
-                    <div class="toggle-title">Cancelable Countdown Preview Before Send</div>
-                    <div class="toggle-desc">Cancel with Esc, head shake, or button before injection</div>
+                    <h3>Delivery &amp; App Rules</h3>
+                    <p>Where your words go, and when Enter gets pressed.</p>
                   </div>
-                  <input type="checkbox" id="toggle-preview" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Per-App Auto-Enter Rules &amp; Destructive Guard</div>
-                    <div class="toggle-desc">Auto-Enter in terminals/agents; Paste-Only in chat/email &amp; rm -rf</div>
-                  </div>
-                  <input type="checkbox" id="toggle-per-app" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Hands-Free Visual Gate (IDLE &rarr; ARMED &rarr; LISTENING)</div>
-                    <div class="toggle-desc">Start when facing screen + lips moving + VAD speech</div>
-                  </div>
-                  <input type="checkbox" id="toggle-hands-free" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Auto-Press Enter in Allowed Apps</div>
-                    <div class="toggle-desc">Press Return after pasting into allowed terminals and agents</div>
-                  </div>
-                  <input type="checkbox" id="toggle-auto-enter" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Floating HUD Pill</div>
-                    <div class="toggle-desc">Click-through, always-on-top status pill and preview. Closing this window keeps saywhen running in the background</div>
-                  </div>
-                  <input type="checkbox" id="toggle-hud" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Adaptive Vision Frame Rate (Battery &amp; CPU Saver)</div>
-                    <div class="toggle-desc">Run at 15 FPS when armed/speaking; scale down to 8 FPS (face away) and 5 FPS (no face) in IDLE</div>
-                  </div>
-                  <input type="checkbox" id="toggle-adaptive-fps" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">7-Day Local Utterance History (Auto-Purged)</div>
-                    <div class="toggle-desc">Persist recent transcripts in OS app data dir and auto-delete entries older than 7 days; uncheck or click Clear to purge</div>
-                  </div>
-                  <input type="checkbox" id="toggle-history-persistence" checked />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Opt-In Local Ollama / BYOK LLM Cleanup Pass</div>
-                    <div class="toggle-desc">Off by default. Sends cleaned transcript to local Ollama (127.0.0.1:11434) or OpenAI-compatible endpoint (1.2s timeout)</div>
-                  </div>
-                  <input type="checkbox" id="toggle-llm-cleanup" />
-                </label>
-
-                <div id="llm-cleanup-fields" class="two-col-fields hidden">
-                  <div class="field-group">
-                    <label class="field-label" for="llm-endpoint-input">LLM Endpoint URL</label>
+                </header>
+                <div class="pref-group">
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Auto-press Enter</div>
+                      <div class="toggle-desc">Press Return after pasting into allowed terminals and agents.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-auto-enter" checked />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Cancelable preview</div>
+                      <div class="toggle-desc">Show a countdown before sending. Cancel with Esc, a head shake or the button.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-preview" checked />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Per-app rules and destructive guard</div>
+                      <div class="toggle-desc">Enter only in allowlisted apps. Chat, email and commands like rm -rf stay paste only.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-per-app" checked />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Floating HUD</div>
+                      <div class="toggle-desc">Always-on-top status pill. Closing this window keeps saywhen running.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-hud" checked />
+                  </label>
+                  <div class="pref-row pref-row-stack">
+                    <div class="pref-text">
+                      <label class="field-label" for="allowlist-input">Auto-Enter allowlist</label>
+                      <span class="pref-desc">Comma separated app names. Everything else is paste only.</span>
+                    </div>
                     <input
                       type="text"
-                      id="llm-endpoint-input"
+                      id="allowlist-input"
                       class="text-control"
-                      value="http://127.0.0.1:11434/v1/chat/completions"
+                      value="Terminal, iTerm2, Warp, Ghostty, Cursor, Code, Zed, Antigravity, Claude"
                     />
                   </div>
-                  <div class="field-group">
-                    <label class="field-label" for="llm-model-input">LLM Model</label>
+                  <div class="pref-row pref-row-stack">
+                    <div class="pref-text">
+                      <label class="field-label" for="custom-vocab-input">Custom vocabulary</label>
+                      <span class="pref-desc">Project names and identifiers, spelled exactly how you want them.</span>
+                    </div>
                     <input
                       type="text"
-                      id="llm-model-input"
+                      id="custom-vocab-input"
                       class="text-control"
-                      value="qwen2.5-coder:1.5b"
+                      placeholder="saywhen, MediaPipe, Silero, whisper-rs, TypeScript"
+                      value=""
                     />
                   </div>
                 </div>
+              </section>
 
-                <label class="toggle-row">
+              <section class="pref-section">
+                <header class="pref-section-head">
+                  <span class="pref-icon pref-icon-privacy" aria-hidden="true">
+                    <svg viewBox="0 0 20 20"><path d="M10 2.8 4.5 5v4.4c0 3.6 2.4 6.4 5.5 7.8 3.1-1.4 5.5-4.2 5.5-7.8V5z" /><path d="m7.6 10 1.7 1.7 3.2-3.4" /></svg>
+                  </span>
                   <div>
-                    <div class="toggle-title">Session Metrics Log (Opt-In, Privacy-Safe JSONL)</div>
-                    <div class="toggle-desc">Write per-utterance timing and VAD stats to OS app data dir (no transcript text, no audio)</div>
+                    <h3>AI &amp; Privacy</h3>
+                    <p>Cleanup passes and what is kept on disk.</p>
                   </div>
-                  <input type="checkbox" id="toggle-session-metrics" />
-                </label>
-
-                <label class="toggle-row">
-                  <div>
-                    <div class="toggle-title">Save Utterance Audio for Tuning (Opt-In, Resets on Restart)</div>
-                    <div class="toggle-desc">Save 16 kHz WAV + vision sidecar to local recordings/ folder; shows REC WAV badge in HUD</div>
+                </header>
+                <div class="pref-group">
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Developer code cleanup</div>
+                      <div class="toggle-desc">Fixes CLI homophones like kubectl and npm, turns "dash dash" into --, and applies your vocabulary.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-cleanup" checked />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">LLM cleanup <span class="badge-optin">Opt-in</span></div>
+                      <div class="toggle-desc">Send the cleaned transcript to local Ollama or your own OpenAI-compatible endpoint. 1.2s timeout.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-llm-cleanup" />
+                  </label>
+                  <div id="llm-cleanup-fields" class="llm-fields hidden">
+                    <div class="field-group">
+                      <label class="field-label" for="llm-endpoint-input">Endpoint URL</label>
+                      <input type="text" id="llm-endpoint-input" class="text-control" value="http://127.0.0.1:11434/v1/chat/completions" />
+                    </div>
+                    <div class="field-group">
+                      <label class="field-label" for="llm-model-input">Model</label>
+                      <input type="text" id="llm-model-input" class="text-control" value="qwen2.5-coder:1.5b" />
+                    </div>
                   </div>
-                  <input type="checkbox" id="toggle-save-audio" />
-                </label>
-              </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Keep 7 days of history</div>
+                      <div class="toggle-desc">Save recent transcripts in the app data folder. Older entries are deleted automatically. Turn off to keep history in memory only.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-history-persistence" checked />
+                  </label>
+                </div>
+                <p class="pref-footnote">Settings save automatically.</p>
+              </section>
             </div>
-          </div>
+          </section>
 
-          <div class="panel transcript-panel">
-            <div class="panel-header">
-              <div class="panel-title-group">
-                <h2>Utterance Feed &amp; Cleanup Audit</h2>
-                <span class="panel-hint">Shows cleaned code output, target app policy, and latency (auto-purged after 7 days)</span>
-              </div>
-              <div class="terminal-header-actions">
-                <input
-                  type="search"
-                  id="history-search-input"
-                  class="history-search-input"
-                  placeholder="Filter commands..."
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <span class="gauge-tag tag-ok" id="history-ttl-badge" title="Utterances older than 7 days are automatically purged from local storage">7d Local</span>
-                <button id="clear-feed-btn" class="btn-xs" title="Clear feed and delete local 7-day history file">Clear</button>
-              </div>
-            </div>
+          <!-- LAB -->
+          <section class="view" data-view="lab" id="view-lab">
+            <div class="lab-grid">
+              <section class="card chart-panel lab-span">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Multimodal Fusion Timeline</h4>
+                    <span class="card-hint">Silero VAD, mic RMS and speech gate</span>
+                  </div>
+                  <div class="chart-legend">
+                    <span class="legend-item"><i class="swatch swatch-vad"></i>VAD</span>
+                    <span class="legend-item"><i class="swatch swatch-rms"></i>RMS</span>
+                    <span class="legend-item"><i class="swatch swatch-thresh"></i>Gate</span>
+                  </div>
+                </div>
+                <div class="chart-container">
+                  <canvas id="vad-canvas"></canvas>
+                </div>
+                <div class="mini-gauges-row">
+                  <div class="mini-gauge">
+                    <span class="v-label">Silero VAD</span>
+                    <strong id="val-vad-prob">0.00</strong>
+                    <span class="gauge-tag" id="vad-state-tag">SILENCE</span>
+                  </div>
+                  <div class="mini-gauge">
+                    <span class="v-label">Mic RMS</span>
+                    <strong id="val-rms">0.000</strong>
+                    <span class="gauge-tag" id="mic-device-tag">Default Mic</span>
+                  </div>
+                  <div class="mini-gauge">
+                    <span class="v-label">Whisper latency</span>
+                    <strong id="val-latency">-- ms</strong>
+                    <span class="gauge-tag" id="rtf-tag">RTF --</span>
+                  </div>
+                </div>
+              </section>
 
-            <div class="transcript-list" id="transcript-list">
-              <div class="empty-feed" id="empty-feed">
-                No utterances yet. Speak a command or click <strong>Simulate Cleanup Preview</strong> to test Stage 4.
-              </div>
+              <section class="card">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Vision telemetry</h4>
+                    <span class="card-hint">Derived numbers only</span>
+                  </div>
+                </div>
+                <dl class="stat-list">
+                  <div><dt>Yaw / Pitch</dt><dd class="v-val" id="val-pose">0.0&deg; / 0.0&deg;</dd></div>
+                  <div><dt>MAR / Variance</dt><dd class="v-val" id="val-mar">0.000 / 0.00</dd></div>
+                  <div><dt>Calibrated center</dt><dd class="v-val" id="val-calibration">0.0&deg; / 0.0&deg; | 0.016</dd></div>
+                </dl>
+              </section>
+
+              <section class="card">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Session</h4>
+                    <span class="card-hint">Since launch</span>
+                  </div>
+                </div>
+                <dl class="stat-list">
+                  <div><dt>Canceled sends</dt><dd class="sample-counter-value" id="canceled-sends-stat">0 saved</dd></div>
+                  <div><dt>False triggers</dt><dd class="sample-counter-value" id="false-trigger-stat">0 (0.0%)</dd></div>
+                </dl>
+              </section>
+
+              <section class="card lab-span">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Tuning data</h4>
+                    <span class="card-hint">Opt-in, stored locally, for improving turn-taking</span>
+                  </div>
+                </div>
+                <div class="pref-group pref-group-flat">
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Session metrics log</div>
+                      <div class="toggle-desc">Per-utterance timing and VAD stats as JSONL. No transcript text, no audio.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-session-metrics" />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Save utterance audio</div>
+                      <div class="toggle-desc">16 kHz WAV plus vision sidecar in recordings/. Resets on restart and shows a REC badge in the HUD.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-save-audio" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="card terminal-panel lab-span">
+                <div class="card-header">
+                  <div class="card-title">
+                    <h4>Cleanup sandbox</h4>
+                    <span class="card-hint">Try: "um, cargo test dash dash release"</span>
+                  </div>
+                  <div class="terminal-header-actions">
+                    <button id="clear-terminal-btn" class="btn-xs btn-quiet">Clear</button>
+                    <button id="demo-cleanup-btn" class="btn-xs btn-accent" title="Run a sample spoken command through cleanup and preview">
+                      Simulate preview
+                    </button>
+                  </div>
+                </div>
+                <div class="terminal-box">
+                  <div class="terminal-history" id="terminal-history">
+                    <div class="term-line term-muted"># Focus the input below and speak, or click Simulate preview</div>
+                  </div>
+                  <div class="terminal-input-row">
+                    <span class="term-prompt">saywhen ~ %</span>
+                    <input
+                      type="text"
+                      id="terminal-input"
+                      class="terminal-input"
+                      placeholder="Click here, look at the screen, and speak"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </div>
+              </section>
             </div>
+          </section>
+        </div>
+
+        <div id="error-banner" class="error-banner hidden" role="alert">
+          <div class="error-banner-content">
+            <span class="error-badge" aria-hidden="true">!</span>
+            <span id="error-banner-text"></span>
           </div>
-        </aside>
-      </main>
+          <button id="error-dismiss-btn" class="btn-xs btn-quiet">Dismiss</button>
+        </div>
+      </div>
     </div>
 
     <div class="modal-backdrop hidden" id="onboarding-modal">
-      <div class="modal-card">
+      <div class="modal-card" role="dialog" aria-labelledby="onboarding-title">
         <div class="modal-header">
-          <div>
-            <span class="stage-tag">STAGE 5: ONBOARDING &amp; PRIVACY CHECKLIST</span>
-            <h2 class="modal-title">Welcome to saywhen</h2>
-            <p class="modal-sub">
-              100% local, hotkey-free voice input for coding agents and terminals (macOS &amp; Windows)
-            </p>
-          </div>
-          <button id="onboarding-close-btn" class="btn-xs">Close</button>
+          <div class="modal-mark" aria-hidden="true"><span class="brand-mark-core"></span></div>
+          <h2 class="modal-title" id="onboarding-title">Welcome to saywhen</h2>
+          <p class="modal-sub">Hands-free voice input for terminals and coding agents. Look at the screen, talk, and it is sent.</p>
+          <button id="onboarding-close-btn" class="modal-close" aria-label="Close">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8" /></svg>
+          </button>
         </div>
 
         <div class="onboarding-steps">
           <div class="ob-step">
-            <div class="ob-badge ob-ok">READY</div>
+            <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="7.5" y="3" width="5" height="9" rx="2.5" /><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5V17" /></svg></div>
             <div>
-              <div class="ob-title">1. Local On-Device Models (Silero VAD + Whisper Metal)</div>
-              <div class="ob-desc">
-                Audio is processed locally at 16 kHz with a 500 ms circular pre-roll ring buffer so your first syllable is never lost.
-              </div>
+              <div class="ob-title">On-device speech</div>
+              <div class="ob-desc">Silero VAD and Whisper run locally. A 500 ms pre-roll keeps your first syllable.</div>
             </div>
+            <div class="ob-badge ob-ok">Ready</div>
           </div>
-
           <div class="ob-step">
-            <div class="ob-badge ob-ok">IN-MEMORY</div>
+            <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z" /><circle cx="10" cy="10" r="2.2" /></svg></div>
             <div>
-              <div class="ob-title">2. Privacy-First Webcam Intent Gate (MediaPipe 15 FPS)</div>
-              <div class="ob-desc">
-                Camera frames stay inside webview memory and are immediately dropped. Only derived numbers (MAR, yaw, pitch) cross IPC.
-              </div>
+              <div class="ob-title">Private camera gate</div>
+              <div class="ob-desc">Frames stay in memory and are dropped instantly. Only head pose and lip numbers are used.</div>
             </div>
+            <div class="ob-badge ob-ok">In memory</div>
           </div>
-
           <div class="ob-step">
+            <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="11" rx="2" /><path d="m6.5 8.5 2 1.5-2 1.5M10.5 12h3" /></svg></div>
+            <div>
+              <div class="ob-title">Accessibility permission</div>
+              <div class="ob-desc">Needed to paste into your terminal. Chat apps and destructive commands stay paste only.</div>
+            </div>
             <div class="ob-badge ob-ok" id="ob-ax-badge">TRUSTED</div>
-            <div>
-              <div class="ob-title">3. OS Accessibility &amp; Per-App Auto-Enter Rules</div>
-              <div class="ob-desc">
-                Terminals and coding agents receive Paste + Enter after a cancelable 1.8s preview window. Chat apps and destructive commands stay Paste-Only.
-              </div>
-            </div>
           </div>
         </div>
 
         <div class="modal-footer">
-          <span class="panel-hint">Settings persist automatically to settings.local.json</span>
-          <button id="onboarding-done-btn" class="btn btn-record-start"> Ready to Dictate </button>
+          <span class="card-hint">You can reopen this from Setup guide in the sidebar.</span>
+          <button id="onboarding-done-btn" class="btn btn-primary">Start dictating</button>
         </div>
       </div>
     </div>
