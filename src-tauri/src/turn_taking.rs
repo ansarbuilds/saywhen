@@ -886,6 +886,82 @@ pub fn read_wav_mono_f32(path: &Path) -> Result<(Vec<f32>, u32), String> {
     Ok((out, sample_rate))
 }
 
+/// Timeout (ms) without any `cpal` input callback before the audio worker treats the active
+/// microphone stream as stalled/unplugged and attempts automatic hot-plug recovery.
+pub const AUDIO_STREAM_STALL_TIMEOUT_MS: u64 = 2_500;
+
+/// Wall-clock jump threshold (ms) between consecutive 12 ms worker ticks that indicates the OS
+/// slept, locked, or suspended the process.
+pub const SYSTEM_SLEEP_JUMP_THRESHOLD_MS: u64 = 3_000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AudioStreamRecoveryAction {
+    Healthy,
+    ReconnectAfterFaultOrStall { reason: String },
+    SwitchBackToPreferred { preferred: String },
+}
+
+/// Pure decision function for microphone hot-plug recovery and preferred-device restoration.
+pub fn evaluate_audio_stream_health(
+    stream_present: bool,
+    active_device_name: &str,
+    preferred_device: Option<&str>,
+    available_devices: &[String],
+    stream_faulted: bool,
+    ms_since_last_callback: Option<u64>,
+) -> AudioStreamRecoveryAction {
+    if !stream_present {
+        return AudioStreamRecoveryAction::ReconnectAfterFaultOrStall {
+            reason: "Microphone stream is not active".to_string(),
+        };
+    }
+    if stream_faulted {
+        return AudioStreamRecoveryAction::ReconnectAfterFaultOrStall {
+            reason: format!(
+                "Microphone '{}' reported a stream error or was unplugged",
+                active_device_name
+            ),
+        };
+    }
+    if let Some(elapsed_ms) = ms_since_last_callback {
+        if elapsed_ms >= AUDIO_STREAM_STALL_TIMEOUT_MS {
+            return AudioStreamRecoveryAction::ReconnectAfterFaultOrStall {
+                reason: format!(
+                    "Microphone '{}' stopped delivering audio for {} ms",
+                    active_device_name, elapsed_ms
+                ),
+            };
+        }
+    }
+    if let Some(pref) = preferred_device {
+        let pref_trimmed = pref.trim();
+        if !pref_trimmed.is_empty()
+            && active_device_name != pref_trimmed
+            && available_devices.iter().any(|d| d == pref_trimmed)
+        {
+            return AudioStreamRecoveryAction::SwitchBackToPreferred {
+                preferred: pref_trimmed.to_string(),
+            };
+        }
+    }
+    AudioStreamRecoveryAction::Healthy
+}
+
+/// Detects when wall-clock time between two loop ticks jumped by more than `threshold_ms`
+/// (`SYSTEM_SLEEP_JUMP_THRESHOLD_MS`), indicating system sleep, suspend, or screen lock.
+pub fn detect_system_sleep_or_stall_jump(
+    prev_wall_ms: u64,
+    now_wall_ms: u64,
+    threshold_ms: u64,
+) -> Option<u64> {
+    let delta = now_wall_ms.saturating_sub(prev_wall_ms);
+    if delta > threshold_ms {
+        Some(delta)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1213,6 +1289,80 @@ mod tests {
         assert_eq!(
             choose_adaptive_vision_tick_ms(false, false, false, false, 10_000),
             VISION_TICK_ACTIVE_MS
+        );
+    }
+
+    #[test]
+    fn test_audio_hotplug_recovery_and_preferred_device_restore() {
+        let devices = vec![
+            "MacBook Pro Microphone".to_string(),
+            "AirPods Pro".to_string(),
+        ];
+
+        // 1. Healthy stream on preferred device
+        assert_eq!(
+            evaluate_audio_stream_health(
+                true,
+                "AirPods Pro",
+                Some("AirPods Pro"),
+                &devices,
+                false,
+                Some(24),
+            ),
+            AudioStreamRecoveryAction::Healthy
+        );
+
+        // 2. Unplugged / faulted stream triggers ReconnectAfterFaultOrStall
+        assert!(matches!(
+            evaluate_audio_stream_health(
+                true,
+                "AirPods Pro",
+                Some("AirPods Pro"),
+                &devices[..1],
+                true,
+                Some(120),
+            ),
+            AudioStreamRecoveryAction::ReconnectAfterFaultOrStall { .. }
+        ));
+
+        // 3. Stalled callback (> 2,500 ms) triggers ReconnectAfterFaultOrStall
+        assert!(matches!(
+            evaluate_audio_stream_health(
+                true,
+                "AirPods Pro",
+                Some("AirPods Pro"),
+                &devices,
+                false,
+                Some(2_800),
+            ),
+            AudioStreamRecoveryAction::ReconnectAfterFaultOrStall { .. }
+        ));
+
+        // 4. Currently on fallback ("MacBook Pro Microphone"), and "AirPods Pro" reappears -> SwitchBackToPreferred
+        assert_eq!(
+            evaluate_audio_stream_health(
+                true,
+                "MacBook Pro Microphone",
+                Some("AirPods Pro"),
+                &devices,
+                false,
+                Some(20),
+            ),
+            AudioStreamRecoveryAction::SwitchBackToPreferred {
+                preferred: "AirPods Pro".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_system_sleep_wall_clock_jump_detection() {
+        assert_eq!(
+            detect_system_sleep_or_stall_jump(1_000_000, 1_000_015, SYSTEM_SLEEP_JUMP_THRESHOLD_MS),
+            None
+        );
+        assert_eq!(
+            detect_system_sleep_or_stall_jump(1_000_000, 1_045_000, SYSTEM_SLEEP_JUMP_THRESHOLD_MS),
+            Some(45_000)
         );
     }
 }
