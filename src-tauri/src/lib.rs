@@ -228,7 +228,8 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let app_handle = app.handle().clone();
-            let transcriber = Arc::new(TranscriberEngine::new());
+            let app_data_dir = app_handle.path().app_data_dir().ok();
+            let transcriber = Arc::new(TranscriberEngine::with_app_data_dir(app_data_dir));
             let audio_controller = Arc::new(AudioPipelineController::spawn(
                 app_handle.clone(),
                 Arc::clone(&transcriber),

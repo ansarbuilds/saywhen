@@ -172,6 +172,19 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Live Utterance Feed search (`#history-search-input`, `#history-ttl-badge`):**
      - Added real-time filtering across cleaned commands, raw transcripts, target app names, and trigger sources, plus a `7d Local` / `RAM Only` status badge.
 
+## Improvement #7: Audio hot-plug recovery, sleep/lock cooldown, and packaged model path resolution
+- **Status:** Implemented on 2026-11-04 on branch `feat/audio-resilience` (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/transcribe.rs`, `src-tauri/src/lib.rs`, `src/main.ts`). All 31 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 4 (real-time `cpal` stream health monitoring, preferred-device hot-plug state recovery, wall-clock sleep/wake race prevention, and packaged `.app`/`.exe` model storage resolution).
+- **What changed:**
+  1. **Automatic microphone hot-plug recovery and preferred-device restoration (`evaluate_audio_stream_health`, `AUDIO_STREAM_STALL_TIMEOUT_MS = 2,500 ms`):**
+     - Tracks `last_audio_callback_at` and `stream_faulted` in `SharedCaptureBuffer`. When a Bluetooth headset (AirPods) or USB mic disconnects (`StreamError` or `>= 2,500 ms` callback stall), the audio worker automatically rebuilds the `cpal` stream on the fallback default input device, emits `"audio-devices-changed"` so the UI dropdown refreshes live, and surfaces a clear notice (`test_audio_hotplug_recovery_and_preferred_device_restore`).
+     - When the user's configured `preferred_device` is plugged back in and reappears in `list_input_devices()`, `saywhen` automatically switches back to it whenever not actively recording or previewing.
+  2. **System sleep / screen lock safety guard (`detect_system_sleep_or_stall_jump`, `SYSTEM_SLEEP_JUMP_THRESHOLD_MS = 3,000 ms`):**
+     - Detects wall-clock jumps (`> 3,000 ms` between `12 ms` worker loop ticks) caused by closing the laptop lid or locking the screen (`test_system_sleep_wall_clock_jump_detection`).
+     - Immediately cancels any in-flight `LISTENING` or `PREVIEW` countdown on wake (so a stale preview never auto-fires `Enter` after wake), clears the audio ring buffer, disarms to `IDLE`, and resets the callback watchdog.
+  3. **App-bundle Whisper model path resolution (`TranscriberEngine::with_app_data_dir`):**
+     - Resolves existing models across `./models`, `../models`, and `<app_data_dir>/models`, and defaults new downloads to `<app_data_dir>/models` when running from a packaged `.app` or `.exe` outside the source repository.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
