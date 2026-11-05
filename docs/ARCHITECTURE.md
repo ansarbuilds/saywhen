@@ -11,7 +11,7 @@ Status: draft, pre-prototype. Everything here is a plan, not a measured result.
 - **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run, never committed.
 - **AI cleanup:** local LLM or bring-your-own-key provider. Optional, off by default until configured.
 - **Text injection:** `enigo` for keystrokes (`src-tauri/src/inject.rs`, `inject/macos.rs`, `inject/windows.rs`), clipboard paste via `arboard` as the default path, then a synthetic Enter after a length-scaled delay.
-- **Storage:** SQLite for transcript history, auto-purged after 7 days. Settings in a local config file.
+- **Storage:** `<app_data_dir>/utterance-history.jsonl` for 7-day local transcript history (`src-tauri/src/history.rs`), automatically pruned on startup and write (`HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`), with one-click purge. Settings in `settings.local.json`.
 
 ## Pipeline
 
@@ -121,7 +121,7 @@ A manual hotkey (`Option + Space`) can force LISTENING at any time with a lower 
 - Camera frames are processed in memory and dropped. No frame is written to disk, logged or sent over the network.
 - Only derived features cross the IPC boundary.
 - Audio segments are discarded after transcription unless the user opts in to keeping them.
-- Transcript history is stored locally in SQLite and purged after 7 days.
+- Transcript history is stored locally in `<app_data_dir>/utterance-history.jsonl` (when `historyPersistenceEnabled` is on) and automatically purged after 7 days (`src-tauri/src/history.rs`), or immediately deleted on disk when the user unchecks the toggle or clicks **Clear**.
 - No telemetry by default. Any network call (model download, BYOK cleanup) is explicit and visible in settings.
 - A clear on-screen indicator whenever the camera is active, plus a one-click pause.
 
