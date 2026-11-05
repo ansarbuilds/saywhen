@@ -198,6 +198,18 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   4. **Automated GitHub Actions CI (`.github/workflows/ci.yml`):**
      - Verifies zero em dashes, builds the TypeScript/Vite frontend (`npm ci && npm run build`), and runs the full Rust unit test suite (`cargo test --manifest-path src-tauri/Cargo.toml`) on every push and pull request.
 
+## Improvement #9: Modular injection split, Linux X11/Wayland detection, and macOS + Windows CI matrix
+- **Status:** Implemented on 2026-11-04 on branch `feat/modular-inject-and-linux-x11` (`src-tauri/src/inject.rs`, `src-tauri/src/inject/policy.rs`, `src-tauri/src/inject/linux.rs`, `src-tauri/src/inject/tests.rs`, `.github/workflows/ci.yml`). All 33 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 4 (cross-platform X11 `xprop`/`/proc` process inspection, Wayland guard detection, and modular injection refactoring below the 500-line split target).
+- **What changed:**
+  1. **Modularized `src-tauri/src/inject.rs` below the 500-line target (`349 lines`):**
+     - Extracted pure target-policy evaluation, allowlist matching, self-injection protection, and Enter-delay scaling into `src-tauri/src/inject/policy.rs` (`458 lines`).
+  2. **Stage 6 Linux X11 frontmost app detection and Wayland guard (`src-tauri/src/inject/linux.rs`):**
+     - Implemented `detect_frontmost_app` for Linux X11/XWayland using `_NET_ACTIVE_WINDOW`, `_NET_WM_PID`, `WM_CLASS`, `_NET_WM_NAME`, and `/proc/<pid>/exe`, plus canonical Linux terminal matching (`Alacritty`, `gnome-terminal-server`, `konsole`, `xfce4-terminal`, `kitty`, `wezterm-gui`, `zed-editor`, verified in `test_linux_xprop_parsing_and_terminal_allowlist`).
+     - Added `check_pre_injection_guard` on Linux to fail loudly with clipboard fallback when running in a pure Wayland session without an XWayland `DISPLAY`.
+  3. **Cross-platform macOS + Windows GitHub Actions matrix (`.github/workflows/ci.yml`):**
+     - Expanded the CI matrix to `[macos-latest, windows-latest]` so both the `objc2-app-kit` macOS path and `windows-sys` Win32 path compile and run unit tests on every push and PR.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.

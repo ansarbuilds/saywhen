@@ -313,3 +313,39 @@ fn test_enter_skipped_when_focus_moves_after_paste() {
     assert!(!should_press_enter_after_paste(&terminal, &slack));
     assert!(!should_press_enter_after_paste(&terminal, &own));
 }
+
+#[test]
+fn test_linux_xprop_parsing_and_terminal_allowlist() {
+    use super::linux::{parse_xprop_active_window_id, parse_xprop_window_props};
+
+    let root = "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x3a00007\n";
+    assert_eq!(
+        parse_xprop_active_window_id(root),
+        Some("0x3a00007".to_string())
+    );
+    assert_eq!(
+        parse_xprop_active_window_id("_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0\n"),
+        None
+    );
+
+    let props = "\
+_NET_WM_PID(CARDINAL) = 42190\n\
+WM_CLASS(STRING) = \"Alacritty\", \"Alacritty\"\n\
+_NET_WM_NAME(UTF8_STRING) = \"zsh - ~/Projects/saywhen\"\n";
+    let (display_name, wm_class, pid) = parse_xprop_window_props(props);
+    assert_eq!(display_name.as_deref(), Some("Alacritty"));
+    assert_eq!(wm_class.as_deref(), Some("Alacritty"));
+    assert_eq!(pid, Some(42190));
+
+    let allow = default_auto_send_allowlist();
+    let alacritty_linux = app("Alacritty", Some("Alacritty"), Some("alacritty"), Some(42190));
+    assert!(matches_allowlist(&alacritty_linux, &allow));
+
+    let gnome_term = app(
+        "Gnome-terminal",
+        Some("org.gnome.Terminal"),
+        Some("gnome-terminal-server"),
+        Some(42191),
+    );
+    assert!(matches_allowlist(&gnome_term, &allow));
+}
