@@ -13,8 +13,8 @@ use crate::turn_taking::{
     RecordedVisionSample, TuningRecordingSidecar, TurnState, TurnTakingConfig,
     UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
     DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
-    DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS, DEFAULT_MIN_SPEECH_HOTKEY_MS,
-    DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, VAD_FRAME_MS,
+    DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
+    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, VAD_FRAME_MS,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
@@ -152,6 +152,22 @@ pub struct DictationConfig {
     /// Always resets to `false` when the app restarts.
     #[serde(default)]
     pub save_tuning_audio_enabled: bool,
+    /// Per-user calibrated neutral head yaw offset in degrees (0.0 = centered on webcam).
+    #[serde(default)]
+    pub calibrated_yaw_offset_deg: f32,
+    /// Per-user calibrated neutral head pitch offset in degrees.
+    #[serde(default)]
+    pub calibrated_pitch_offset_deg: f32,
+    /// Per-user calibrated resting closed-mouth MAR baseline.
+    #[serde(default = "default_calibrated_resting_mar")]
+    pub calibrated_resting_mar: f32,
+    /// Adaptive vision frame rate (low FPS in IDLE when away/no-face, 15 FPS when facing screen or armed).
+    #[serde(default = "default_true")]
+    pub adaptive_fps_enabled: bool,
+}
+
+fn default_calibrated_resting_mar() -> f32 {
+    DEFAULT_CALIBRATED_RESTING_MAR
 }
 
 fn default_true() -> bool {
@@ -240,6 +256,10 @@ impl Default for DictationConfig {
             post_roll_ms: DEFAULT_POST_ROLL_MS,
             session_metrics_enabled: false,
             save_tuning_audio_enabled: false,
+            calibrated_yaw_offset_deg: 0.0,
+            calibrated_pitch_offset_deg: 0.0,
+            calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
+            adaptive_fps_enabled: true,
         }
     }
 }
@@ -271,6 +291,10 @@ impl DictationConfig {
             min_speech_ms: self.min_speech_ms,
             min_speech_hotkey_ms: self.min_speech_hotkey_ms,
             post_roll_ms: self.post_roll_ms,
+            calibrated_yaw_offset_deg: self.calibrated_yaw_offset_deg,
+            calibrated_pitch_offset_deg: self.calibrated_pitch_offset_deg,
+            calibrated_resting_mar: self.calibrated_resting_mar,
+            adaptive_fps_enabled: self.adaptive_fps_enabled,
         }
     }
 
@@ -1727,6 +1751,10 @@ mod tests {
         obj.remove("postRollMs");
         obj.remove("sessionMetricsEnabled");
         obj.remove("saveTuningAudioEnabled");
+        obj.remove("calibratedYawOffsetDeg");
+        obj.remove("calibratedPitchOffsetDeg");
+        obj.remove("calibratedRestingMar");
+        obj.remove("adaptiveFpsEnabled");
         legacy["vadThreshold"] = serde_json::json!(0.7);
         let mut parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
         assert!(parsed.hud_enabled);
@@ -1747,6 +1775,10 @@ mod tests {
         assert_eq!(parsed.post_roll_ms, DEFAULT_POST_ROLL_MS);
         assert!(!parsed.session_metrics_enabled);
         assert!(!parsed.save_tuning_audio_enabled);
+        assert_eq!(parsed.calibrated_yaw_offset_deg, 0.0);
+        assert_eq!(parsed.calibrated_pitch_offset_deg, 0.0);
+        assert!((parsed.calibrated_resting_mar - DEFAULT_CALIBRATED_RESTING_MAR).abs() < 1e-6);
+        assert!(parsed.adaptive_fps_enabled);
         assert!((parsed.vad_threshold - 0.7).abs() < f32::EPSILON);
 
         // Even if someone manually edited settings.local.json with saveTuningAudioEnabled = true,

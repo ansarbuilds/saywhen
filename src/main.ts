@@ -34,6 +34,10 @@ interface DictationConfig {
   postRollMs: number;
   sessionMetricsEnabled: boolean;
   saveTuningAudioEnabled: boolean;
+  calibratedYawOffsetDeg: number;
+  calibratedPitchOffsetDeg: number;
+  calibratedRestingMar: number;
+  adaptiveFpsEnabled: boolean;
 }
 
 interface VisionTelemetryPayload {
@@ -188,6 +192,10 @@ let currentConfig: DictationConfig = {
   postRollMs: 200,
   sessionMetricsEnabled: false,
   saveTuningAudioEnabled: false,
+  calibratedYawOffsetDeg: 0.0,
+  calibratedPitchOffsetDeg: 0.0,
+  calibratedRestingMar: 0.016,
+  adaptiveFpsEnabled: true,
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -214,7 +222,15 @@ let releaseVisionKeepAlive: (() => void) | null = null;
 // rAF stops entirely when the main window is hidden or occluded, and main-thread
 // timers get throttled, but messages posted from a dedicated worker keep arriving.
 // This is what lets the camera gate keep working while saywhen runs in the background.
-const VISION_TICK_MS = 66; // ~15 FPS
+const VISION_TICK_ACTIVE_MS = 66; // ~15.1 FPS when armed, listening, or facing screen
+const VISION_TICK_IDLE_AWAY_MS = 125; // 8.0 FPS when face present in IDLE but turned away > 3s
+const VISION_TICK_IDLE_NO_FACE_MS = 200; // 5.0 FPS when no face in frame > 3s (66.7% fewer inferences)
+let currentVisionTickMs = VISION_TICK_ACTIVE_MS;
+let lastFaceOnScreenTimestamp = 0;
+let currentPipelineState = 'IDLE';
+let calibratingUntilTimestamp = 0;
+const calibrationSamples: { yaw: number; pitch: number; mar: number }[] = [];
+
 const VISION_TICKER_SRC = `
   let id = null;
   onmessage = (e) => {
@@ -225,13 +241,21 @@ const VISION_TICKER_SRC = `
   };
 `;
 
+function setVisionTickerInterval(intervalMs: number) {
+  if (!visionTicker || currentVisionTickMs === intervalMs) return;
+  currentVisionTickMs = intervalMs;
+  visionTicker.postMessage({ intervalMs });
+}
+
 function startVisionTicker() {
   stopVisionTicker();
   const url = URL.createObjectURL(new Blob([VISION_TICKER_SRC], { type: 'text/javascript' }));
   visionTicker = new Worker(url);
   URL.revokeObjectURL(url);
+  currentVisionTickMs = VISION_TICK_ACTIVE_MS;
+  lastFaceOnScreenTimestamp = performance.now();
   visionTicker.onmessage = () => processVisionFrame(performance.now());
-  visionTicker.postMessage({ intervalMs: VISION_TICK_MS });
+  visionTicker.postMessage({ intervalMs: currentVisionTickMs });
 
   // A held Web Lock exempts the page from tab freezing in Chromium based webviews
   // (WebView2 on Windows), which the backgroundThrottling config cannot control there.
@@ -309,11 +333,15 @@ const webcamVideo = document.getElementById('webcam-video') as HTMLVideoElement;
 const webcamOverlay = document.getElementById('webcam-overlay') as HTMLCanvasElement;
 const overlayCtx = webcamOverlay.getContext('2d')!;
 const webcamPlaceholder = document.getElementById('webcam-placeholder') as HTMLElement;
+const calibrateVisionBtn = document.getElementById('calibrate-vision-btn') as HTMLButtonElement;
+const resetCalibrationBtn = document.getElementById('reset-calibration-btn') as HTMLButtonElement;
+const fpsPill = document.getElementById('fps-pill') as HTMLElement;
 const gazePill = document.getElementById('gaze-pill') as HTMLElement;
 const lipPill = document.getElementById('lip-pill') as HTMLElement;
 const valPose = document.getElementById('val-pose') as HTMLElement;
 const valMar = document.getElementById('val-mar') as HTMLElement;
 const valGesture = document.getElementById('val-gesture') as HTMLElement;
+const valCalibration = document.getElementById('val-calibration') as HTMLElement;
 
 const errorBanner = document.getElementById('error-banner') as HTMLElement;
 const errorBannerText = document.getElementById('error-banner-text') as HTMLElement;
@@ -350,10 +378,24 @@ const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputEleme
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleAutoEnter = document.getElementById('toggle-auto-enter') as HTMLInputElement;
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
+const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
 const toggleSessionMetrics = document.getElementById('toggle-session-metrics') as HTMLInputElement;
 const toggleSaveAudio = document.getElementById('toggle-save-audio') as HTMLInputElement;
 
 let facingScreenLatched = false;
+
+function formatSignedDeg(deg: number): string {
+  const rounded = Math.abs(deg) < 0.05 ? 0 : deg;
+  return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(1)}°`;
+}
+
+function updateCalibrationDisplay() {
+  if (!valCalibration) return;
+  const yaw0 = currentConfig.calibratedYawOffsetDeg || 0;
+  const pitch0 = currentConfig.calibratedPitchOffsetDeg || 0;
+  const mar0 = currentConfig.calibratedRestingMar || 0.016;
+  valCalibration.textContent = `${formatSignedDeg(yaw0)} / ${formatSignedDeg(pitch0)} | ${mar0.toFixed(3)}`;
+}
 
 const transcriptList = document.getElementById('transcript-list') as HTMLElement;
 const emptyFeed = document.getElementById('empty-feed') as HTMLElement;
@@ -477,6 +519,7 @@ function updatePipelineUiState(
   listeningDurationMs: number,
   previewRemainingMs: number
 ) {
+  currentPipelineState = state;
   pipelineStateLabel.textContent = state;
   pipelineBadge.className = 'gate-status-badge';
   commandDeck.classList.remove('is-armed', 'is-listening');
@@ -613,6 +656,8 @@ async function toggleCameraGate() {
     webcamPlaceholder.classList.remove('hidden');
     toggleCameraBtn.classList.remove('camera-active');
     toggleCameraLabel.textContent = 'Enable Camera Gate';
+    fpsPill.textContent = 'FPS: OFF';
+    fpsPill.className = 'gauge-tag';
     gazePill.textContent = 'GAZE: OFF';
     gazePill.className = 'gauge-tag';
     lipPill.textContent = 'LIPS: STILL';
@@ -668,11 +713,46 @@ function drawLipLandmarks(landmarks: NormalizedLandmark[], facing: boolean, lips
   }
 }
 
+function medianValue(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function finalizeVisionCalibration() {
+  calibratingUntilTimestamp = 0;
+  calibrateVisionBtn.disabled = false;
+  calibrateVisionBtn.textContent = 'Calibrate Gaze (1.5s)';
+  if (calibrationSamples.length < 5) {
+    showError(
+      'Calibration failed: face was not continuously detected. Look at your coding monitor with your face visible and try again.'
+    );
+    return;
+  }
+  const yaw0 = Math.max(
+    -45,
+    Math.min(45, medianValue(calibrationSamples.map((s) => s.yaw)))
+  );
+  const pitch0 = Math.max(
+    -35,
+    Math.min(35, medianValue(calibrationSamples.map((s) => s.pitch)))
+  );
+  const mar0 = Math.max(
+    0.006,
+    Math.min(0.045, medianValue(calibrationSamples.map((s) => s.mar)))
+  );
+  currentConfig.calibratedYawOffsetDeg = Number(yaw0.toFixed(2));
+  currentConfig.calibratedPitchOffsetDeg = Number(pitch0.toFixed(2));
+  currentConfig.calibratedRestingMar = Number(mar0.toFixed(4));
+  updateCalibrationDisplay();
+  void syncConfigToBackend();
+}
+
 function processVisionFrame(now: number) {
   if (!cameraRunning || !faceLandmarker) return;
 
   // Drop ticks that bunch up after a stall; detectForVideo needs increasing timestamps.
-  if (now - lastVisionFrameTime < VISION_TICK_MS * 0.8) return;
+  if (now - lastVisionFrameTime < currentVisionTickMs * 0.78) return;
   lastVisionFrameTime = now;
 
   // Some webviews pause <video> playback when the window is hidden. Resume it so frames keep flowing.
@@ -693,7 +773,11 @@ function processVisionFrame(now: number) {
       webcamOverlay.height = webcamVideo.videoHeight || 360;
     }
 
+    const inferStart = performance.now();
     const result = faceLandmarker.detectForVideo(webcamVideo, now);
+    const inferMs = performance.now() - inferStart;
+    const isCalibrating = calibratingUntilTimestamp > 0;
+
     if (result.faceLandmarks && result.faceLandmarks.length > 0) {
       const landmarks = result.faceLandmarks[0];
       const mar = computeMAR(landmarks);
@@ -720,16 +804,42 @@ function processVisionFrame(now: number) {
         pitch = pose.pitch;
       }
 
+      if (isCalibrating) {
+        calibrationSamples.push({ yaw, pitch, mar });
+        if (now >= calibratingUntilTimestamp) {
+          finalizeVisionCalibration();
+        }
+      }
+
       poseWindow.push({ timestamp: now, yaw, pitch });
       while (poseWindow.length > 0 && now - poseWindow[0].timestamp > 750) {
         poseWindow.shift();
       }
 
       let jawOpen = 0;
+      let smileScore = 0;
+      let mouthCloseScore = 0;
+      let speechArticulationScore = 0;
       if (result.faceBlendshapes && result.faceBlendshapes.length > 0) {
         const categories = result.faceBlendshapes[0].categories;
-        jawOpen = categories.find((c) => c.categoryName === 'jawOpen')?.score ?? 0;
+        const getScore = (name: string) =>
+          categories.find((c) => c.categoryName === name)?.score ?? 0;
+        jawOpen = getScore('jawOpen');
+        smileScore = (getScore('mouthSmileLeft') + getScore('mouthSmileRight')) * 0.5;
+        mouthCloseScore = getScore('mouthClose');
+        speechArticulationScore = Math.max(
+          getScore('mouthFunnel'),
+          getScore('mouthPucker'),
+          getScore('mouthShrugUpper'),
+          getScore('mouthLowerDownLeft'),
+          getScore('mouthLowerDownRight')
+        );
       }
+
+      const yawOffset = currentConfig.calibratedYawOffsetDeg || 0.0;
+      const pitchOffset = currentConfig.calibratedPitchOffsetDeg || 0.0;
+      const relYaw = yaw - yawOffset;
+      const relPitch = pitch - pitchOffset;
 
       const enterYaw = currentConfig.armYawEnterDeg || 20.0;
       const exitYaw = currentConfig.armYawExitDeg || 28.0;
@@ -737,41 +847,102 @@ function processVisionFrame(now: number) {
       const exitPitch = currentConfig.armPitchExitDeg || 25.0;
 
       if (!facingScreenLatched) {
-        if (Math.abs(yaw) <= enterYaw && Math.abs(pitch) <= enterPitch) {
+        if (Math.abs(relYaw) <= enterYaw && Math.abs(relPitch) <= enterPitch) {
           facingScreenLatched = true;
         }
-      } else if (Math.abs(yaw) > exitYaw || Math.abs(pitch) > exitPitch) {
+      } else if (Math.abs(relYaw) > exitYaw || Math.abs(relPitch) > exitPitch) {
         facingScreenLatched = false;
       }
 
       const facingScreen = facingScreenLatched;
+      if (facingScreen) {
+        lastFaceOnScreenTimestamp = now;
+      }
+
+      const restingMar = Math.max(
+        0.006,
+        Math.min(0.045, currentConfig.calibratedRestingMar || 0.016)
+      );
       const isYawning = mar > 0.45 || jawOpen > 0.35;
-      const activeLipMotion = !isYawning && mar >= 0.018 && marVariance >= 0.000012;
+      const isSmiling =
+        !isYawning &&
+        smileScore >= 0.45 &&
+        speechArticulationScore < 0.14 &&
+        mar < restingMar + 0.068;
+      const isChewing =
+        !isYawning &&
+        !isSmiling &&
+        jawOpen >= 0.055 &&
+        (mouthCloseScore >= 0.20 || mar < restingMar + 0.011) &&
+        speechArticulationScore < 0.15;
+
+      const minSpeechMar = Math.max(0.016, restingMar + 0.002);
+      const closedMarCeiling = Math.max(0.030, restingMar + 0.016);
+
+      const activeLipMotion =
+        !isYawning &&
+        !isSmiling &&
+        !isChewing &&
+        mar >= minSpeechMar &&
+        marVariance >= 0.000012;
 
       if (activeLipMotion) {
         lastLipsMovingTimestamp = now;
       }
-      const lipsMoving = facingScreen && !isYawning && now - lastLipsMovingTimestamp <= 300;
-      const mouthClosed = mar < 0.032 && marVariance < 0.00004;
+      const lipsMoving =
+        facingScreen &&
+        !isYawning &&
+        !isSmiling &&
+        !isChewing &&
+        now - lastLipsMovingTimestamp <= 300;
+      const mouthClosed =
+        isChewing ||
+        (isSmiling && mar < restingMar + 0.020) ||
+        (!isYawning && mar < closedMarCeiling && marVariance < 0.00004);
       const gesture = detectHeadGesture(now);
+
+      // Adaptive FPS scheduling: 15 FPS when active or on-screen, 8 FPS when face away > 3s in IDLE
+      const pipelineActive = currentPipelineState !== 'IDLE' || isCalibrating;
+      const desiredTickMs =
+        !currentConfig.adaptiveFpsEnabled ||
+        pipelineActive ||
+        facingScreen ||
+        now - lastFaceOnScreenTimestamp < 3000
+          ? VISION_TICK_ACTIVE_MS
+          : VISION_TICK_IDLE_AWAY_MS;
+      setVisionTickerInterval(desiredTickMs);
 
       if (renderUi) {
         drawLipLandmarks(landmarks, facingScreen, lipsMoving);
 
-        valPose.textContent = `${yaw.toFixed(1)}° / ${pitch.toFixed(1)}°`;
+        valPose.textContent = `${relYaw.toFixed(1)}° / ${relPitch.toFixed(1)}°`;
         valMar.textContent = `${mar.toFixed(3)} / ${(marVariance * 1000).toFixed(2)}`;
         if (gesture !== 'none') {
           valGesture.textContent = gesture.toUpperCase();
         }
+
+        const nominalFps = Math.round(1000 / currentVisionTickMs);
+        fpsPill.textContent =
+          currentVisionTickMs === VISION_TICK_ACTIVE_MS
+            ? `${nominalFps} FPS (${inferMs.toFixed(1)} ms)`
+            : `${nominalFps} FPS ECO (${inferMs.toFixed(1)} ms)`;
+        fpsPill.className =
+          currentVisionTickMs === VISION_TICK_ACTIVE_MS ? 'gauge-tag tag-ok' : 'gauge-tag';
 
         gazePill.textContent = facingScreen ? 'GAZE: ON SCREEN' : 'GAZE: AWAY';
         gazePill.className = facingScreen ? 'gauge-tag tag-ok' : 'gauge-tag tag-warn';
 
         lipPill.textContent = isYawning
           ? 'LIPS: YAWN CEILING'
-          : lipsMoving
-            ? 'LIPS: MOVING'
-            : 'LIPS: STILL';
+          : isSmiling
+            ? 'LIPS: SMILE FILTER'
+            : isChewing
+              ? 'LIPS: CHEW FILTER'
+              : lipsMoving
+                ? 'LIPS: MOVING'
+                : !mouthClosed
+                  ? 'LIPS: OPEN (THINKING)'
+                  : 'LIPS: STILL';
         lipPill.className = lipsMoving ? 'gauge-tag tag-ok' : 'gauge-tag';
       }
 
@@ -790,8 +961,27 @@ function processVisionFrame(now: number) {
         } satisfies VisionTelemetryPayload,
       });
     } else {
+      if (isCalibrating && now >= calibratingUntilTimestamp) {
+        finalizeVisionCalibration();
+      }
+
+      const pipelineActive = currentPipelineState !== 'IDLE' || isCalibrating;
+      const desiredTickMs =
+        !currentConfig.adaptiveFpsEnabled ||
+        pipelineActive ||
+        now - lastFaceOnScreenTimestamp < 3000
+          ? VISION_TICK_ACTIVE_MS
+          : VISION_TICK_IDLE_NO_FACE_MS;
+      setVisionTickerInterval(desiredTickMs);
+
       if (renderUi) {
         overlayCtx.clearRect(0, 0, webcamOverlay.width, webcamOverlay.height);
+        const nominalFps = Math.round(1000 / currentVisionTickMs);
+        fpsPill.textContent =
+          currentVisionTickMs === VISION_TICK_ACTIVE_MS
+            ? `${nominalFps} FPS`
+            : `${nominalFps} FPS ECO`;
+        fpsPill.className = 'gauge-tag';
         gazePill.textContent = 'NO FACE';
         gazePill.className = 'gauge-tag tag-warn';
         lipPill.textContent = 'LIPS: --';
@@ -1014,6 +1204,7 @@ async function syncConfigToBackend() {
     autoSendAllowlist: allowlist,
     autoPressEnter: toggleAutoEnter.checked,
     hudEnabled: toggleHud.checked,
+    adaptiveFpsEnabled: toggleAdaptiveFps.checked,
     sessionMetricsEnabled: toggleSessionMetrics.checked,
     saveTuningAudioEnabled: toggleSaveAudio.checked,
     preferredDevice: deviceSelect.value ? deviceSelect.value : null,
@@ -1021,6 +1212,7 @@ async function syncConfigToBackend() {
 
   vadThreshDisplay.textContent = currentConfig.vadThreshold.toFixed(2);
   previewCountdownDisplay.textContent = `${currentConfig.previewCountdownMs} ms`;
+  updateCalibrationDisplay();
 
   try {
     await invoke('update_dictation_config', { config: currentConfig });
@@ -1068,8 +1260,10 @@ async function initApp() {
     toggleHandsFree.checked = currentConfig.handsFreeEnabled;
     toggleAutoEnter.checked = currentConfig.autoPressEnter;
     toggleHud.checked = currentConfig.hudEnabled;
+    toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
+    updateCalibrationDisplay();
 
     updatePipelineUiState(snapshot.state, 0, 0);
   } catch (err) {
@@ -1127,8 +1321,10 @@ async function initApp() {
   await listen<DictationConfig>('dictation-config-updated', (event) => {
     currentConfig = event.payload;
     toggleHud.checked = currentConfig.hudEnabled;
+    toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
+    updateCalibrationDisplay();
   });
 
   await listen<string>('utterance-discarded', (event) => {
@@ -1138,6 +1334,32 @@ async function initApp() {
 
 // Event Listeners
 toggleCameraBtn.addEventListener('click', toggleCameraGate);
+
+calibrateVisionBtn.addEventListener('click', () => {
+  if (!cameraRunning) {
+    showError(
+      'Enable Camera Gate first, then look naturally at your target coding screen with a relaxed closed mouth and click Calibrate Gaze.'
+    );
+    return;
+  }
+  calibrationSamples.length = 0;
+  calibratingUntilTimestamp = performance.now() + 1500;
+  calibrateVisionBtn.disabled = true;
+  calibrateVisionBtn.textContent = 'Calibrating (Look at Screen)...';
+  setVisionTickerInterval(VISION_TICK_ACTIVE_MS);
+});
+
+resetCalibrationBtn.addEventListener('click', () => {
+  calibratingUntilTimestamp = 0;
+  calibrationSamples.length = 0;
+  calibrateVisionBtn.disabled = false;
+  calibrateVisionBtn.textContent = 'Calibrate Gaze (1.5s)';
+  currentConfig.calibratedYawOffsetDeg = 0.0;
+  currentConfig.calibratedPitchOffsetDeg = 0.0;
+  currentConfig.calibratedRestingMar = 0.016;
+  updateCalibrationDisplay();
+  void syncConfigToBackend();
+});
 
 startListenBtn.addEventListener('click', async () => {
   try {
@@ -1283,6 +1505,7 @@ togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleAutoEnter.addEventListener('change', syncConfigToBackend);
 toggleHud.addEventListener('change', syncConfigToBackend);
+toggleAdaptiveFps.addEventListener('change', syncConfigToBackend);
 toggleSessionMetrics.addEventListener('change', syncConfigToBackend);
 toggleSaveAudio.addEventListener('change', syncConfigToBackend);
 
@@ -1472,6 +1695,8 @@ function applyDocumentationDemoState(demoMode: string) {
       overlayCtx.fill();
     }
 
+    fpsPill.textContent = '15 FPS (4.1 ms)';
+    fpsPill.className = 'gauge-tag tag-ok';
     gazePill.textContent = 'GAZE: ON SCREEN';
     gazePill.className = 'gauge-tag tag-ok';
     lipPill.textContent = 'LIPS: MOVING';
@@ -1479,6 +1704,7 @@ function applyDocumentationDemoState(demoMode: string) {
     valPose.textContent = '-1.8° / +2.4°';
     valMar.textContent = '0.148 / 1.62';
     valGesture.textContent = 'NONE';
+    updateCalibrationDisplay();
 
     valVadProb.textContent = '0.94';
     vadStateTag.textContent = 'SPEECH';
@@ -1508,6 +1734,8 @@ function applyDocumentationDemoState(demoMode: string) {
     overlayCtx.lineTo(356, 228);
     overlayCtx.stroke();
 
+    fpsPill.textContent = '15 FPS (3.9 ms)';
+    fpsPill.className = 'gauge-tag tag-ok';
     gazePill.textContent = 'GAZE: ON SCREEN';
     gazePill.className = 'gauge-tag tag-ok';
     lipPill.textContent = 'LIPS: CLOSED';
@@ -1515,6 +1743,7 @@ function applyDocumentationDemoState(demoMode: string) {
     valPose.textContent = '-0.6° / +1.2°';
     valMar.textContent = '0.021 / 0.01';
     valGesture.textContent = 'NOD READY';
+    updateCalibrationDisplay();
 
     canceledSendsCount = 2;
     updateStatsDisplay();

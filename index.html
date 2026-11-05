@@ -196,6 +196,21 @@
                   <span class="panel-hint">Frames stay in webview memory; only derived numbers cross IPC</span>
                 </div>
                 <div class="vision-pills">
+                  <button
+                    id="calibrate-vision-btn"
+                    class="btn-xs btn-accent"
+                    title="Look at your target coding screen with a relaxed closed mouth for 1.5s to calibrate neutral yaw, pitch, and resting MAR"
+                  >
+                    Calibrate Gaze (1.5s)
+                  </button>
+                  <button
+                    id="reset-calibration-btn"
+                    class="btn-xs"
+                    title="Reset calibrated head pose and resting MAR offsets to defaults"
+                  >
+                    Reset
+                  </button>
+                  <span class="gauge-tag" id="fps-pill">FPS: OFF</span>
                   <span class="gauge-tag" id="gaze-pill">GAZE: OFF</span>
                   <span class="gauge-tag" id="lip-pill">LIPS: STILL</span>
                 </div>
@@ -220,6 +235,10 @@
                 <div class="v-metric">
                   <span class="v-label">Head Gesture</span>
                   <span class="v-val" id="val-gesture">None</span>
+                </div>
+                <div class="v-metric">
+                  <span class="v-label">Calibrated Center</span>
+                  <span class="v-val" id="val-calibration">0.0&deg; / 0.0&deg; | 0.016</span>
                 </div>
               </div>
             </div>
@@ -407,6 +426,14 @@
                     <div class="toggle-desc">Click-through, always-on-top status pill and preview. Closing this window keeps saywhen running in the background</div>
                   </div>
                   <input type="checkbox" id="toggle-hud" checked />
+                </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Adaptive Vision Frame Rate (Battery &amp; CPU Saver)</div>
+                    <div class="toggle-desc">Run at 15 FPS when armed/speaking; scale down to 8 FPS (face away) and 5 FPS (no face) in IDLE</div>
+                  </div>
+                  <input type="checkbox" id="toggle-adaptive-fps" checked />
                 </label>
 
                 <label class="toggle-row">
