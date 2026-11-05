@@ -5,6 +5,7 @@ description = "Hands-free, hotkey-free local voice input for developers"
 authors = ["Mohamed Ansar"]
 license = "MIT"
 edition = "2021"
+default-run = "saywhen"
 
 [lib]
 name = "saywhen_lib"

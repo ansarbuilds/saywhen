@@ -6,6 +6,7 @@ interface DictationConfig {
   handsFreeEnabled: boolean;
   vadThreshold: number;
   silenceTimeoutMs: number;
+  maxSilenceTimeoutMs: number;
   autoStopOnSilence: boolean;
   cleanupEnabled: boolean;
   previewEnabled: boolean;
@@ -22,6 +23,17 @@ interface DictationConfig {
   enterDelayMs: number;
   perAppEnterDelayMs: Record<string, number>;
   clipboardRestoreDelayMs: number;
+  armYawEnterDeg: number;
+  armYawExitDeg: number;
+  armPitchEnterDeg: number;
+  armPitchExitDeg: number;
+  armDwellMs: number;
+  disarmDwellMs: number;
+  minSpeechMs: number;
+  minSpeechHotkeyMs: number;
+  postRollMs: number;
+  sessionMetricsEnabled: boolean;
+  saveTuningAudioEnabled: boolean;
 }
 
 interface VisionTelemetryPayload {
@@ -65,6 +77,9 @@ interface AudioTelemetryEvent {
   preRollMs: number;
   listeningDurationMs: number;
   previewRemainingMs: number;
+  silenceRemainingMs?: number;
+  silenceTotalMs?: number;
+  postRollActive?: boolean;
   deviceName: string;
   speechDetectedInUtterance: boolean;
   visionActive: boolean;
@@ -72,6 +87,8 @@ interface AudioTelemetryEvent {
   visionLipsMoving: boolean;
   cameraEnabled: boolean;
   hudEnabled: boolean;
+  saveTuningAudioEnabled?: boolean;
+  sessionMetricsEnabled?: boolean;
 }
 
 interface TranscriptionResult {
@@ -118,6 +135,7 @@ interface InjectionOutcome {
 }
 
 interface UtteranceCompleteEvent {
+  utteranceId?: number;
   transcription: TranscriptionResult;
   cleanup: CleanupResult;
   targetPolicy: AppTargetPolicy;
@@ -132,6 +150,7 @@ let currentConfig: DictationConfig = {
   handsFreeEnabled: true,
   vadThreshold: 0.45,
   silenceTimeoutMs: 650,
+  maxSilenceTimeoutMs: 1350,
   autoStopOnSilence: true,
   cleanupEnabled: true,
   previewEnabled: true,
@@ -158,6 +177,17 @@ let currentConfig: DictationConfig = {
   enterDelayMs: 120,
   perAppEnterDelayMs: {},
   clipboardRestoreDelayMs: 600,
+  armYawEnterDeg: 20.0,
+  armYawExitDeg: 28.0,
+  armPitchEnterDeg: 18.0,
+  armPitchExitDeg: 25.0,
+  armDwellMs: 180,
+  disarmDwellMs: 300,
+  minSpeechMs: 250,
+  minSpeechHotkeyMs: 96,
+  postRollMs: 200,
+  sessionMetricsEnabled: false,
+  saveTuningAudioEnabled: false,
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -320,6 +350,10 @@ const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputEleme
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleAutoEnter = document.getElementById('toggle-auto-enter') as HTMLInputElement;
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
+const toggleSessionMetrics = document.getElementById('toggle-session-metrics') as HTMLInputElement;
+const toggleSaveAudio = document.getElementById('toggle-save-audio') as HTMLInputElement;
+
+let facingScreenLatched = false;
 
 const transcriptList = document.getElementById('transcript-list') as HTMLElement;
 const emptyFeed = document.getElementById('empty-feed') as HTMLElement;
@@ -697,7 +731,20 @@ function processVisionFrame(now: number) {
         jawOpen = categories.find((c) => c.categoryName === 'jawOpen')?.score ?? 0;
       }
 
-      const facingScreen = Math.abs(yaw) <= 22.0 && Math.abs(pitch) <= 20.0;
+      const enterYaw = currentConfig.armYawEnterDeg || 20.0;
+      const exitYaw = currentConfig.armYawExitDeg || 28.0;
+      const enterPitch = currentConfig.armPitchEnterDeg || 18.0;
+      const exitPitch = currentConfig.armPitchExitDeg || 25.0;
+
+      if (!facingScreenLatched) {
+        if (Math.abs(yaw) <= enterYaw && Math.abs(pitch) <= enterPitch) {
+          facingScreenLatched = true;
+        }
+      } else if (Math.abs(yaw) > exitYaw || Math.abs(pitch) > exitPitch) {
+        facingScreenLatched = false;
+      }
+
+      const facingScreen = facingScreenLatched;
       const isYawning = mar > 0.45 || jawOpen > 0.35;
       const activeLipMotion = !isYawning && mar >= 0.018 && marVariance >= 0.000012;
 
@@ -909,6 +956,9 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
       flagBtn.textContent = 'Flag False Trigger';
     }
     updateStatsDisplay();
+    if (typeof ev.utteranceId === 'number') {
+      void invoke('flag_false_trigger', { utteranceId: ev.utteranceId, flagged }).catch(() => undefined);
+    }
   });
 
   const copyBtn = card.querySelector('.btn-copy') as HTMLButtonElement;
@@ -964,6 +1014,8 @@ async function syncConfigToBackend() {
     autoSendAllowlist: allowlist,
     autoPressEnter: toggleAutoEnter.checked,
     hudEnabled: toggleHud.checked,
+    sessionMetricsEnabled: toggleSessionMetrics.checked,
+    saveTuningAudioEnabled: toggleSaveAudio.checked,
     preferredDevice: deviceSelect.value ? deviceSelect.value : null,
   };
 
@@ -1016,6 +1068,8 @@ async function initApp() {
     toggleHandsFree.checked = currentConfig.handsFreeEnabled;
     toggleAutoEnter.checked = currentConfig.autoPressEnter;
     toggleHud.checked = currentConfig.hudEnabled;
+    toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
+    toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
 
     updatePipelineUiState(snapshot.state, 0, 0);
   } catch (err) {
@@ -1073,6 +1127,12 @@ async function initApp() {
   await listen<DictationConfig>('dictation-config-updated', (event) => {
     currentConfig = event.payload;
     toggleHud.checked = currentConfig.hudEnabled;
+    toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
+    toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
+  });
+
+  await listen<string>('utterance-discarded', (event) => {
+    deckSubtitle.textContent = event.payload;
   });
 }
 
@@ -1223,6 +1283,8 @@ togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleAutoEnter.addEventListener('change', syncConfigToBackend);
 toggleHud.addEventListener('change', syncConfigToBackend);
+toggleSessionMetrics.addEventListener('change', syncConfigToBackend);
+toggleSaveAudio.addEventListener('change', syncConfigToBackend);
 
 modelSelect.addEventListener('change', async () => {
   const chosenId = modelSelect.value;

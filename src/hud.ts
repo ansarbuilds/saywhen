@@ -10,10 +10,14 @@ interface AudioTelemetryEvent {
   isSpeech: boolean;
   listeningDurationMs: number;
   previewRemainingMs: number;
+  silenceRemainingMs?: number;
+  silenceTotalMs?: number;
+  postRollActive?: boolean;
   visionActive: boolean;
   visionArmed: boolean;
   cameraEnabled: boolean;
   hudEnabled: boolean;
+  saveTuningAudioEnabled?: boolean;
 }
 
 interface PreviewStartedEvent {
@@ -36,12 +40,14 @@ interface UtteranceCompleteEvent {
 
 interface DictationConfigLite {
   hudEnabled: boolean;
+  saveTuningAudioEnabled?: boolean;
 }
 
 const FLASH_MS = 2600;
 
 const root = document.getElementById('hud-root') as HTMLElement;
 const label = document.getElementById('hud-label') as HTMLElement;
+const recBadge = document.getElementById('hud-rec') as HTMLElement | null;
 const detail = document.getElementById('hud-detail') as HTMLElement;
 const meterBars = Array.from(document.querySelectorAll<HTMLElement>('#hud-meter i'));
 const previewCard = document.getElementById('hud-preview') as HTMLElement;
@@ -85,6 +91,9 @@ function render(t: AudioTelemetryEvent) {
   root.classList.toggle('hud-off', !hudEnabled);
   root.dataset.state = t.state;
   label.textContent = t.state;
+  if (recBadge) {
+    recBadge.classList.toggle('hidden', !t.saveTuningAudioEnabled);
+  }
 
   const stalled = t.cameraEnabled && !t.visionActive;
   const now = performance.now();
@@ -93,9 +102,18 @@ function render(t: AudioTelemetryEvent) {
   let text: string;
   let warn = false;
   switch (t.state) {
-    case 'LISTENING':
-      text = `${formatSeconds(t.listeningDurationMs)}  pause, say "send it" or nod`;
+    case 'LISTENING': {
+      const rem = t.silenceRemainingMs ?? 0;
+      const tot = t.silenceTotalMs ?? 0;
+      if (t.postRollActive) {
+        text = `${formatSeconds(t.listeningDurationMs)}  finishing...`;
+      } else if (tot > 0 && rem < tot && rem <= tot - 120) {
+        text = `${formatSeconds(t.listeningDurationMs)}  end in ${(rem / 1000).toFixed(1)}s`;
+      } else {
+        text = `${formatSeconds(t.listeningDurationMs)}  pause, say "send it" or nod`;
+      }
       break;
+    }
     case 'TRANSCRIBING':
       text = 'Transcribing...';
       break;
@@ -192,6 +210,9 @@ async function initHud() {
   await listen<DictationConfigLite>('dictation-config-updated', (e) => {
     hudEnabled = e.payload.hudEnabled;
     root.classList.toggle('hud-off', !hudEnabled);
+    if (recBadge && typeof e.payload.saveTuningAudioEnabled === 'boolean') {
+      recBadge.classList.toggle('hidden', !e.payload.saveTuningAudioEnabled);
+    }
   });
 }
 
