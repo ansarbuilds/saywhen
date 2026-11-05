@@ -9,7 +9,7 @@ Status: draft, pre-prototype. Everything here is a plan, not a measured result.
 - **Audio capture:** `cpal` in Rust (`src-tauri/src/audio.rs`) with automatic hot-plug recovery (`evaluate_audio_stream_health`), preferred-device restoration, and wall-clock system sleep/lock detection (`detect_system_sleep_or_stall_jump`).
 - **Voice activity detection:** Silero VAD (ONNX).
 - **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run to `<app_data_dir>/models` in packaged `.app` / `.exe` builds (or `./models` in dev runs), never committed.
-- **AI cleanup:** local LLM or bring-your-own-key provider. Optional, off by default until configured.
+- **AI cleanup:** deterministic local developer pass (`src-tauri/src/cleanup.rs`, `< 50 us`) plus opt-in secondary local Ollama (`http://127.0.0.1:11434/v1/chat/completions`) or OpenAI-compatible BYOK pass (`run_opt_in_llm_cleanup`, off by default, `1.2s` timeout with deterministic fallback).
 - **Text injection:** `enigo` for keystrokes (`src-tauri/src/inject.rs`, `inject/macos.rs`, `inject/windows.rs`), clipboard paste via `arboard` as the default path, then a synthetic Enter after a length-scaled delay.
 - **Storage:** `<app_data_dir>/utterance-history.jsonl` for 7-day local transcript history (`src-tauri/src/history.rs`), automatically pruned on startup and write (`HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`), with one-click purge. Settings in `settings.local.json`.
 
