@@ -299,8 +299,10 @@ fn strip_end_phrase(input: &str) -> (String, bool) {
 }
 
 /// Peak Silero VAD probability at or above which a stock phrase is trusted as real speech.
-/// Assumed value, not yet measured: tune with recorded false triggers (see docs/prompts/next-03).
-const HALLUCINATION_TRUST_VAD: f32 = 0.85;
+/// Tuned from the 56-utterance macOS turn-taking corpus (`cargo run --bin replay`):
+/// real target speech (including short replies "yes", "no", "okay", "continue", "thank you")
+/// measured `peak_vad >= 0.957`, whereas non-speech breath/noise bursts peaked at `<= 0.89`.
+const HALLUCINATION_TRUST_VAD: f32 = 0.90;
 
 /// Phrases Whisper commonly invents on silence, noise, coughs or keyboard sounds.
 /// Matched against the whole transcript only, never as a substring.
@@ -316,6 +318,9 @@ const SILENCE_HALLUCINATION_PHRASES: &[&str] = &[
     "bye",
     "bye bye",
     "you",
+    "uh",
+    "um",
+    "hmm",
 ];
 
 fn normalize_for_phrase_match(input: &str) -> String {
@@ -379,14 +384,18 @@ mod tests {
     fn test_silence_hallucination_filter() {
         // Stock phrases on weak speech evidence are dropped.
         assert!(is_likely_silence_hallucination("Thank you.", 0.55));
+        assert!(is_likely_silence_hallucination("Thank you.", 0.88));
         assert!(is_likely_silence_hallucination(" Thanks for watching! ", 0.7));
+        assert!(is_likely_silence_hallucination("uh", 0.72));
+        assert!(is_likely_silence_hallucination("hmm...", 0.65));
         assert!(is_likely_silence_hallucination("you", 0.99));
-        // A confidently spoken "thank you" is kept.
-        assert!(!is_likely_silence_hallucination("Thank you.", 0.97));
+        // A confidently spoken "thank you" (measured >= 0.957 in corpus) is kept.
+        assert!(!is_likely_silence_hallucination("Thank you.", 0.96));
         // Short real replies to coding agents are never dropped.
         assert!(!is_likely_silence_hallucination("yes", 0.5));
         assert!(!is_likely_silence_hallucination("no", 0.5));
         assert!(!is_likely_silence_hallucination("okay", 0.5));
+        assert!(!is_likely_silence_hallucination("continue", 0.5));
         // Phrases inside a longer command are never touched.
         assert!(!is_likely_silence_hallucination("thank you, now run cargo test", 0.5));
         assert!(!is_likely_silence_hallucination("", 0.1));

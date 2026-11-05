@@ -3,6 +3,7 @@ pub mod cleanup;
 pub mod hud;
 pub mod inject;
 pub mod transcribe;
+pub mod turn_taking;
 
 use audio::{
     list_input_devices, AudioCommand, AudioPipelineController, DictationConfig,
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use transcribe::{ModelInfo, TranscriberEngine};
+use turn_taking::{update_false_trigger_flag_in_metrics, EndReason};
 
 pub struct AppState {
     pub audio: Arc<AudioPipelineController>,
@@ -62,7 +64,17 @@ fn start_listening(state: State<'_, AppState>, source: Option<String>) -> Result
 
 #[tauri::command]
 fn stop_and_transcribe(state: State<'_, AppState>) -> Result<(), String> {
-    state.audio.send_command(AudioCommand::StopAndTranscribe)
+    state
+        .audio
+        .send_command(AudioCommand::StopAndTranscribe(Some(EndReason::ManualStop)))
+}
+
+#[tauri::command]
+fn flag_false_trigger(app: AppHandle, utterance_id: u64, flagged: bool) -> Result<(), String> {
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        update_false_trigger_flag_in_metrics(&app_data_dir, utterance_id, flagged)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -94,10 +106,13 @@ fn test_cleanup_pass(sample_text: String) -> CleanupResult {
 
 #[tauri::command]
 fn update_dictation_config(
+    app: AppHandle,
     state: State<'_, AppState>,
     config: DictationConfig,
 ) -> Result<DictationConfig, String> {
-    state.audio.update_config(config)
+    let updated = state.audio.update_config(config)?;
+    let _ = app.emit("dictation-config-updated", &updated);
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -266,6 +281,7 @@ pub fn run() {
             download_whisper_model,
             manual_inject_text,
             request_accessibility_settings,
+            flag_false_trigger,
         ])
         .build(tauri::generate_context!())
         .expect("error while building saywhen tauri application")

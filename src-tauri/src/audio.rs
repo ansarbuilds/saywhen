@@ -5,6 +5,17 @@ use crate::inject::{
     TargetChangePolicy, DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
+use crate::turn_taking::{
+    append_session_metrics_line, end_of_turn, evaluate_arming_hysteresis,
+    has_minimum_speech_evidence, is_within_arm_exit_cone, resolve_recordings_dir,
+     sanitize_discarded_reason_for_metrics, save_tuning_utterance_wav_and_sidecar,
+    should_auto_start, silence_countdown_ms, ArmingHysteresisState, EndReason, GateInputs,
+    RecordedVisionSample, TuningRecordingSidecar, TurnState, TurnTakingConfig,
+    UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
+    DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
+    DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS, DEFAULT_MIN_SPEECH_HOTKEY_MS,
+    DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, VAD_FRAME_MS,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -12,7 +23,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use voice_activity_detector::VoiceActivityDetector;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
@@ -79,6 +90,8 @@ pub struct DictationConfig {
     pub hands_free_enabled: bool,
     pub vad_threshold: f32,
     pub silence_timeout_ms: u64,
+    #[serde(default = "default_max_silence_timeout_ms")]
+    pub max_silence_timeout_ms: u64,
     pub auto_stop_on_silence: bool,
     pub cleanup_enabled: bool,
     pub preview_enabled: bool,
@@ -105,6 +118,40 @@ pub struct DictationConfig {
     /// Delay (ms) before restoring the previous clipboard if unchanged.
     #[serde(default = "default_clipboard_restore_delay_ms")]
     pub clipboard_restore_delay_ms: u64,
+    /// Arming hysteresis enter yaw threshold in degrees (|yaw| <= this to start arming dwell).
+    #[serde(default = "default_arm_yaw_enter_deg")]
+    pub arm_yaw_enter_deg: f32,
+    /// Arming hysteresis exit yaw threshold in degrees (|yaw| > this for disarm_dwell_ms to disarm).
+    #[serde(default = "default_arm_yaw_exit_deg")]
+    pub arm_yaw_exit_deg: f32,
+    /// Arming hysteresis enter pitch threshold in degrees.
+    #[serde(default = "default_arm_pitch_enter_deg")]
+    pub arm_pitch_enter_deg: f32,
+    /// Arming hysteresis exit pitch threshold in degrees.
+    #[serde(default = "default_arm_pitch_exit_deg")]
+    pub arm_pitch_exit_deg: f32,
+    /// Dwell time (ms) inside the enter cone before IDLE -> ARMED so glancing past does not arm.
+    #[serde(default = "default_arm_dwell_ms")]
+    pub arm_dwell_ms: u64,
+    /// Dwell time (ms) outside the exit cone before ARMED -> IDLE so edge poses do not flicker.
+    #[serde(default = "default_disarm_dwell_ms")]
+    pub disarm_dwell_ms: u64,
+    /// Minimum voiced speech duration (ms) in hands-free mode before transcribing.
+    #[serde(default = "default_min_speech_ms")]
+    pub min_speech_ms: u64,
+    /// Minimum voiced speech duration (ms) for hotkey/manual starts.
+    #[serde(default = "default_min_speech_hotkey_ms")]
+    pub min_speech_hotkey_ms: u64,
+    /// Post-roll audio tail (ms) captured after end-of-turn so final words are not clipped.
+    #[serde(default = "default_post_roll_ms")]
+    pub post_roll_ms: u64,
+    /// Opt-in session metrics JSONL log in the OS app data dir (never contains transcript or audio).
+    #[serde(default)]
+    pub session_metrics_enabled: bool,
+    /// Opt-in utterance WAV + JSON sidecar saving to local `recordings/` for tuning.
+    /// Always resets to `false` when the app restarts.
+    #[serde(default)]
+    pub save_tuning_audio_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -119,12 +166,53 @@ fn default_clipboard_restore_delay_ms() -> u64 {
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
 }
 
+fn default_max_silence_timeout_ms() -> u64 {
+    DEFAULT_MAX_SILENCE_TIMEOUT_MS
+}
+
+fn default_arm_yaw_enter_deg() -> f32 {
+    DEFAULT_ARM_YAW_ENTER_DEG
+}
+
+fn default_arm_yaw_exit_deg() -> f32 {
+    DEFAULT_ARM_YAW_EXIT_DEG
+}
+
+fn default_arm_pitch_enter_deg() -> f32 {
+    DEFAULT_ARM_PITCH_ENTER_DEG
+}
+
+fn default_arm_pitch_exit_deg() -> f32 {
+    DEFAULT_ARM_PITCH_EXIT_DEG
+}
+
+fn default_arm_dwell_ms() -> u64 {
+    DEFAULT_ARM_DWELL_MS
+}
+
+fn default_disarm_dwell_ms() -> u64 {
+    DEFAULT_DISARM_DWELL_MS
+}
+
+fn default_min_speech_ms() -> u64 {
+    DEFAULT_MIN_SPEECH_MS
+}
+
+fn default_min_speech_hotkey_ms() -> u64 {
+    DEFAULT_MIN_SPEECH_HOTKEY_MS
+}
+
+fn default_post_roll_ms() -> u64 {
+    DEFAULT_POST_ROLL_MS
+}
+
 impl Default for DictationConfig {
     fn default() -> Self {
         Self {
             hands_free_enabled: true,
             vad_threshold: 0.45,
             silence_timeout_ms: 650,
+            max_silence_timeout_ms: DEFAULT_MAX_SILENCE_TIMEOUT_MS,
             auto_stop_on_silence: true,
             cleanup_enabled: true,
             preview_enabled: true,
@@ -141,6 +229,17 @@ impl Default for DictationConfig {
             enter_delay_ms: DEFAULT_ENTER_DELAY_MS,
             per_app_enter_delay_ms: HashMap::new(),
             clipboard_restore_delay_ms: DEFAULT_CLIPBOARD_RESTORE_DELAY_MS,
+            arm_yaw_enter_deg: DEFAULT_ARM_YAW_ENTER_DEG,
+            arm_yaw_exit_deg: DEFAULT_ARM_YAW_EXIT_DEG,
+            arm_pitch_enter_deg: DEFAULT_ARM_PITCH_ENTER_DEG,
+            arm_pitch_exit_deg: DEFAULT_ARM_PITCH_EXIT_DEG,
+            arm_dwell_ms: DEFAULT_ARM_DWELL_MS,
+            disarm_dwell_ms: DEFAULT_DISARM_DWELL_MS,
+            min_speech_ms: DEFAULT_MIN_SPEECH_MS,
+            min_speech_hotkey_ms: DEFAULT_MIN_SPEECH_HOTKEY_MS,
+            post_roll_ms: DEFAULT_POST_ROLL_MS,
+            session_metrics_enabled: false,
+            save_tuning_audio_enabled: false,
         }
     }
 }
@@ -154,6 +253,32 @@ impl DictationConfig {
             clipboard_restore_delay_ms: self.clipboard_restore_delay_ms,
             on_target_changed: self.on_target_changed,
         }
+    }
+
+    pub fn to_turn_taking_config(&self) -> TurnTakingConfig {
+        TurnTakingConfig {
+            hands_free_enabled: self.hands_free_enabled,
+            vad_threshold: self.vad_threshold,
+            silence_timeout_ms: self.silence_timeout_ms,
+            max_silence_timeout_ms: self.max_silence_timeout_ms,
+            auto_stop_on_silence: self.auto_stop_on_silence,
+            arm_yaw_enter_deg: self.arm_yaw_enter_deg,
+            arm_yaw_exit_deg: self.arm_yaw_exit_deg,
+            arm_pitch_enter_deg: self.arm_pitch_enter_deg,
+            arm_pitch_exit_deg: self.arm_pitch_exit_deg,
+            arm_dwell_ms: self.arm_dwell_ms,
+            disarm_dwell_ms: self.disarm_dwell_ms,
+            min_speech_ms: self.min_speech_ms,
+            min_speech_hotkey_ms: self.min_speech_hotkey_ms,
+            post_roll_ms: self.post_roll_ms,
+        }
+    }
+
+    pub fn sanitize_after_parse(&mut self) {
+        self.auto_send_allowlist
+            .retain(|entry| !entry.trim().eq_ignore_ascii_case("saywhen"));
+        // Saving utterance audio for tuning must always turn itself off when the app restarts.
+        self.save_tuning_audio_enabled = false;
     }
 
     pub fn config_file_path() -> std::path::PathBuf {
@@ -173,9 +298,7 @@ impl DictationConfig {
         let path = Self::config_file_path();
         if let Ok(raw) = std::fs::read_to_string(&path) {
             if let Ok(mut parsed) = serde_json::from_str::<DictationConfig>(&raw) {
-                parsed
-                    .auto_send_allowlist
-                    .retain(|entry| !entry.trim().eq_ignore_ascii_case("saywhen"));
+                parsed.sanitize_after_parse();
                 return parsed;
             }
         }
@@ -184,7 +307,10 @@ impl DictationConfig {
 
     pub fn save_to_disk(&self) {
         let path = Self::config_file_path();
-        if let Ok(json) = serde_json::to_string_pretty(self) {
+        let mut persisted = self.clone();
+        // Never persist `save_tuning_audio_enabled: true` across restarts.
+        persisted.save_tuning_audio_enabled = false;
+        if let Ok(json) = serde_json::to_string_pretty(&persisted) {
             let _ = std::fs::write(path, json);
         }
     }
@@ -200,6 +326,9 @@ pub struct AudioTelemetryEvent {
     pub pre_roll_ms: u64,
     pub listening_duration_ms: u64,
     pub preview_remaining_ms: u64,
+    pub silence_remaining_ms: u64,
+    pub silence_total_ms: u64,
+    pub post_roll_active: bool,
     pub device_name: String,
     pub speech_detected_in_utterance: bool,
     pub vision_active: bool,
@@ -209,6 +338,8 @@ pub struct AudioTelemetryEvent {
     /// this means vision frames stopped arriving (for example a throttled hidden webview).
     pub camera_enabled: bool,
     pub hud_enabled: bool,
+    pub save_tuning_audio_enabled: bool,
+    pub session_metrics_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +355,7 @@ pub struct PreviewStartedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UtteranceCompleteEvent {
+    pub utterance_id: u64,
     pub transcription: TranscriptionResult,
     pub cleanup: CleanupResult,
     pub target_policy: AppTargetPolicy,
@@ -235,53 +367,95 @@ pub struct UtteranceCompleteEvent {
 
 #[derive(Debug, Clone)]
 pub struct PendingPreviewItem {
+    pub utterance_id: u64,
     pub started_at: Instant,
     pub countdown_ms: u64,
     pub transcription: TranscriptionResult,
     pub cleanup: CleanupResult,
     pub target_policy: AppTargetPolicy,
     pub trigger_source: String,
+    pub lip_to_listening_ms: Option<u64>,
+    pub speech_frames: usize,
+    pub end_reason: EndReason,
+    pub post_roll_ms: u64,
+    pub tuning_capture: Option<(Vec<f32>, Vec<RecordedVisionSample>)>,
+}
+
+struct CapturedUtterance {
+    utterance_id: u64,
+    samples: Vec<f32>,
+    peak_vad: f32,
+    trigger_source: String,
+    lip_to_listening_ms: Option<u64>,
+    speech_frames: usize,
+    end_reason: EndReason,
+    post_roll_ms: u64,
+    vision_trace: Vec<RecordedVisionSample>,
 }
 
 struct SharedCaptureBuffer {
+    epoch: Instant,
+    next_utterance_id: u64,
     pre_roll: VecDeque<f32>,
     vad_pending: VecDeque<f32>,
     utterance_pcm: Vec<f32>,
     state: PipelineState,
     listening_started_at: Option<Instant>,
+    listening_started_at_ms: u64,
     pending_preview: Option<PendingPreviewItem>,
     speech_frames_in_utterance: usize,
-    last_speech_instant: Option<Instant>,
-    last_vad_voice_instant: Option<Instant>,
+    consecutive_vad_frames: usize,
+    last_speech_at_ms: u64,
+    last_vad_voice_at_ms: Option<u64>,
+    last_lip_motion_in_turn_ms: Option<u64>,
+    lip_to_listening_ms: Option<u64>,
+    post_roll_started_at_ms: Option<u64>,
+    pending_end_reason: Option<EndReason>,
     peak_vad_prob: f32,
     latest_rms: f32,
     latest_vad_prob: f32,
     trigger_source: String,
     vision: VisionTelemetryPayload,
     last_vision_update: Option<Instant>,
+    arming_hysteresis: ArmingHysteresisState,
+    vision_trace: VecDeque<(u64, VisionTelemetryPayload)>,
     camera_enabled: bool,
 }
 
 impl SharedCaptureBuffer {
     fn new() -> Self {
         Self {
+            epoch: Instant::now(),
+            next_utterance_id: 1,
             pre_roll: VecDeque::with_capacity(PREROLL_SAMPLES + 1024),
             vad_pending: VecDeque::with_capacity(VAD_CHUNK_SAMPLES * 4),
             utterance_pcm: Vec::with_capacity(16_000 * 10),
             state: PipelineState::IDLE,
             listening_started_at: None,
+            listening_started_at_ms: 0,
             pending_preview: None,
             speech_frames_in_utterance: 0,
-            last_speech_instant: None,
-            last_vad_voice_instant: None,
+            consecutive_vad_frames: 0,
+            last_speech_at_ms: 0,
+            last_vad_voice_at_ms: None,
+            last_lip_motion_in_turn_ms: None,
+            lip_to_listening_ms: None,
+            post_roll_started_at_ms: None,
+            pending_end_reason: None,
             peak_vad_prob: 0.0,
             latest_rms: 0.0,
             latest_vad_prob: 0.0,
             trigger_source: "manual".to_string(),
             vision: VisionTelemetryPayload::default(),
             last_vision_update: None,
+            arming_hysteresis: ArmingHysteresisState::default(),
+            vision_trace: VecDeque::with_capacity(256),
             camera_enabled: false,
         }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis() as u64
     }
 
     fn is_vision_fresh(&self) -> bool {
@@ -290,11 +464,10 @@ impl SharedCaptureBuffer {
             .unwrap_or(false)
     }
 
-    fn resting_state(&self, hands_free_enabled: bool) -> PipelineState {
-        if hands_free_enabled
+    fn resting_state(&self, turn_cfg: &TurnTakingConfig) -> PipelineState {
+        if turn_cfg.hands_free_enabled
             && self.is_vision_fresh()
-            && self.vision.face_present
-            && self.vision.facing_screen
+            && is_within_arm_exit_cone(&self.vision, turn_cfg)
         {
             PipelineState::ARMED
         } else {
@@ -302,45 +475,121 @@ impl SharedCaptureBuffer {
         }
     }
 
-    fn begin_listening(&mut self, source: &str) {
+    fn begin_listening(&mut self, source: &str, seed_speech_frames: usize) {
+        let now_ms = self.now_ms();
         self.utterance_pcm.clear();
         // Prepend the 500ms circular pre-roll ring buffer so the first syllable is never clipped
         self.utterance_pcm.extend(self.pre_roll.iter().copied());
         self.state = PipelineState::LISTENING;
         self.listening_started_at = Some(Instant::now());
+        self.listening_started_at_ms = now_ms;
         self.pending_preview = None;
-        self.speech_frames_in_utterance = 0;
-        self.last_speech_instant = Some(Instant::now());
+        self.speech_frames_in_utterance = seed_speech_frames;
+        self.last_speech_at_ms = now_ms;
+        self.last_lip_motion_in_turn_ms = if self.vision.lips_moving {
+            Some(now_ms)
+        } else {
+            None
+        };
+        self.lip_to_listening_ms = self.arming_hysteresis.take_lip_to_listening_ms(now_ms);
+        self.post_roll_started_at_ms = None;
+        self.pending_end_reason = None;
         self.peak_vad_prob = self.latest_vad_prob;
         self.trigger_source = source.to_string();
     }
 
-    fn take_utterance_for_transcription(&mut self) -> (Vec<f32>, f32, String) {
-        self.state = PipelineState::TRANSCRIBING;
-        self.listening_started_at = None;
-        let samples = std::mem::take(&mut self.utterance_pcm);
-        let peak = self.peak_vad_prob;
-        let source = self.trigger_source.clone();
-        self.peak_vad_prob = 0.0;
-        self.speech_frames_in_utterance = 0;
-        self.last_speech_instant = None;
-        (samples, peak, source)
+    fn build_turn_state(&self, hands_free_enabled: bool) -> TurnState {
+        TurnState {
+            started_at_ms: self.listening_started_at_ms,
+            last_speech_at_ms: self.last_speech_at_ms,
+            last_lip_motion_at_ms: self.last_lip_motion_in_turn_ms,
+            speech_frames: self.speech_frames_in_utterance,
+            utterance_samples: self.utterance_pcm.len(),
+            max_utterance_samples: MAX_UTTERANCE_SAMPLES,
+            hands_free_enabled,
+            vision_fresh: self.is_vision_fresh(),
+            lips_moving: self.vision.lips_moving,
+            mouth_closed: self.vision.mouth_closed,
+            gesture: self.vision.gesture.clone(),
+            ends_with_connective: false,
+        }
     }
 
-    fn cancel_active_or_preview(&mut self, hands_free_enabled: bool) {
-        self.state = self.resting_state(hands_free_enabled);
+    fn take_utterance_for_transcription(
+        &mut self,
+        end_reason: EndReason,
+        post_roll_ms: u64,
+        capture_vision_trace: bool,
+    ) -> CapturedUtterance {
+        let utterance_id = self.next_utterance_id;
+        self.next_utterance_id = self.next_utterance_id.saturating_add(1);
+        self.state = PipelineState::TRANSCRIBING;
+        self.listening_started_at = None;
+        let start_with_preroll_ms = self.listening_started_at_ms.saturating_sub(500);
+        let samples = std::mem::take(&mut self.utterance_pcm);
+        let peak_vad = self.peak_vad_prob;
+        let trigger_source = self.trigger_source.clone();
+        let lip_to_listening_ms = self.lip_to_listening_ms.take();
+        let speech_frames = self.speech_frames_in_utterance;
+
+        self.peak_vad_prob = 0.0;
+        self.speech_frames_in_utterance = 0;
+        self.last_lip_motion_in_turn_ms = None;
+        self.post_roll_started_at_ms = None;
+        self.pending_end_reason = None;
+
+        let vision_trace = if capture_vision_trace {
+            self.vision_trace
+                .iter()
+                .filter(|(t, _)| *t >= start_with_preroll_ms)
+                .map(|(t, v)| RecordedVisionSample {
+                    offset_ms: t.saturating_sub(start_with_preroll_ms),
+                    face_present: v.face_present,
+                    facing_screen: v.facing_screen,
+                    lips_moving: v.lips_moving,
+                    mouth_closed: v.mouth_closed,
+                    mar: v.mar,
+                    mar_variance: v.mar_variance,
+                    yaw: v.yaw,
+                    pitch: v.pitch,
+                    jaw_open: v.jaw_open,
+                    gesture: v.gesture.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        CapturedUtterance {
+            utterance_id,
+            samples,
+            peak_vad,
+            trigger_source,
+            lip_to_listening_ms,
+            speech_frames,
+            end_reason,
+            post_roll_ms,
+            vision_trace,
+        }
+    }
+
+    fn cancel_active_or_preview(&mut self, turn_cfg: &TurnTakingConfig) {
+        self.state = self.resting_state(turn_cfg);
         self.utterance_pcm.clear();
         self.listening_started_at = None;
         self.pending_preview = None;
         self.speech_frames_in_utterance = 0;
-        self.last_speech_instant = None;
+        self.last_lip_motion_in_turn_ms = None;
+        self.lip_to_listening_ms = None;
+        self.post_roll_started_at_ms = None;
+        self.pending_end_reason = None;
         self.peak_vad_prob = 0.0;
     }
 }
 
 pub enum AudioCommand {
     StartListening(String),
-    StopAndTranscribe,
+    StopAndTranscribe(Option<EndReason>),
     ToggleListening(String),
     CancelListening,
     ConfirmPreviewNow(Option<String>),
@@ -610,9 +859,50 @@ fn resample_to_16k(input: &[f32], in_rate: u32) -> Vec<f32> {
     output
 }
 
+fn unix_timestamp_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn persist_metrics_and_optional_tuning_wav(
+    app_handle: &AppHandle,
+    cfg: &DictationConfig,
+    record: &UtteranceMetricsRecord,
+    tuning_capture: Option<(Vec<f32>, Vec<RecordedVisionSample>)>,
+) {
+    if cfg.session_metrics_enabled {
+        if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+            if let Err(err) = append_session_metrics_line(&app_data_dir, record) {
+                eprintln!("saywhen: session metrics write warning: {}", err);
+            }
+        }
+    }
+
+    if cfg.save_tuning_audio_enabled {
+        if let Some((samples, vision_frames)) = tuning_capture {
+            let sidecar = TuningRecordingSidecar {
+                sample_rate: TARGET_SAMPLE_RATE,
+                metrics: record.clone(),
+                category: None,
+                expected_phrase: None,
+                expected_should_transcribe: None,
+                vision_frames,
+            };
+            let recordings_dir = resolve_recordings_dir();
+            if let Err(err) =
+                save_tuning_utterance_wav_and_sidecar(&recordings_dir, &samples, &sidecar)
+            {
+                let _ = app_handle.emit("pipeline-error", err);
+            }
+        }
+    }
+}
+
 fn finalize_preview_and_inject(
     app_handle: &AppHandle,
-    item: PendingPreviewItem,
+    mut item: PendingPreviewItem,
     override_text: Option<String>,
     cfg: &DictationConfig,
 ) {
@@ -637,10 +927,48 @@ fn finalize_preview_and_inject(
         }
     }
 
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let now_ms = unix_timestamp_ms();
+    let outcome_label = if injection_error.is_some() {
+        "aborted"
+    } else if let Some(ref out) = injection_outcome {
+        if out.pressed_enter {
+            "sent"
+        } else {
+            "pasted"
+        }
+    } else {
+        "transcribed_only"
+    };
+
+    let effective_end_reason = if item.transcription.end_phrase_triggered {
+        EndReason::EndPhrase.as_str().to_string()
+    } else {
+        item.end_reason.as_str().to_string()
+    };
+
+    let metrics_rec = UtteranceMetricsRecord {
+        utterance_id: item.utterance_id,
+        timestamp_ms: now_ms,
+        trigger_source: item.trigger_source.clone(),
+        lip_to_listening_ms: item.lip_to_listening_ms,
+        utterance_length_ms: item.transcription.audio_duration_ms,
+        speech_frames: item.speech_frames,
+        speech_duration_ms: (item.speech_frames as u64) * VAD_FRAME_MS,
+        peak_vad: item.transcription.peak_vad_prob,
+        end_reason: effective_end_reason,
+        post_roll_ms: item.post_roll_ms,
+        transcript_length: final_text.chars().count(),
+        discarded_reason: None,
+        outcome: outcome_label.to_string(),
+        flag_false_trigger_clicks: 0,
+    };
+
+    persist_metrics_and_optional_tuning_wav(
+        app_handle,
+        cfg,
+        &metrics_rec,
+        item.tuning_capture.take(),
+    );
 
     let mut final_cleanup = item.cleanup;
     final_cleanup.cleaned_text = final_text;
@@ -648,6 +976,7 @@ fn finalize_preview_and_inject(
     let _ = app_handle.emit(
         "utterance-complete",
         UtteranceCompleteEvent {
+            utterance_id: item.utterance_id,
             transcription: item.transcription,
             cleanup: final_cleanup,
             target_policy: final_policy,
@@ -704,6 +1033,7 @@ fn run_audio_worker(
 
     loop {
         let cfg = config.lock().unwrap().clone();
+        let turn_cfg = cfg.to_turn_taking_config();
 
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
@@ -713,7 +1043,12 @@ fn run_audio_worker(
                     }
                     let mut guard = shared.lock().unwrap();
                     if guard.state == PipelineState::IDLE || guard.state == PipelineState::ARMED {
-                        guard.begin_listening(&source);
+                        let seed = if source == "hands_free_multimodal" {
+                            guard.consecutive_vad_frames.min(2)
+                        } else {
+                            0
+                        };
+                        guard.begin_listening(&source, seed);
                     }
                 }
                 AudioCommand::CancelListening => {
@@ -721,13 +1056,43 @@ fn run_audio_worker(
                         v.reset();
                     }
                     let mut guard = shared.lock().unwrap();
-                    guard.cancel_active_or_preview(cfg.hands_free_enabled);
+                    guard.cancel_active_or_preview(&turn_cfg);
                     let _ = app_handle.emit("utterance-canceled", "Canceled");
                 }
                 AudioCommand::CancelPreview(reason) => {
-                    let mut guard = shared.lock().unwrap();
-                    if guard.state == PipelineState::PREVIEW {
-                        guard.cancel_active_or_preview(cfg.hands_free_enabled);
+                    let canceled_item = {
+                        let mut guard = shared.lock().unwrap();
+                        if guard.state == PipelineState::PREVIEW {
+                            let item = guard.pending_preview.take();
+                            guard.cancel_active_or_preview(&turn_cfg);
+                            item
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some(mut item) = canceled_item {
+                        let metrics_rec = UtteranceMetricsRecord {
+                            utterance_id: item.utterance_id,
+                            timestamp_ms: unix_timestamp_ms(),
+                            trigger_source: item.trigger_source,
+                            lip_to_listening_ms: item.lip_to_listening_ms,
+                            utterance_length_ms: item.transcription.audio_duration_ms,
+                            speech_frames: item.speech_frames,
+                            speech_duration_ms: (item.speech_frames as u64) * VAD_FRAME_MS,
+                            peak_vad: item.transcription.peak_vad_prob,
+                            end_reason: item.end_reason.as_str().to_string(),
+                            post_roll_ms: item.post_roll_ms,
+                            transcript_length: item.cleanup.cleaned_text.chars().count(),
+                            discarded_reason: None,
+                            outcome: "canceled".to_string(),
+                            flag_false_trigger_clicks: 0,
+                        };
+                        persist_metrics_and_optional_tuning_wav(
+                            &app_handle,
+                            &cfg,
+                            &metrics_rec,
+                            item.tuning_capture.take(),
+                        );
                         let _ = app_handle.emit("preview-canceled", reason);
                     }
                 }
@@ -736,7 +1101,7 @@ fn run_audio_worker(
                         let mut guard = shared.lock().unwrap();
                         if guard.state == PipelineState::PREVIEW {
                             let item = guard.pending_preview.take();
-                            guard.state = guard.resting_state(cfg.hands_free_enabled);
+                            guard.state = guard.resting_state(&turn_cfg);
                             item
                         } else {
                             None
@@ -768,7 +1133,8 @@ fn run_audio_worker(
                             let _ = cmd_tx_self.send(AudioCommand::StartListening(source));
                         }
                         PipelineState::LISTENING => {
-                            let _ = cmd_tx_self.send(AudioCommand::StopAndTranscribe);
+                            let _ = cmd_tx_self
+                                .send(AudioCommand::StopAndTranscribe(Some(EndReason::Hotkey)));
                         }
                         PipelineState::PREVIEW => {
                             let _ = cmd_tx_self.send(AudioCommand::ConfirmPreviewNow(None));
@@ -782,36 +1148,62 @@ fn run_audio_worker(
                         // Drop frames that were in flight when the camera gate was paused.
                         continue;
                     }
+                    let now_ms = guard.now_ms();
                     let gesture = vision_payload.gesture.clone();
-                    guard.vision = vision_payload;
+                    guard.vision = vision_payload.clone();
                     guard.last_vision_update = Some(Instant::now());
 
-                    match guard.state {
-                        PipelineState::IDLE => {
-                            if cfg.hands_free_enabled
-                                && guard.vision.face_present
-                                && guard.vision.facing_screen
-                            {
-                                guard.state = PipelineState::ARMED;
-                            }
+                    if cfg.save_tuning_audio_enabled {
+                        guard.vision_trace.push_back((now_ms, vision_payload));
+                        let cutoff_ms = now_ms.saturating_sub(65_000);
+                        while guard
+                            .vision_trace
+                            .front()
+                            .map(|(t, _)| *t < cutoff_ms)
+                            .unwrap_or(false)
+                        {
+                            guard.vision_trace.pop_front();
                         }
-                        PipelineState::ARMED => {
-                            if !cfg.hands_free_enabled
-                                || !guard.vision.face_present
-                                || !guard.vision.facing_screen
-                            {
-                                guard.state = PipelineState::IDLE;
-                            }
+                    } else if !guard.vision_trace.is_empty() {
+                        guard.vision_trace.clear();
+                    }
+
+                    match guard.state {
+                        PipelineState::IDLE | PipelineState::ARMED => {
+                            let currently_armed = guard.state == PipelineState::ARMED;
+                            let vision_snap = guard.vision.clone();
+                            let should_be_armed = evaluate_arming_hysteresis(
+                                &mut guard.arming_hysteresis,
+                                currently_armed,
+                                true,
+                                &vision_snap,
+                                &turn_cfg,
+                                now_ms,
+                            );
+                            guard.state = if should_be_armed {
+                                PipelineState::ARMED
+                            } else {
+                                PipelineState::IDLE
+                            };
                         }
                         PipelineState::LISTENING => {
+                            if guard.vision.lips_moving {
+                                guard.last_lip_motion_in_turn_ms = Some(now_ms);
+                            }
                             if gesture == "shake" {
-                                guard.cancel_active_or_preview(cfg.hands_free_enabled);
+                                guard.cancel_active_or_preview(&turn_cfg);
                                 let _ = app_handle.emit(
                                     "utterance-canceled",
                                     "Head shake gesture canceled utterance",
                                 );
                             } else if gesture == "nod" {
-                                let _ = cmd_tx_self.send(AudioCommand::StopAndTranscribe);
+                                if cfg.post_roll_ms > 0 && guard.post_roll_started_at_ms.is_none() {
+                                    guard.post_roll_started_at_ms = Some(now_ms);
+                                    guard.pending_end_reason = Some(EndReason::Nod);
+                                } else if cfg.post_roll_ms == 0 {
+                                    let _ = cmd_tx_self
+                                        .send(AudioCommand::StopAndTranscribe(Some(EndReason::Nod)));
+                                }
                             }
                         }
                         PipelineState::PREVIEW => {
@@ -822,7 +1214,7 @@ fn run_audio_worker(
                             } else if gesture == "nod" {
                                 let _ = cmd_tx_self.send(AudioCommand::ConfirmPreviewNow(None));
                             } else if cfg.cancel_on_look_away
-                                && (!guard.vision.face_present || !guard.vision.facing_screen)
+                                && !is_within_arm_exit_cone(&guard.vision, &turn_cfg)
                             {
                                 let _ = cmd_tx_self.send(AudioCommand::CancelPreview(
                                     "Looked away during preview window".to_string(),
@@ -838,6 +1230,7 @@ fn run_audio_worker(
                     if !enabled {
                         guard.vision = VisionTelemetryPayload::default();
                         guard.last_vision_update = None;
+                        guard.arming_hysteresis.reset();
                         if guard.state == PipelineState::ARMED {
                             guard.state = PipelineState::IDLE;
                         }
@@ -860,17 +1253,71 @@ fn run_audio_worker(
                         }
                     }
                 }
-                AudioCommand::StopAndTranscribe => {
-                    let (samples, peak_vad, trigger_source) = {
+                AudioCommand::StopAndTranscribe(explicit_reason) => {
+                    let captured = {
                         let mut guard = shared.lock().unwrap();
                         if guard.state != PipelineState::LISTENING {
                             continue;
                         }
-                        guard.take_utterance_for_transcription()
+                        let reason = explicit_reason
+                            .or(guard.pending_end_reason)
+                            .unwrap_or(EndReason::ManualStop);
+                        let post_roll_ms = match reason {
+                            EndReason::Silence | EndReason::Nod => cfg.post_roll_ms,
+                            _ => 0,
+                        };
+                        guard.take_utterance_for_transcription(
+                            reason,
+                            post_roll_ms,
+                            cfg.save_tuning_audio_enabled,
+                        )
                     };
 
                     if let Some(ref mut v) = vad {
                         v.reset();
+                    }
+
+                    // Task 3: Minimum speech evidence check before invoking Whisper.
+                    if let Err(discard_msg) = has_minimum_speech_evidence(
+                        captured.speech_frames,
+                        &captured.trigger_source,
+                        &turn_cfg,
+                    ) {
+                        {
+                            let mut guard = shared.lock().unwrap();
+                            guard.state = guard.resting_state(&turn_cfg);
+                        }
+                        let audio_duration_ms =
+                            ((captured.samples.len() as f64 / 16000.0) * 1000.0) as u64;
+                        let metrics_rec = UtteranceMetricsRecord {
+                            utterance_id: captured.utterance_id,
+                            timestamp_ms: unix_timestamp_ms(),
+                            trigger_source: captured.trigger_source,
+                            lip_to_listening_ms: captured.lip_to_listening_ms,
+                            utterance_length_ms: audio_duration_ms,
+                            speech_frames: captured.speech_frames,
+                            speech_duration_ms: (captured.speech_frames as u64) * VAD_FRAME_MS,
+                            peak_vad: captured.peak_vad,
+                            end_reason: captured.end_reason.as_str().to_string(),
+                            post_roll_ms: captured.post_roll_ms,
+                            transcript_length: 0,
+                            discarded_reason: Some("insufficient_speech_evidence".to_string()),
+                            outcome: "discarded".to_string(),
+                            flag_false_trigger_clicks: 0,
+                        };
+                        let tuning_capture = if cfg.save_tuning_audio_enabled {
+                            Some((captured.samples, captured.vision_trace))
+                        } else {
+                            None
+                        };
+                        persist_metrics_and_optional_tuning_wav(
+                            &app_handle,
+                            &cfg,
+                            &metrics_rec,
+                            tuning_capture,
+                        );
+                        let _ = app_handle.emit("utterance-discarded", discard_msg);
+                        continue;
                     }
 
                     let _ = app_handle.emit(
@@ -883,6 +1330,9 @@ fn run_audio_worker(
                             pre_roll_ms: 500,
                             listening_duration_ms: 0,
                             preview_remaining_ms: 0,
+                            silence_remaining_ms: 0,
+                            silence_total_ms: 0,
+                            post_roll_active: false,
                             device_name: active_device_name.clone(),
                             speech_detected_in_utterance: true,
                             vision_active: false,
@@ -890,24 +1340,57 @@ fn run_audio_worker(
                             vision_lips_moving: false,
                             camera_enabled: shared.lock().unwrap().camera_enabled,
                             hud_enabled: cfg.hud_enabled,
+                            save_tuning_audio_enabled: cfg.save_tuning_audio_enabled,
+                            session_metrics_enabled: cfg.session_metrics_enabled,
                         },
                     );
 
                     let transcriber_ref = Arc::clone(&transcriber);
                     let shared_after = Arc::clone(&shared);
                     let cfg_snapshot = config.lock().unwrap().clone();
+                    let turn_cfg_snapshot = cfg_snapshot.to_turn_taking_config();
                     let app_for_tx = app_handle.clone();
                     let tx_for_preview = cmd_tx_self.clone();
 
                     thread::spawn(move || {
-                        let tx_res = transcriber_ref.transcribe_pcm(&samples, peak_vad);
+                        let tx_res =
+                            transcriber_ref.transcribe_pcm(&captured.samples, captured.peak_vad);
                         match tx_res {
                             Ok(transcription) => {
                                 let trimmed_lower = transcription.text.trim().to_lowercase();
                                 if trimmed_lower == "cancel" || trimmed_lower == "cancel." {
-                                    let mut guard = shared_after.lock().unwrap();
-                                    guard.state =
-                                        guard.resting_state(cfg_snapshot.hands_free_enabled);
+                                    {
+                                        let mut guard = shared_after.lock().unwrap();
+                                        guard.state = guard.resting_state(&turn_cfg_snapshot);
+                                    }
+                                    let metrics_rec = UtteranceMetricsRecord {
+                                        utterance_id: captured.utterance_id,
+                                        timestamp_ms: unix_timestamp_ms(),
+                                        trigger_source: captured.trigger_source,
+                                        lip_to_listening_ms: captured.lip_to_listening_ms,
+                                        utterance_length_ms: transcription.audio_duration_ms,
+                                        speech_frames: captured.speech_frames,
+                                        speech_duration_ms: (captured.speech_frames as u64)
+                                            * VAD_FRAME_MS,
+                                        peak_vad: transcription.peak_vad_prob,
+                                        end_reason: EndReason::Canceled.as_str().to_string(),
+                                        post_roll_ms: captured.post_roll_ms,
+                                        transcript_length: 0,
+                                        discarded_reason: None,
+                                        outcome: "canceled".to_string(),
+                                        flag_false_trigger_clicks: 0,
+                                    };
+                                    let tuning_capture = if cfg_snapshot.save_tuning_audio_enabled {
+                                        Some((captured.samples, captured.vision_trace))
+                                    } else {
+                                        None
+                                    };
+                                    persist_metrics_and_optional_tuning_wav(
+                                        &app_for_tx,
+                                        &cfg_snapshot,
+                                        &metrics_rec,
+                                        tuning_capture,
+                                    );
                                     let _ = app_for_tx.emit(
                                         "preview-canceled",
                                         "Spoken 'cancel' command aborted utterance",
@@ -921,14 +1404,46 @@ fn run_audio_worker(
                                 );
 
                                 if cleanup.cleaned_text.is_empty() {
-                                    let mut guard = shared_after.lock().unwrap();
-                                    guard.state =
-                                        guard.resting_state(cfg_snapshot.hands_free_enabled);
-                                    drop(guard);
-                                    // Say why nothing was sent instead of silently going idle.
-                                    let reason = transcription.discarded_reason.clone().unwrap_or_else(|| {
-                                        "No speech recognized: nothing was sent".to_string()
-                                    });
+                                    {
+                                        let mut guard = shared_after.lock().unwrap();
+                                        guard.state = guard.resting_state(&turn_cfg_snapshot);
+                                    }
+                                    let reason = transcription
+                                        .discarded_reason
+                                        .clone()
+                                        .unwrap_or_else(|| {
+                                            "No speech recognized: nothing was sent".to_string()
+                                        });
+                                    let metrics_rec = UtteranceMetricsRecord {
+                                        utterance_id: captured.utterance_id,
+                                        timestamp_ms: unix_timestamp_ms(),
+                                        trigger_source: captured.trigger_source,
+                                        lip_to_listening_ms: captured.lip_to_listening_ms,
+                                        utterance_length_ms: transcription.audio_duration_ms,
+                                        speech_frames: captured.speech_frames,
+                                        speech_duration_ms: (captured.speech_frames as u64)
+                                            * VAD_FRAME_MS,
+                                        peak_vad: transcription.peak_vad_prob,
+                                        end_reason: captured.end_reason.as_str().to_string(),
+                                        post_roll_ms: captured.post_roll_ms,
+                                        transcript_length: 0,
+                                        discarded_reason: Some(
+                                            sanitize_discarded_reason_for_metrics(&reason),
+                                        ),
+                                        outcome: "discarded".to_string(),
+                                        flag_false_trigger_clicks: 0,
+                                    };
+                                    let tuning_capture = if cfg_snapshot.save_tuning_audio_enabled {
+                                        Some((captured.samples, captured.vision_trace))
+                                    } else {
+                                        None
+                                    };
+                                    persist_metrics_and_optional_tuning_wav(
+                                        &app_for_tx,
+                                        &cfg_snapshot,
+                                        &metrics_rec,
+                                        tuning_capture,
+                                    );
                                     let _ = app_for_tx.emit("utterance-discarded", reason);
                                     return;
                                 }
@@ -944,13 +1459,25 @@ fn run_audio_worker(
                                     &cfg_snapshot.auto_send_allowlist,
                                 );
 
+                                let tuning_capture = if cfg_snapshot.save_tuning_audio_enabled {
+                                    Some((captured.samples, captured.vision_trace))
+                                } else {
+                                    None
+                                };
+
                                 let item = PendingPreviewItem {
+                                    utterance_id: captured.utterance_id,
                                     started_at: Instant::now(),
                                     countdown_ms: cfg_snapshot.preview_countdown_ms,
                                     transcription,
                                     cleanup,
                                     target_policy,
-                                    trigger_source,
+                                    trigger_source: captured.trigger_source,
+                                    lip_to_listening_ms: captured.lip_to_listening_ms,
+                                    speech_frames: captured.speech_frames,
+                                    end_reason: captured.end_reason,
+                                    post_roll_ms: captured.post_roll_ms,
+                                    tuning_capture,
                                 };
 
                                 if cfg_snapshot.preview_enabled && cfg_snapshot.auto_inject {
@@ -958,8 +1485,7 @@ fn run_audio_worker(
                                 } else {
                                     {
                                         let mut guard = shared_after.lock().unwrap();
-                                        guard.state =
-                                            guard.resting_state(cfg_snapshot.hands_free_enabled);
+                                        guard.state = guard.resting_state(&turn_cfg_snapshot);
                                     }
                                     finalize_preview_and_inject(
                                         &app_for_tx,
@@ -972,8 +1498,7 @@ fn run_audio_worker(
                             Err(err) => {
                                 {
                                     let mut guard = shared_after.lock().unwrap();
-                                    guard.state =
-                                        guard.resting_state(cfg_snapshot.hands_free_enabled);
+                                    guard.state = guard.resting_state(&turn_cfg_snapshot);
                                 }
                                 let _ = app_for_tx.emit("pipeline-error", err);
                             }
@@ -1002,8 +1527,8 @@ fn run_audio_worker(
         }
 
         // Process pending 512-sample chunks through Silero VAD
-        let mut should_auto_stop = false;
-        let mut should_auto_start = false;
+        let mut should_auto_stop: Option<EndReason> = None;
+        let mut should_auto_start_listening = false;
 
         loop {
             let chunk: Option<[f32; VAD_CHUNK_SAMPLES]> = {
@@ -1030,74 +1555,98 @@ fn run_audio_worker(
             };
 
             let mut guard = shared.lock().unwrap();
+            let now_ms = guard.now_ms();
             guard.latest_vad_prob = prob;
 
+            let prev_voice_ms = guard.last_vad_voice_at_ms;
             if prob >= cfg.vad_threshold {
-                guard.last_vad_voice_instant = Some(Instant::now());
+                guard.consecutive_vad_frames += 1;
+                guard.last_vad_voice_at_ms = Some(now_ms);
+            } else {
+                guard.consecutive_vad_frames = 0;
             }
 
             if guard.state == PipelineState::ARMED
                 && (!cfg.hands_free_enabled || !guard.is_vision_fresh())
             {
+                guard.arming_hysteresis.reset();
                 guard.state = PipelineState::IDLE;
             }
 
-            // Stage 3 Multimodal Auto-Start: ARMED + Lips Moving + Silero VAD Speech -> LISTENING
-            if guard.state == PipelineState::ARMED
-                && cfg.hands_free_enabled
-                && guard.is_vision_fresh()
-                && guard.vision.face_present
-                && guard.vision.facing_screen
-                && guard.vision.lips_moving
-            {
-                let recent_voice = guard
-                    .last_vad_voice_instant
-                    .map(|t| t.elapsed() <= Duration::from_millis(320))
-                    .unwrap_or(false);
-                if prob >= cfg.vad_threshold || recent_voice {
-                    should_auto_start = true;
-                }
+            // Stage 3 Multimodal Auto-Start via pure decision function
+            let gate_inputs = GateInputs {
+                is_armed: guard.state == PipelineState::ARMED,
+                hands_free_enabled: cfg.hands_free_enabled,
+                vision_fresh: guard.is_vision_fresh(),
+                face_present: guard.vision.face_present,
+                within_exit_cone: is_within_arm_exit_cone(&guard.vision, &turn_cfg),
+                lips_moving: guard.vision.lips_moving,
+                vad_prob: prob,
+                recent_voice_ms: prev_voice_ms.map(|t| now_ms.saturating_sub(t)),
+                consecutive_vad_frames: guard.consecutive_vad_frames,
+            };
+            if should_auto_start(&gate_inputs, &turn_cfg) {
+                should_auto_start_listening = true;
             }
 
             if guard.state == PipelineState::LISTENING {
                 if prob > guard.peak_vad_prob {
                     guard.peak_vad_prob = prob;
                 }
+                if guard.vision.lips_moving && guard.is_vision_fresh() {
+                    guard.last_lip_motion_in_turn_ms = Some(now_ms);
+                }
+
                 if prob >= cfg.vad_threshold {
                     guard.speech_frames_in_utterance += 1;
-                    guard.last_speech_instant = Some(Instant::now());
-                } else if cfg.auto_stop_on_silence && guard.speech_frames_in_utterance >= 3 {
-                    let mouth_quiet = if guard.is_vision_fresh() && cfg.hands_free_enabled {
-                        guard.vision.mouth_closed || !guard.vision.lips_moving
-                    } else {
-                        true
-                    };
+                    guard.last_speech_at_ms = now_ms;
+                    // If the user resumed speaking during a silence-triggered post-roll, abort the stop.
+                    if guard.pending_end_reason == Some(EndReason::Silence) {
+                        guard.post_roll_started_at_ms = None;
+                        guard.pending_end_reason = None;
+                    }
+                }
 
-                    if mouth_quiet {
-                        if let Some(last_speech) = guard.last_speech_instant {
-                            if last_speech.elapsed().as_millis() as u64 >= cfg.silence_timeout_ms {
-                                should_auto_stop = true;
-                            }
+                if guard.post_roll_started_at_ms.is_none() {
+                    let turn_state = guard.build_turn_state(cfg.hands_free_enabled);
+                    if let Some(reason) = end_of_turn(&turn_state, &turn_cfg, now_ms) {
+                        if cfg.post_roll_ms > 0 && reason != EndReason::MaxLength {
+                            guard.post_roll_started_at_ms = Some(now_ms);
+                            guard.pending_end_reason = Some(reason);
+                        } else {
+                            should_auto_stop = Some(reason);
                         }
+                    }
+                }
+
+                if let Some(pr_start) = guard.post_roll_started_at_ms {
+                    if now_ms.saturating_sub(pr_start) >= cfg.post_roll_ms {
+                        let reason = guard
+                            .pending_end_reason
+                            .take()
+                            .unwrap_or(EndReason::Silence);
+                        guard.post_roll_started_at_ms = None;
+                        should_auto_stop = Some(reason);
                     }
                 }
             }
         }
 
-        if should_auto_start {
+        if should_auto_start_listening {
             let _ = cmd_tx_self.send(AudioCommand::StartListening(
                 "hands_free_multimodal".to_string(),
             ));
         }
 
-        if should_auto_stop {
-            let _ = cmd_tx_self.send(AudioCommand::StopAndTranscribe);
+        if let Some(reason) = should_auto_stop {
+            let _ = cmd_tx_self.send(AudioCommand::StopAndTranscribe(Some(reason)));
         }
 
         if last_telemetry_emit.elapsed() >= Duration::from_millis(50) {
             last_telemetry_emit = Instant::now();
             let payload = {
                 let guard = shared.lock().unwrap();
+                let now_ms = guard.now_ms();
                 let pre_roll_ms = ((guard.pre_roll.len() as f64 / TARGET_SAMPLE_RATE as f64)
                     * 1000.0)
                     .round() as u64;
@@ -1113,7 +1662,15 @@ fn run_audio_worker(
                             .saturating_sub(p.started_at.elapsed().as_millis() as u64)
                     })
                     .unwrap_or(0);
+                let (silence_remaining_ms, silence_total_ms) =
+                    if guard.state == PipelineState::LISTENING {
+                        let ts = guard.build_turn_state(cfg.hands_free_enabled);
+                        silence_countdown_ms(&ts, &turn_cfg, now_ms)
+                    } else {
+                        (0, 0)
+                    };
                 let vision_fresh = guard.is_vision_fresh();
+                let min_frames = (cfg.min_speech_ms / VAD_FRAME_MS).max(1) as usize;
                 AudioTelemetryEvent {
                     state: guard.state.as_str().to_string(),
                     rms: guard.latest_rms,
@@ -1122,15 +1679,18 @@ fn run_audio_worker(
                     pre_roll_ms,
                     listening_duration_ms,
                     preview_remaining_ms,
+                    silence_remaining_ms,
+                    silence_total_ms,
+                    post_roll_active: guard.post_roll_started_at_ms.is_some(),
                     device_name: active_device_name.clone(),
-                    speech_detected_in_utterance: guard.speech_frames_in_utterance >= 3,
+                    speech_detected_in_utterance: guard.speech_frames_in_utterance >= min_frames,
                     vision_active: vision_fresh,
-                    vision_armed: vision_fresh
-                        && guard.vision.face_present
-                        && guard.vision.facing_screen,
+                    vision_armed: vision_fresh && is_within_arm_exit_cone(&guard.vision, &turn_cfg),
                     vision_lips_moving: vision_fresh && guard.vision.lips_moving,
                     camera_enabled: guard.camera_enabled,
                     hud_enabled: cfg.hud_enabled,
+                    save_tuning_audio_enabled: cfg.save_tuning_audio_enabled,
+                    session_metrics_enabled: cfg.session_metrics_enabled,
                 }
             };
             let _ = app_handle.emit("audio-telemetry", payload);
@@ -1146,7 +1706,8 @@ mod tests {
 
     #[test]
     fn test_settings_without_hud_field_still_load() {
-        // A settings.local.json written before the HUD and injection reliability fields existed must still load.
+        // A settings.local.json written before the HUD, injection reliability, and turn-taking
+        // fields existed must still load, and `saveTuningAudioEnabled` must reset on startup.
         let mut legacy = serde_json::to_value(DictationConfig::default()).unwrap();
         let obj = legacy.as_object_mut().unwrap();
         obj.remove("hudEnabled");
@@ -1154,8 +1715,20 @@ mod tests {
         obj.remove("enterDelayMs");
         obj.remove("perAppEnterDelayMs");
         obj.remove("clipboardRestoreDelayMs");
+        obj.remove("maxSilenceTimeoutMs");
+        obj.remove("armYawEnterDeg");
+        obj.remove("armYawExitDeg");
+        obj.remove("armPitchEnterDeg");
+        obj.remove("armPitchExitDeg");
+        obj.remove("armDwellMs");
+        obj.remove("disarmDwellMs");
+        obj.remove("minSpeechMs");
+        obj.remove("minSpeechHotkeyMs");
+        obj.remove("postRollMs");
+        obj.remove("sessionMetricsEnabled");
+        obj.remove("saveTuningAudioEnabled");
         legacy["vadThreshold"] = serde_json::json!(0.7);
-        let parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
+        let mut parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
         assert!(parsed.hud_enabled);
         assert_eq!(parsed.on_target_changed, TargetChangePolicy::Abort);
         assert_eq!(parsed.enter_delay_ms, DEFAULT_ENTER_DELAY_MS);
@@ -1164,6 +1737,22 @@ mod tests {
             parsed.clipboard_restore_delay_ms,
             DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
         );
+        assert_eq!(parsed.max_silence_timeout_ms, DEFAULT_MAX_SILENCE_TIMEOUT_MS);
+        assert_eq!(parsed.arm_yaw_enter_deg, DEFAULT_ARM_YAW_ENTER_DEG);
+        assert_eq!(parsed.arm_yaw_exit_deg, DEFAULT_ARM_YAW_EXIT_DEG);
+        assert_eq!(parsed.arm_dwell_ms, DEFAULT_ARM_DWELL_MS);
+        assert_eq!(parsed.disarm_dwell_ms, DEFAULT_DISARM_DWELL_MS);
+        assert_eq!(parsed.min_speech_ms, DEFAULT_MIN_SPEECH_MS);
+        assert_eq!(parsed.min_speech_hotkey_ms, DEFAULT_MIN_SPEECH_HOTKEY_MS);
+        assert_eq!(parsed.post_roll_ms, DEFAULT_POST_ROLL_MS);
+        assert!(!parsed.session_metrics_enabled);
+        assert!(!parsed.save_tuning_audio_enabled);
         assert!((parsed.vad_threshold - 0.7).abs() < f32::EPSILON);
+
+        // Even if someone manually edited settings.local.json with saveTuningAudioEnabled = true,
+        // sanitize_after_parse forces it back to false on startup.
+        parsed.save_tuning_audio_enabled = true;
+        parsed.sanitize_after_parse();
+        assert!(!parsed.save_tuning_audio_enabled);
     }
 }

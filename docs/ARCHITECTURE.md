@@ -59,7 +59,7 @@ The webview sends only derived numbers (landmark-based features such as MAR, yaw
 - **Loud failure guards:**
   - Detects macOS `IsSecureEventInputEnabled()` (Carbon) and Windows UIPI privilege mismatch (target process elevated while `saywhen` is not), plus 3-second main-thread dispatch timeouts (reporting honestly that injection may have happened late). Every failure path copies the transcript to the clipboard and emits both `pipeline-error` and `utterance-complete.injectionError`.
 
-## State machine
+## State machine and gate
 
 ```
 IDLE > ARMED > LISTENING > TRANSCRIBING > PREVIEW > SENT
@@ -68,15 +68,39 @@ IDLE > ARMED > LISTENING > TRANSCRIBING > PREVIEW > SENT
 
 | State | Entered when | Leaves when |
 | --- | --- | --- |
-| IDLE | App running, no face or not facing screen | Face present and facing screen -> ARMED |
-| ARMED | Face present and facing screen | Lips moving + speech over ~300ms -> LISTENING; face lost -> IDLE |
-| LISTENING | Trigger satisfied; ring buffer prepended | Silence + closed mouth ~500 to 800ms, end phrase, or nod -> TRANSCRIBING; shake -> CANCELED |
-| TRANSCRIBING | Audio segment closed | Text ready (after cleanup) -> PREVIEW; error -> fail loudly, back to ARMED |
-| PREVIEW | Cleaned text shown with countdown | Timeout or nod -> SENT; shake, Esc, "cancel", look away -> CANCELED |
+| IDLE | App running, no face or outside arming cone | Face present inside enter cone (`\|yaw\| <= 20°`, `\|pitch\| <= 18°`) for `armDwellMs` (`180 ms`) -> ARMED |
+| ARMED | Face present and armed with hysteresis | Lips moving + sustained speech (`>= 2` VAD frames or recent voice within `320 ms`) inside exit cone -> LISTENING; outside exit cone (`\|yaw\| > 28°` or `\|pitch\| > 25°`) for `disarmDwellMs` (`300 ms`) -> IDLE |
+| LISTENING | Trigger satisfied; `500 ms` pre-roll prepended | Adaptive silence (`650 ms` to `1,750 ms` once lips stop moving), end phrase (`"send it"` / `"submit it"`), or nod -> `200 ms` post-roll -> TRANSCRIBING (or discarded if `< 250 ms` speech); shake -> CANCELED |
+| TRANSCRIBING | Post-roll completed and minimum speech evidence met | Text ready (after cleanup and hallucination filter) -> PREVIEW; empty/hallucinated -> `utterance-discarded` back to ARMED; error -> fail loudly |
+| PREVIEW | Cleaned text shown with countdown | Timeout or nod -> SENT; shake, Esc, `"cancel"`, look away -> CANCELED |
 | SENT | Text injected and Enter pressed | Immediately -> ARMED |
 | CANCELED | User canceled | Immediately -> ARMED |
 
-A manual hotkey can force LISTENING at any time, as an accessibility and fallback path.
+A manual hotkey (`Option + Space`) can force LISTENING at any time with a lower minimum-speech threshold (`96 ms` vs `250 ms`), as an accessibility and fallback path.
+
+### Turn-taking rules (`src-tauri/src/turn_taking.rs`)
+
+- **Arming hysteresis (`evaluate_arming_hysteresis`):**
+  - Separate enter and exit cones prevent `IDLE <-> ARMED` thrashing near the gaze boundary: enters `ARMED` only after the face stays within `|yaw| <= 20.0°` and `|pitch| <= 18.0°` (`armYawEnterDeg`, `armPitchEnterDeg`) for `armDwellMs = 180 ms` (so glancing across the monitor while talking to someone else does not arm).
+  - Once armed, stays `ARMED` inside `|yaw| <= 28.0°` and `|pitch| <= 25.0°` (`armYawExitDeg`, `armPitchExitDeg`) and disarms only after leaving that cone continuously for `disarmDwellMs = 300 ms`.
+- **Multimodal auto-start (`should_auto_start`):**
+  - Requires `ARMED`, fresh vision within the exit cone, `lips_moving == true`, and either `>= 2` consecutive 32 ms VAD frames (`64 ms`) above `vadThreshold` (`0.35`) or a VAD frame above threshold with another voiced frame within the last `320 ms`. Because the `500 ms` pre-roll ring buffer is prepended on transition, requiring `64 ms` of voiced evidence never clips the first syllable while rejecting single-frame (`32 ms`) keyboard clicks.
+- **Minimum speech evidence (`has_minimum_speech_evidence`):**
+  - Hands-free utterances require at least `minSpeechMs = 250 ms` (`8` VAD frames of `32 ms` = `256 ms`) of voiced speech before Whisper is called. Shorter sounds (coughs, throat clears, brief clicks) are discarded immediately and emit `utterance-discarded` with a reason (`Ignored brief sound (96 ms speech < 250 ms minimum)`). Hotkey-started utterances use `minSpeechHotkeyMs = 96 ms` (`3` frames).
+- **Adaptive end of turn (`compute_adaptive_silence_timeout_ms`, `end_of_turn`, `silence_countdown_ms`):**
+  - Never ends on silence while `lips_moving` is true and vision is fresh.
+  - Starts from `silenceTimeoutMs = 650 ms` for short commands (`<= 900 ms` of speech) with a closed mouth, and extends up to `maxSilenceTimeoutMs = 1,750 ms` by adding:
+    - up to `+450 ms` scaled with spoken duration (`(speech_ms - 900) / 3`) for multi-clause utterances,
+    - `+350 ms` when the speaker's mouth stays open mid-thought (`!mouth_closed`), and
+    - `+350 ms` when a partial transcript ends in a connective (`ends_with_connective`: `"and"`, `"the"`, `"to"`, `,`, etc.).
+  - The HUD pill subtly displays the remaining silence countdown (`end in X.Xs`) once at least `250 ms` of silence has elapsed.
+- **Post-roll (`postRollMs = 200 ms`):**
+  - After `end_of_turn` triggers (`Silence` or `Nod`), the audio worker keeps capturing `200 ms` of trailing audio (`finishing...` in the HUD pill) before handing the buffer to Whisper so quiet final consonants and words spoken while nodding are not clipped. If the speaker resumes talking during a silence-triggered post-roll, the stop is canceled and `LISTENING` continues seamlessly.
+- **Data-tuned hallucination filter (`src-tauri/src/transcribe.rs`):**
+  - Whole-transcript stock hallucinations (`"thank you"`, `"thanks for watching"`, `"you"`, `"uh"`, `"um"`, `"hmm"`, etc.) are dropped when `peak_vad < 0.90` (`HALLUCINATION_TRUST_VAD`, tuned from the 56-utterance corpus where real speech measured `peak_vad >= 0.957` and non-speech bursts peaked `<= 0.89`). Short real replies (`"yes"`, `"no"`, `"okay"`, `"continue"`) are never dropped.
+- **Opt-in measurement harness and offline replay (`src-tauri/src/bin/replay.rs`):**
+  - `sessionMetricsEnabled` (default `false`): appends one JSON line per utterance to `<app_data_dir>/session-metrics.jsonl` containing timing, VAD, end reason, transcript character length, outcome, and false-trigger flags. **Never logs transcript text or audio.**
+  - `saveTuningAudioEnabled` (default `false`, forced off on every app startup, shows a bright `REC WAV` badge in the HUD pill while active): saves 16 kHz mono WAV files and JSON vision/metrics sidecars to local `recordings/` (gitignored) for deterministic evaluation with `cargo run --bin replay`.
 
 ## Privacy design
 
