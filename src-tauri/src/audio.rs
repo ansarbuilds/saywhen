@@ -1,4 +1,5 @@
 use crate::cleanup::{run_local_developer_cleanup_with_vocab, CleanupResult};
+use crate::history::append_history_entry;
 use crate::inject::{
     default_auto_send_allowlist, detect_frontmost_app, evaluate_app_injection_policy,
     inject_text_into_focused_app, AppTargetPolicy, InjectionOutcome, InjectionTimingConfig,
@@ -167,6 +168,9 @@ pub struct DictationConfig {
     /// Optional user-configured developer vocabulary terms (comma- or newline-separated).
     #[serde(default)]
     pub custom_vocab: String,
+    /// Persist recent utterances locally in `<app_data_dir>/utterance-history.jsonl`, auto-purged after 7 days.
+    #[serde(default = "default_true")]
+    pub history_persistence_enabled: bool,
 }
 
 fn default_calibrated_resting_mar() -> f32 {
@@ -264,6 +268,7 @@ impl Default for DictationConfig {
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
             adaptive_fps_enabled: true,
             custom_vocab: String::new(),
+            history_persistence_enabled: true,
         }
     }
 }
@@ -391,6 +396,8 @@ pub struct UtteranceCompleteEvent {
     pub injection_error: Option<String>,
     pub trigger_source: String,
     pub timestamp_ms: u64,
+    #[serde(default)]
+    pub flagged_false_trigger: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -454,7 +461,7 @@ impl SharedCaptureBuffer {
     fn new() -> Self {
         Self {
             epoch: Instant::now(),
-            next_utterance_id: 1,
+            next_utterance_id: unix_timestamp_ms().max(1),
             pre_roll: VecDeque::with_capacity(PREROLL_SAMPLES + 1024),
             vad_pending: VecDeque::with_capacity(VAD_CHUNK_SAMPLES * 4),
             utterance_pcm: Vec::with_capacity(16_000 * 10),
@@ -887,7 +894,7 @@ fn resample_to_16k(input: &[f32], in_rate: u32) -> Vec<f32> {
     output
 }
 
-fn unix_timestamp_ms() -> u64 {
+pub fn unix_timestamp_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -1001,19 +1008,27 @@ fn finalize_preview_and_inject(
     let mut final_cleanup = item.cleanup;
     final_cleanup.cleaned_text = final_text;
 
-    let _ = app_handle.emit(
-        "utterance-complete",
-        UtteranceCompleteEvent {
-            utterance_id: item.utterance_id,
-            transcription: item.transcription,
-            cleanup: final_cleanup,
-            target_policy: final_policy,
-            injection: injection_outcome,
-            injection_error,
-            trigger_source: item.trigger_source,
-            timestamp_ms: now_ms,
-        },
-    );
+    let complete_event = UtteranceCompleteEvent {
+        utterance_id: item.utterance_id,
+        transcription: item.transcription,
+        cleanup: final_cleanup,
+        target_policy: final_policy,
+        injection: injection_outcome,
+        injection_error,
+        trigger_source: item.trigger_source,
+        timestamp_ms: now_ms,
+        flagged_false_trigger: false,
+    };
+
+    if cfg.history_persistence_enabled {
+        if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+            if let Err(err) = append_history_entry(&app_data_dir, &complete_event, now_ms) {
+                eprintln!("saywhen: history write warning: {}", err);
+            }
+        }
+    }
+
+    let _ = app_handle.emit("utterance-complete", complete_event);
 }
 
 fn run_audio_worker(
@@ -1761,10 +1776,12 @@ mod tests {
         obj.remove("calibratedRestingMar");
         obj.remove("adaptiveFpsEnabled");
         obj.remove("customVocab");
+        obj.remove("historyPersistenceEnabled");
         legacy["vadThreshold"] = serde_json::json!(0.7);
         let mut parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
         assert!(parsed.hud_enabled);
         assert!(parsed.custom_vocab.is_empty());
+        assert!(parsed.history_persistence_enabled);
         assert_eq!(parsed.on_target_changed, TargetChangePolicy::Abort);
         assert_eq!(parsed.enter_delay_ms, DEFAULT_ENTER_DELAY_MS);
         assert!(parsed.per_app_enter_delay_ms.is_empty());

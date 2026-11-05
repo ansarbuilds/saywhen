@@ -39,6 +39,7 @@ interface DictationConfig {
   calibratedRestingMar: number;
   adaptiveFpsEnabled: boolean;
   customVocab: string;
+  historyPersistenceEnabled: boolean;
 }
 
 interface VisionTelemetryPayload {
@@ -72,6 +73,7 @@ interface SystemStatusSnapshot {
   selectedModelId: string;
   hotkeyLabel: string;
   frontmostApp: string;
+  recentHistory?: UtteranceCompleteEvent[];
 }
 
 interface AudioTelemetryEvent {
@@ -148,6 +150,7 @@ interface UtteranceCompleteEvent {
   injectionError: string | null;
   triggerSource: string;
   timestampMs: number;
+  flaggedFalseTrigger?: boolean;
 }
 
 // App State
@@ -198,6 +201,7 @@ let currentConfig: DictationConfig = {
   calibratedRestingMar: 0.016,
   adaptiveFpsEnabled: true,
   customVocab: '',
+  historyPersistenceEnabled: true,
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -382,6 +386,7 @@ const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInpu
 const toggleAutoEnter = document.getElementById('toggle-auto-enter') as HTMLInputElement;
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
+const toggleHistoryPersistence = document.getElementById('toggle-history-persistence') as HTMLInputElement;
 const toggleSessionMetrics = document.getElementById('toggle-session-metrics') as HTMLInputElement;
 const toggleSaveAudio = document.getElementById('toggle-save-audio') as HTMLInputElement;
 
@@ -403,6 +408,28 @@ function updateCalibrationDisplay() {
 const transcriptList = document.getElementById('transcript-list') as HTMLElement;
 const emptyFeed = document.getElementById('empty-feed') as HTMLElement;
 const clearFeedBtn = document.getElementById('clear-feed-btn') as HTMLButtonElement;
+const historySearchInput = document.getElementById('history-search-input') as HTMLInputElement;
+const historyTtlBadge = document.getElementById('history-ttl-badge') as HTMLElement;
+
+function updateHistoryBadgeDisplay() {
+  if (!historyTtlBadge) return;
+  const enabled = currentConfig.historyPersistenceEnabled !== false;
+  historyTtlBadge.textContent = enabled ? '7d Local' : 'RAM Only';
+  historyTtlBadge.className = enabled ? 'gauge-tag tag-ok' : 'gauge-tag';
+}
+
+function filterUtteranceFeed() {
+  const q = (historySearchInput?.value || '').trim().toLowerCase();
+  const cards = transcriptList.querySelectorAll<HTMLElement>('.utterance-card');
+  for (const card of cards) {
+    const hay = card.dataset.searchText || '';
+    if (!q || hay.includes(q)) {
+      card.classList.remove('hidden');
+    } else {
+      card.classList.add('hidden');
+    }
+  }
+}
 
 const onboardingOpenBtn = document.getElementById('onboarding-open-btn') as HTMLButtonElement;
 const onboardingModal = document.getElementById('onboarding-modal') as HTMLElement;
@@ -1085,14 +1112,22 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-function appendUtteranceCard(ev: UtteranceCompleteEvent) {
-  hidePreviewBanner();
+function appendUtteranceCard(
+  ev: UtteranceCompleteEvent,
+  options?: { fromHistory?: boolean }
+) {
+  if (!options?.fromHistory) {
+    hidePreviewBanner();
+  }
   emptyFeed.classList.add('hidden');
   totalTriggersCount += 1;
+  if (ev.flaggedFalseTrigger) {
+    falseTriggersCount += 1;
+  }
   updateStatsDisplay();
 
   const { transcription, cleanup, targetPolicy, injection, injectionError, triggerSource, timestampMs } = ev;
-  if (injectionError) {
+  if (injectionError && !options?.fromHistory) {
     showError(injectionError);
   }
   valLatency.textContent = `${transcription.inferenceMs} ms`;
@@ -1100,6 +1135,7 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
 
   const card = document.createElement('div');
   card.className = 'utterance-card';
+  card.dataset.searchText = `${cleanup.cleanedText} ${cleanup.rawText} ${targetPolicy.appName} ${triggerSource}`.toLowerCase();
 
   const timeStr = new Date(timestampMs || Date.now()).toLocaleTimeString();
   const displayTranscript =
@@ -1135,8 +1171,12 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
   const textEl = card.querySelector('.utterance-text') as HTMLElement;
   textEl.textContent = displayTranscript;
 
-  let flagged = false;
+  let flagged = Boolean(ev.flaggedFalseTrigger);
   const flagBtn = card.querySelector('.btn-flag-false') as HTMLButtonElement;
+  if (flagged) {
+    card.classList.add('flagged-false');
+    flagBtn.textContent = 'Flagged False Trigger';
+  }
   flagBtn.addEventListener('click', () => {
     flagged = !flagged;
     if (flagged) {
@@ -1188,6 +1228,7 @@ function appendUtteranceCard(ev: UtteranceCompleteEvent) {
   });
 
   transcriptList.prepend(card);
+  filterUtteranceFeed();
 }
 
 async function syncConfigToBackend() {
@@ -1209,6 +1250,7 @@ async function syncConfigToBackend() {
     autoPressEnter: toggleAutoEnter.checked,
     hudEnabled: toggleHud.checked,
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
+    historyPersistenceEnabled: toggleHistoryPersistence.checked,
     sessionMetricsEnabled: toggleSessionMetrics.checked,
     saveTuningAudioEnabled: toggleSaveAudio.checked,
     preferredDevice: deviceSelect.value ? deviceSelect.value : null,
@@ -1217,6 +1259,7 @@ async function syncConfigToBackend() {
   vadThreshDisplay.textContent = currentConfig.vadThreshold.toFixed(2);
   previewCountdownDisplay.textContent = `${currentConfig.previewCountdownMs} ms`;
   updateCalibrationDisplay();
+  updateHistoryBadgeDisplay();
 
   try {
     await invoke('update_dictation_config', { config: currentConfig });
@@ -1266,9 +1309,17 @@ async function initApp() {
     toggleAutoEnter.checked = currentConfig.autoPressEnter;
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
+    toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
+    updateHistoryBadgeDisplay();
+
+    if (Array.isArray(snapshot.recentHistory) && snapshot.recentHistory.length > 0) {
+      for (const item of snapshot.recentHistory) {
+        appendUtteranceCard(item, { fromHistory: true });
+      }
+    }
 
     updatePipelineUiState(snapshot.state, 0, 0);
   } catch (err) {
@@ -1327,9 +1378,11 @@ async function initApp() {
     currentConfig = event.payload;
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
+    toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
+    updateHistoryBadgeDisplay();
   });
 
   await listen<string>('utterance-discarded', (event) => {
@@ -1512,6 +1565,7 @@ toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleAutoEnter.addEventListener('change', syncConfigToBackend);
 toggleHud.addEventListener('change', syncConfigToBackend);
 toggleAdaptiveFps.addEventListener('change', syncConfigToBackend);
+toggleHistoryPersistence.addEventListener('change', syncConfigToBackend);
 toggleSessionMetrics.addEventListener('change', syncConfigToBackend);
 toggleSaveAudio.addEventListener('change', syncConfigToBackend);
 
@@ -1570,10 +1624,16 @@ clearTerminalBtn.addEventListener('click', () => {
     '<div class="term-line term-muted"># Focus the input line below, speak or click "Simulate Cleanup Preview"</div>';
 });
 
+historySearchInput.addEventListener('input', filterUtteranceFeed);
+
 clearFeedBtn.addEventListener('click', () => {
   transcriptList.innerHTML = '';
   transcriptList.appendChild(emptyFeed);
   emptyFeed.classList.remove('hidden');
+  totalTriggersCount = 0;
+  falseTriggersCount = 0;
+  updateStatsDisplay();
+  void invoke('clear_utterance_history').catch(() => undefined);
 });
 
 onboardingOpenBtn.addEventListener('click', () => {

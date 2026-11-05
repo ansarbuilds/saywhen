@@ -159,6 +159,19 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   5. **Measured Before vs After (VERIFIED via `cargo run --bin replay -- recordings` across the 34 target developer utterances):**
      - **Developer command cleanup exact match:** Before (legacy cleanup) = `15 / 34` (**44.1%**), After (Improvement #5 cleanup) = `34 / 34` (**100.0%**).
 
+## Improvement #6: Local 7-day utterance history, search filter, and one-click purge
+- **Status:** Implemented on 2026-11-04 on branch `feat/utterance-history` (`src-tauri/src/history.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/lib.rs`, `src/main.ts`, `index.html`, `src/style.css`). All 29 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 3.8 Flash (local 7-day JSONL history persistence, TTL pruning, and UI search/clear wiring).
+- **What changed:**
+  1. **7-day auto-pruned local history (`src-tauri/src/history.rs`):**
+     - Persists completed utterances in `<app_data_dir>/utterance-history.jsonl` (never inside the repo) when `historyPersistenceEnabled` (default `true`) is enabled.
+     - Automatically prunes any entry older than 7 days (`HISTORY_RETENTION_MS = 604,800,000 ms`) and caps history at `MAX_HISTORY_ENTRIES = 200` on both startup (`load_and_prune_history`) and write (`append_history_entry`), physically rewriting the file when expired entries are removed (`test_seven_day_history_prunes_expired_entries_and_persists_recent`).
+  2. **One-click purge and false-trigger flag persistence (`clear_utterance_history`, `update_history_false_trigger_flag`):**
+     - Clicking **Clear** (`#clear-feed-btn`) or unchecking **7-Day Local Utterance History** (`#toggle-history-persistence`) immediately deletes `<app_data_dir>/utterance-history.jsonl` from disk (`test_history_false_trigger_flag_and_clear_purges_disk`).
+     - Clicking **Flag False Trigger** on any utterance card updates both `session-metrics.jsonl` and `utterance-history.jsonl`.
+  3. **Live Utterance Feed search (`#history-search-input`, `#history-ttl-badge`):**
+     - Added real-time filtering across cleaned commands, raw transcripts, target app names, and trigger sources, plus a `7d Local` / `RAM Only` status badge.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
