@@ -80,9 +80,15 @@ A manual hotkey (`Option + Space`) can force LISTENING at any time with a lower 
 
 ### Turn-taking rules (`src-tauri/src/turn_taking.rs`)
 
-- **Arming hysteresis (`evaluate_arming_hysteresis`):**
-  - Separate enter and exit cones prevent `IDLE <-> ARMED` thrashing near the gaze boundary: enters `ARMED` only after the face stays within `|yaw| <= 20.0°` and `|pitch| <= 18.0°` (`armYawEnterDeg`, `armPitchEnterDeg`) for `armDwellMs = 180 ms` (so glancing across the monitor while talking to someone else does not arm).
-  - Once armed, stays `ARMED` inside `|yaw| <= 28.0°` and `|pitch| <= 25.0°` (`armYawExitDeg`, `armPitchExitDeg`) and disarms only after leaving that cone continuously for `disarmDwellMs = 300 ms`.
+- **Arming hysteresis and per-user calibration (`evaluate_arming_hysteresis`, `compute_calibration_baseline`):**
+  - Separate enter and exit cones prevent `IDLE <-> ARMED` thrashing near the gaze boundary: enters `ARMED` only after the face stays within `|yaw - calibratedYawOffsetDeg| <= 20.0°` and `|pitch - calibratedPitchOffsetDeg| <= 18.0°` (`armYawEnterDeg`, `armPitchEnterDeg`) for `armDwellMs = 180 ms` (so glancing across the monitor while talking to someone else does not arm).
+  - Once armed, stays `ARMED` inside `|yaw - calibratedYawOffsetDeg| <= 28.0°` and `|pitch - calibratedPitchOffsetDeg| <= 25.0°` (`armYawExitDeg`, `armPitchExitDeg`) and disarms only after leaving that cone continuously for `disarmDwellMs = 300 ms`.
+  - A 1.5-second **Calibrate Gaze (1.5s)** workflow in the main window records median `(calibratedYawOffsetDeg, calibratedPitchOffsetDeg, calibratedRestingMar)` for off-center external monitors and individual resting lip geometry.
+- **Blendshape-assisted lip activity classification (`classify_lip_activity`):**
+  - Combines inner-lip `MAR` and `MAR` variance with MediaPipe Face Landmarker blendshapes (`jawOpen`, `mouthSmileLeft`, `mouthSmileRight`, `mouthClose`, `mouthFunnel`, `mouthPucker`, `mouthShrugUpper`, `mouthLowerDownLeft`, `mouthLowerDownRight`) to separate active speech (`LIPS: MOVING`) from wide yawns (`LIPS: YAWN CEILING`), silent smiles (`LIPS: SMILE FILTER`), closed-lip chewing (`LIPS: CHEW FILTER`), and open-mouth thinking pauses (`LIPS: OPEN (THINKING)`).
+- **Adaptive vision frame rate (`choose_adaptive_vision_tick_ms`, `adaptiveFpsEnabled`):**
+  - Runs the Worker-driven MediaPipe loop at `15 FPS` (`66 ms`) whenever the pipeline is active, the user is facing the screen, or within `3 seconds` of looking away.
+  - Scales down in `IDLE` to `8 FPS` (`125 ms`, `47.2%` fewer inferences) when a face is present but turned away for `> 3 s`, and `5 FPS` (`200 ms`, `66.7%` fewer inferences) when no face is in frame for `> 3 s`.
 - **Multimodal auto-start (`should_auto_start`):**
   - Requires `ARMED`, fresh vision within the exit cone, `lips_moving == true`, and either `>= 2` consecutive 32 ms VAD frames (`64 ms`) above `vadThreshold` (`0.35`) or a VAD frame above threshold with another voiced frame within the last `320 ms`. Because the `500 ms` pre-roll ring buffer is prepended on transition, requiring `64 ms` of voiced evidence never clips the first syllable while rejecting single-frame (`32 ms`) keyboard clicks.
 - **Minimum speech evidence (`has_minimum_speech_evidence`):**

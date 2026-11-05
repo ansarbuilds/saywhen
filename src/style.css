@@ -712,6 +712,8 @@ kbd {
 
 .vision-pills {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 6px;
 }
@@ -757,7 +759,12 @@ kbd {
   color: var(--text-primary);
 }
 
-.vision-metrics-row,
+.vision-metrics-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
 .mini-gauges-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

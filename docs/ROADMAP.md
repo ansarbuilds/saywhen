@@ -131,6 +131,18 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
   - **Verified vs Assumed:** All numbers in the table above were verified on macOS (Apple M4, Silero VAD v5 + Whisper Metal `tiny.en`) using `cargo run --bin replay -- recordings` on the 56-utterance macOS TTS + realistic noise/vision trace corpus. Live human multi-hour desk sessions and Windows 11 hardware measurements are not yet recorded.
 
+## Improvement #4: Vision calibration, adaptive FPS, and chewing/smiling separation
+- **Status:** Implemented on 2026-11-04 on branch `feat/vision-calibration` (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `index.html`, `src/style.css`). All 25 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 4 (MediaPipe blendshape signal fusion, median pose/MAR calibration math, and adaptive Worker timer scheduling).
+- **What changed:**
+  1. **Per-user gaze and resting MAR calibration (`compute_calibration_baseline`, `#calibrate-vision-btn`, `#reset-calibration-btn`):**
+     - Added `calibratedYawOffsetDeg`, `calibratedPitchOffsetDeg`, and `calibratedRestingMar` (`0.016` default) to `DictationConfig` (`#[serde(default)]` backward-compatible with existing `settings.local.json`).
+     - Added a 1.5-second **Calibrate Gaze (1.5s)** capture workflow in the Webcam Intent Gate panel that computes outlier-resistant median `(yaw0, pitch0, mar0)` offsets so external monitors placed to the left/right of a laptop webcam arm and disarm accurately around the user's true screen center (`test_calibrated_off_center_monitor_cone_and_median_baseline`).
+  2. **Chewing, smiling, and yawning separation (`classify_lip_activity`):**
+     - Fuses inner-lip `MAR` and `MAR` variance with MediaPipe Face Landmarker blendshapes (`jawOpen`, `mouthSmileLeft/Right`, `mouthClose`, `mouthFunnel`, `mouthPucker`, `mouthShrugUpper`, `mouthLowerDownLeft/Right`) to reject silent smiles (`LIPS: SMILE FILTER`), closed-lip chewing (`LIPS: CHEW FILTER`), and yawns (`LIPS: YAWN CEILING`), while preserving open-mouth mid-thought pauses (`LIPS: OPEN (THINKING)`) and real speech (`LIPS: MOVING`, verified in `test_classify_lip_activity_separates_speech_from_yawn_smile_and_chewing`).
+  3. **Adaptive vision frame rate (`choose_adaptive_vision_tick_ms`, `adaptiveFpsEnabled`):**
+     - Dynamically adjusts the Worker timer interval between `66 ms` (`~15.1 FPS` when armed, listening, or within `3 s` of facing the screen), `125 ms` (`8.0 FPS`, **47.2% reduction** in MediaPipe inference calls when looking away in `IDLE` for `> 3 s`), and `200 ms` (`5.0 FPS`, **66.7% reduction** in MediaPipe inference calls when no face is present for `> 3 s`), with live FPS and per-frame inference latency (`ms`) shown in `#fps-pill`.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
