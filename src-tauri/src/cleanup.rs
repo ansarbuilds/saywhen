@@ -8,6 +8,10 @@ pub struct CleanupResult {
     pub modified: bool,
     pub mode_used: String,
     pub is_destructive_command: bool,
+    #[serde(default)]
+    pub force_paste_only: bool,
+    #[serde(default)]
+    pub canceled_by_voice: bool,
 }
 
 /// Runs the local deterministic developer cleanup pass.
@@ -26,18 +30,59 @@ pub fn run_local_developer_cleanup_with_vocab(
     custom_vocab: &str,
 ) -> CleanupResult {
     let raw = input.trim().to_string();
-    if !enabled || raw.is_empty() {
-        let destructive = check_destructive_command(&raw);
+    if is_spoken_cancel_command(&raw) {
         return CleanupResult {
-            raw_text: raw.clone(),
-            cleaned_text: raw,
-            modified: false,
-            mode_used: "none".to_string(),
-            is_destructive_command: destructive,
+            raw_text: raw,
+            cleaned_text: String::new(),
+            modified: true,
+            mode_used: "voice_cancel".to_string(),
+            is_destructive_command: false,
+            force_paste_only: false,
+            canceled_by_voice: true,
         };
     }
 
-    let mut s = raw.clone();
+    let (after_scratch, had_scratch_that) = apply_scratch_that_correction(&raw);
+    if had_scratch_that && after_scratch.is_empty() {
+        return CleanupResult {
+            raw_text: raw,
+            cleaned_text: String::new(),
+            modified: true,
+            mode_used: "voice_cancel".to_string(),
+            is_destructive_command: false,
+            force_paste_only: false,
+            canceled_by_voice: true,
+        };
+    }
+
+    let (after_paste_override, force_paste_only) = strip_paste_only_phrase(&after_scratch);
+    if force_paste_only && after_paste_override.is_empty() {
+        return CleanupResult {
+            raw_text: raw,
+            cleaned_text: String::new(),
+            modified: true,
+            mode_used: "none".to_string(),
+            is_destructive_command: false,
+            force_paste_only: true,
+            canceled_by_voice: false,
+        };
+    }
+
+    if !enabled || after_paste_override.is_empty() {
+        let destructive = check_destructive_command(&after_paste_override);
+        let modified = after_paste_override != raw;
+        return CleanupResult {
+            raw_text: raw,
+            cleaned_text: after_paste_override,
+            modified,
+            mode_used: "none".to_string(),
+            is_destructive_command: destructive,
+            force_paste_only,
+            canceled_by_voice: false,
+        };
+    }
+
+    let mut s = after_paste_override;
 
     // 1. Strip leading/inline spoken fillers (case-insensitive word boundaries)
     let filler_patterns = [
@@ -139,8 +184,13 @@ pub fn run_local_developer_cleanup_with_vocab(
         s = replace_case_insensitive(&s, spoken, token);
     }
 
-    // Collapse accidental space after -- or ./
-    s = s.replace("-- ", "--").replace("./ ", "./");
+    // Collapse accidental space after -- or ./ and hyphenate common multi-word flags
+    s = s
+        .replace("-- ", "--")
+        .replace("./ ", "./")
+        .replace("--all targets", "--all-targets")
+        .replace("--no default features", "--no-default-features")
+        .replace("--manifest path", "--manifest-path");
 
     // 4. Stitch mid-sentence thinking-pause periods before lowercase connectives/prepositions.
     //    When a developer pauses for 800-1000 ms mid-thought, Whisper often inserts a period
@@ -219,7 +269,84 @@ pub fn run_local_developer_cleanup_with_vocab(
         modified,
         mode_used: "local_dev_rules".to_string(),
         is_destructive_command: destructive,
+        force_paste_only,
+        canceled_by_voice: false,
     }
+}
+
+/// Checks if the entire utterance is a spoken cancel phrase (`"cancel"`, `"cancel that"`,
+/// `"never mind"`).
+pub fn is_spoken_cancel_command(input: &str) -> bool {
+    let normalized = input
+        .trim()
+        .trim_matches(|c: char| ".!,?;:\"'".contains(c))
+        .trim()
+        .to_lowercase();
+    matches!(
+        normalized.as_str(),
+        "cancel" | "cancel that" | "never mind" | "nevermind"
+    )
+}
+
+/// Applies spoken `"scratch that"` self-correction:
+/// - If `"scratch that"` appears mid-utterance (e.g., `"git checkout main, scratch that, git checkout feat"`),
+///   discards everything before the last `"scratch that"` and returns `("git checkout feat", true)`.
+/// - If `"scratch that"` is at the end of the utterance with nothing after it, returns `("", true)`,
+///   signaling that the utterance was canceled by voice.
+pub fn apply_scratch_that_correction(input: &str) -> (String, bool) {
+    let lower = input.to_lowercase();
+    let needle = "scratch that";
+    let mut search_end = lower.len();
+    while let Some(pos) = lower[..search_end].rfind(needle) {
+        let before = &input[..pos];
+        let boundary_before = before
+            .chars()
+            .last()
+            .map(|c| !c.is_alphanumeric())
+            .unwrap_or(true);
+        let after_slice = &input[pos + needle.len()..];
+        let boundary_after = after_slice
+            .chars()
+            .next()
+            .map(|c| !c.is_alphanumeric())
+            .unwrap_or(true);
+        if boundary_before && boundary_after {
+            let trimmed_after = after_slice
+                .trim_start_matches(|c: char| c.is_whitespace() || ".,:;!?-".contains(c))
+                .trim();
+            return (trimmed_after.to_string(), true);
+        }
+        if pos == 0 {
+            break;
+        }
+        search_end = pos;
+    }
+    (input.to_string(), false)
+}
+
+/// Strips trailing `"paste only"` / `"just paste it"` / `"just paste"` / `"no enter"` voice
+/// delivery overrides and returns `(remaining_text, true)` when matched.
+pub fn strip_paste_only_phrase(input: &str) -> (String, bool) {
+    let trimmed = input.trim();
+    let stripped_punct = trimmed
+        .trim_end_matches(|c: char| ".!,?;:".contains(c))
+        .trim_end();
+    let lower = stripped_punct.to_lowercase();
+
+    for phrase in ["paste only", "just paste it", "just paste", "no enter"] {
+        if lower == phrase {
+            return (String::new(), true);
+        }
+        if lower.ends_with(phrase) {
+            let prefix_len = stripped_punct.len() - phrase.len();
+            let before = stripped_punct[..prefix_len]
+                .trim_end()
+                .trim_end_matches(|c: char| ",;:-".contains(c))
+                .trim_end();
+            return (before.to_string(), true);
+        }
+    }
+    (trimmed.to_string(), false)
 }
 
 /// Normalizes any case-insensitive token or phrase match in `input` to the exact spelling and
@@ -513,5 +640,37 @@ mod tests {
             res.cleaned_text,
             "Update saywhen to use MediaPipe and Silero with whisper-rs in TypeScript."
         );
+    }
+
+    #[test]
+    fn test_scratch_that_correction_and_paste_only_voice_override() {
+        // 1. Mid-utterance "scratch that" keeps only the corrected command after "scratch that"
+        let res = run_local_developer_cleanup(
+            "Cargo build, scratch that, Cargo test dash dash all targets.",
+            true,
+        );
+        assert_eq!(res.cleaned_text, "cargo test --all-targets");
+        assert!(!res.canceled_by_voice);
+        assert!(!res.force_paste_only);
+
+        // 2. Trailing "scratch that" cancels the entire utterance
+        let canceled = run_local_developer_cleanup("rm dash rf temp scratch that.", true);
+        assert!(canceled.canceled_by_voice);
+        assert!(canceled.cleaned_text.is_empty());
+
+        // 3. Spoken cancel variants ("cancel that", "never mind") cancel the utterance
+        let cancel_that = run_local_developer_cleanup("Cancel that!", true);
+        assert!(cancel_that.canceled_by_voice);
+        let never_mind = run_local_developer_cleanup("Never mind.", true);
+        assert!(never_mind.canceled_by_voice);
+
+        // 4. Trailing "paste only" / "just paste it" strips the suffix and sets force_paste_only
+        let paste_only = run_local_developer_cleanup(
+            "Git commit dash m wip, paste only.",
+            true,
+        );
+        assert_eq!(paste_only.cleaned_text, "git commit -m wip");
+        assert!(paste_only.force_paste_only);
+        assert!(!paste_only.canceled_by_voice);
     }
 }
