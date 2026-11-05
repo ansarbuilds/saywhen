@@ -141,6 +141,13 @@ impl TranscriberEngine {
         self.selected_model_id.lock().unwrap().clone()
     }
 
+    pub fn is_loaded(&self) -> bool {
+        self.loaded_model
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false)
+    }
+
     pub fn unload(&self) {
         if let Ok(mut guard) = self.loaded_model.lock() {
             *guard = None;

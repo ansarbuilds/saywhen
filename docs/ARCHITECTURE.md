@@ -51,6 +51,8 @@ The webview sends only derived numbers (landmark-based features such as MAR, yaw
   - `saywhen` itself (`dev.saywhen.desktop`, `saywhen.exe`, or matching PID) is removed from the default allowlist and unconditionally refused so `saywhen` never types into or presses Enter on its own windows.
 - **Pre-injection target verification (`onTargetChanged: "abort" | "paste_only"`, default `"abort"`):**
   - Right before injecting at the end of the preview countdown, `saywhen` re-detects the frontmost app and compares PID, bundle ID, executable, and name against the preview target. If the user switched apps during the countdown, `saywhen` never presses Enter: it either aborts (leaving the transcript on the clipboard and surfacing an error) or pastes without Enter (`"paste_only"`).
+- **Multi-monitor gaze-window alignment guard (`evaluate_gaze_window_alignment` in `src-tauri/src/inject/policy.rs`):**
+  - Compares the focused target window's horizontal display coordinates (`window_center_x`, `primary_screen_width`) against the user's calibrated head yaw (`head_yaw_deg`). If the focused window is on an external left display while the user is looking right, or on an external right display while the user is looking left, `saywhen` downgrades delivery to **Paste-Only** (`will_press_enter = false`) so it never auto-fires `Enter` into a terminal on the wrong monitor.
 - **Length-scaled Enter delay (`enterDelayMs` + `perAppEnterDelayMs`):**
   - Defaults to `120 ms` base delay plus `1 ms` per `20` characters, capped at `400 ms` (with optional per-app overrides), giving Electron apps and terminals time to process the clipboard paste before `Return` arrives.
 - **Held-modifier protection and private event state:**
@@ -99,8 +101,8 @@ A manual hotkey (`Option + Space`) can force LISTENING at any time with a lower 
   - Starts from `silenceTimeoutMs = 650 ms` for short commands (`<= 900 ms` of speech) with a closed mouth, and extends up to `maxSilenceTimeoutMs = 1,750 ms` by adding:
     - up to `+450 ms` scaled with spoken duration (`(speech_ms - 900) / 3`) for multi-clause utterances,
     - `+350 ms` when the speaker's mouth stays open mid-thought (`!mouth_closed`), and
-    - `+350 ms` when a partial transcript ends in a connective (`ends_with_connective`: `"and"`, `"the"`, `"to"`, `,`, etc.).
-  - The HUD pill subtly displays the remaining silence countdown (`end in X.Xs`) once at least `250 ms` of silence has elapsed.
+    - `+350 ms` when a live partial Whisper check (`partial_ends_with_connective` in `src-tauri/src/audio.rs`, triggered asynchronously after `>= 240 ms` of silence on the trailing `2.0s` audio window) ends in a connective (`ends_with_connective`: `"and"`, `"the"`, `"to"`, `,`, etc.).
+  - The HUD pill subtly displays the live partial transcript snippet or remaining silence countdown (`end in X.Xs (connective hold)`) once silence is underway.
 - **Post-roll (`postRollMs = 200 ms`):**
   - After `end_of_turn` triggers (`Silence` or `Nod`), the audio worker keeps capturing `200 ms` of trailing audio (`finishing...` in the HUD pill) before handing the buffer to Whisper so quiet final consonants and words spoken while nodding are not clipped. If the speaker resumes talking during a silence-triggered post-roll, the stop is canceled and `LISTENING` continues seamlessly.
 - **Data-tuned hallucination filter (`src-tauri/src/transcribe.rs`):**
