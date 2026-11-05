@@ -303,6 +303,11 @@ fn test_saywhen_bundle_id_matches_tauri_identifier() {
     let conf: serde_json::Value =
         serde_json::from_str(include_str!("../../tauri.conf.json")).expect("tauri.conf.json parses");
     assert_eq!(conf["identifier"].as_str(), Some(SAYWHEN_BUNDLE_ID));
+    assert_eq!(
+        conf["bundle"]["macOS"]["minimumSystemVersion"].as_str(),
+        Some("11.0"),
+        "macOS minimumSystemVersion must be >= 11.0 so whisper.cpp std::filesystem compiles under tauri build"
+    );
 }
 
 #[test]
