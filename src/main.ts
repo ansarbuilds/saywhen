@@ -40,6 +40,9 @@ interface DictationConfig {
   adaptiveFpsEnabled: boolean;
   customVocab: string;
   historyPersistenceEnabled: boolean;
+  llmCleanupEnabled: boolean;
+  llmEndpointUrl: string;
+  llmModel: string;
 }
 
 interface VisionTelemetryPayload {
@@ -202,6 +205,9 @@ let currentConfig: DictationConfig = {
   adaptiveFpsEnabled: true,
   customVocab: '',
   historyPersistenceEnabled: true,
+  llmCleanupEnabled: false,
+  llmEndpointUrl: 'http://127.0.0.1:11434/v1/chat/completions',
+  llmModel: 'qwen2.5-coder:1.5b',
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -387,6 +393,10 @@ const toggleAutoEnter = document.getElementById('toggle-auto-enter') as HTMLInpu
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
 const toggleHistoryPersistence = document.getElementById('toggle-history-persistence') as HTMLInputElement;
+const toggleLlmCleanup = document.getElementById('toggle-llm-cleanup') as HTMLInputElement;
+const llmCleanupFields = document.getElementById('llm-cleanup-fields') as HTMLElement;
+const llmEndpointInput = document.getElementById('llm-endpoint-input') as HTMLInputElement;
+const llmModelInput = document.getElementById('llm-model-input') as HTMLInputElement;
 const toggleSessionMetrics = document.getElementById('toggle-session-metrics') as HTMLInputElement;
 const toggleSaveAudio = document.getElementById('toggle-save-audio') as HTMLInputElement;
 
@@ -1251,6 +1261,9 @@ async function syncConfigToBackend() {
     hudEnabled: toggleHud.checked,
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
     historyPersistenceEnabled: toggleHistoryPersistence.checked,
+    llmCleanupEnabled: toggleLlmCleanup.checked,
+    llmEndpointUrl: llmEndpointInput.value.trim() || 'http://127.0.0.1:11434/v1/chat/completions',
+    llmModel: llmModelInput.value.trim() || 'qwen2.5-coder:1.5b',
     sessionMetricsEnabled: toggleSessionMetrics.checked,
     saveTuningAudioEnabled: toggleSaveAudio.checked,
     preferredDevice: deviceSelect.value ? deviceSelect.value : null,
@@ -1258,6 +1271,7 @@ async function syncConfigToBackend() {
 
   vadThreshDisplay.textContent = currentConfig.vadThreshold.toFixed(2);
   previewCountdownDisplay.textContent = `${currentConfig.previewCountdownMs} ms`;
+  llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
   updateCalibrationDisplay();
   updateHistoryBadgeDisplay();
 
@@ -1314,6 +1328,11 @@ async function initApp() {
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
+    toggleLlmCleanup.checked = Boolean(currentConfig.llmCleanupEnabled);
+    llmEndpointInput.value =
+      currentConfig.llmEndpointUrl || 'http://127.0.0.1:11434/v1/chat/completions';
+    llmModelInput.value = currentConfig.llmModel || 'qwen2.5-coder:1.5b';
+    llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
@@ -1383,6 +1402,11 @@ async function initApp() {
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
+    toggleLlmCleanup.checked = Boolean(currentConfig.llmCleanupEnabled);
+    llmEndpointInput.value =
+      currentConfig.llmEndpointUrl || 'http://127.0.0.1:11434/v1/chat/completions';
+    llmModelInput.value = currentConfig.llmModel || 'qwen2.5-coder:1.5b';
+    llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
@@ -1576,6 +1600,9 @@ toggleAutoEnter.addEventListener('change', syncConfigToBackend);
 toggleHud.addEventListener('change', syncConfigToBackend);
 toggleAdaptiveFps.addEventListener('change', syncConfigToBackend);
 toggleHistoryPersistence.addEventListener('change', syncConfigToBackend);
+toggleLlmCleanup.addEventListener('change', syncConfigToBackend);
+llmEndpointInput.addEventListener('change', syncConfigToBackend);
+llmModelInput.addEventListener('change', syncConfigToBackend);
 toggleSessionMetrics.addEventListener('change', syncConfigToBackend);
 toggleSaveAudio.addEventListener('change', syncConfigToBackend);
 
