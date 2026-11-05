@@ -1268,6 +1268,24 @@ async function syncConfigToBackend() {
   }
 }
 
+function renderDevicesDropdown(devices: string[]) {
+  deviceSelect.innerHTML = '';
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = 'System Default Microphone';
+  deviceSelect.appendChild(defaultOpt);
+
+  for (const dev of devices) {
+    const opt = document.createElement('option');
+    opt.value = dev;
+    opt.textContent = dev;
+    if (currentConfig.preferredDevice === dev) {
+      opt.selected = true;
+    }
+    deviceSelect.appendChild(opt);
+  }
+}
+
 async function initApp() {
   try {
     const snapshot = await invoke<SystemStatusSnapshot>('get_system_status');
@@ -1277,21 +1295,7 @@ async function initApp() {
 
     updateAccessibilityBadge(snapshot.accessibilityTrusted);
 
-    deviceSelect.innerHTML = '';
-    const defaultOpt = document.createElement('option');
-    defaultOpt.value = '';
-    defaultOpt.textContent = 'System Default Microphone';
-    deviceSelect.appendChild(defaultOpt);
-
-    for (const dev of snapshot.devices) {
-      const opt = document.createElement('option');
-      opt.value = dev;
-      opt.textContent = dev;
-      if (currentConfig.preferredDevice === dev) {
-        opt.selected = true;
-      }
-      deviceSelect.appendChild(opt);
-    }
+    renderDevicesDropdown(snapshot.devices);
 
     renderModelsDropdown();
 
@@ -1383,6 +1387,12 @@ async function initApp() {
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
     updateHistoryBadgeDisplay();
+  });
+
+  await listen<string[]>('audio-devices-changed', (event) => {
+    if (Array.isArray(event.payload)) {
+      renderDevicesDropdown(event.payload);
+    }
   });
 
   await listen<string>('utterance-discarded', (event) => {
