@@ -408,6 +408,22 @@
                   </div>
                   <input type="checkbox" id="toggle-hud" checked />
                 </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Session Metrics Log (Opt-In, Privacy-Safe JSONL)</div>
+                    <div class="toggle-desc">Write per-utterance timing and VAD stats to OS app data dir (no transcript text, no audio)</div>
+                  </div>
+                  <input type="checkbox" id="toggle-session-metrics" />
+                </label>
+
+                <label class="toggle-row">
+                  <div>
+                    <div class="toggle-title">Save Utterance Audio for Tuning (Opt-In, Resets on Restart)</div>
+                    <div class="toggle-desc">Save 16 kHz WAV + vision sidecar to local recordings/ folder; shows REC WAV badge in HUD</div>
+                  </div>
+                  <input type="checkbox" id="toggle-save-audio" />
+                </label>
               </div>
             </div>
           </div>
