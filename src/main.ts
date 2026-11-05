@@ -38,6 +38,7 @@ interface DictationConfig {
   calibratedPitchOffsetDeg: number;
   calibratedRestingMar: number;
   adaptiveFpsEnabled: boolean;
+  customVocab: string;
 }
 
 interface VisionTelemetryPayload {
@@ -196,6 +197,7 @@ let currentConfig: DictationConfig = {
   calibratedPitchOffsetDeg: 0.0,
   calibratedRestingMar: 0.016,
   adaptiveFpsEnabled: true,
+  customVocab: '',
 };
 
 let modelsCatalog: ModelInfo[] = [];
@@ -371,6 +373,7 @@ const vadThreshDisplay = document.getElementById('vad-thresh-display') as HTMLEl
 const previewCountdownSlider = document.getElementById('preview-countdown-slider') as HTMLInputElement;
 const previewCountdownDisplay = document.getElementById('preview-countdown-display') as HTMLElement;
 const allowlistInput = document.getElementById('allowlist-input') as HTMLInputElement;
+const customVocabInput = document.getElementById('custom-vocab-input') as HTMLInputElement;
 
 const toggleCleanup = document.getElementById('toggle-cleanup') as HTMLInputElement;
 const togglePreview = document.getElementById('toggle-preview') as HTMLInputElement;
@@ -1202,6 +1205,7 @@ async function syncConfigToBackend() {
     previewEnabled: togglePreview.checked,
     perAppRulesEnabled: togglePerApp.checked,
     autoSendAllowlist: allowlist,
+    customVocab: customVocabInput.value.trim(),
     autoPressEnter: toggleAutoEnter.checked,
     hudEnabled: toggleHud.checked,
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
@@ -1253,6 +1257,7 @@ async function initApp() {
     previewCountdownSlider.value = String(currentConfig.previewCountdownMs);
     previewCountdownDisplay.textContent = `${currentConfig.previewCountdownMs} ms`;
     allowlistInput.value = currentConfig.autoSendAllowlist.join(', ');
+    customVocabInput.value = currentConfig.customVocab || '';
 
     toggleCleanup.checked = currentConfig.cleanupEnabled;
     togglePreview.checked = currentConfig.previewEnabled;
@@ -1499,6 +1504,7 @@ deviceSelect.addEventListener('change', syncConfigToBackend);
 vadThreshSlider.addEventListener('input', syncConfigToBackend);
 previewCountdownSlider.addEventListener('input', syncConfigToBackend);
 allowlistInput.addEventListener('change', syncConfigToBackend);
+customVocabInput.addEventListener('change', syncConfigToBackend);
 toggleCleanup.addEventListener('change', syncConfigToBackend);
 togglePreview.addEventListener('change', syncConfigToBackend);
 togglePerApp.addEventListener('change', syncConfigToBackend);

@@ -143,6 +143,22 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Adaptive vision frame rate (`choose_adaptive_vision_tick_ms`, `adaptiveFpsEnabled`):**
      - Dynamically adjusts the Worker timer interval between `66 ms` (`~15.1 FPS` when armed, listening, or within `3 s` of facing the screen), `125 ms` (`8.0 FPS`, **47.2% reduction** in MediaPipe inference calls when looking away in `IDLE` for `> 3 s`), and `200 ms` (`5.0 FPS`, **66.7% reduction** in MediaPipe inference calls when no face is present for `> 3 s`), with live FPS and per-frame inference latency (`ms`) shown in `#fps-pill`.
 
+## Improvement #5: Developer CLI homophone cleanup, thinking-pause stitching, and custom vocabulary
+- **Status:** Implemented and benchmarked on 2026-11-04 on branch `feat/developer-vocab-cleanup` (`src-tauri/src/cleanup.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/bin/replay.rs`, `src/main.ts`, `index.html`). All 27 Rust unit tests, the 56-utterance offline replay benchmark, and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 3.8 Flash (deterministic developer vocabulary rules, custom vocabulary UI wiring, and replay benchmark metric).
+- **What changed:**
+  1. **Phonetic CLI homophone recovery (`src-tauri/src/cleanup.rs`):**
+     - Added deterministic corrections for phonetic substitutions that Whisper `tiny.en` / `base.en` make on developer CLI commands (`"Cubectal"` -> `"kubectl"`, `"NTM RunBuild"` -> `"npm run build"`, `"Get status"` -> `"git status"`, `"Get If Had"` -> `"git diff head"`, `"Good Log Onaline"` -> `"git log oneline"`, `"Get Stash Pot"` -> `"git stash pop"`, `"Rust Up Update"` -> `"rustup update"`, `"Cargo FM T-Check"` -> `"cargo fmt check"`, `"SRC Torrey"` -> `"src-tauri"`, `"Czechmain.ts"` -> `"check main.ts"`, `"architecture dock"` -> `"architecture doc"`).
+  2. **Mid-sentence thinking-pause period stitching:**
+     - Stitches periods inserted by Whisper across `880 ms to 1,040 ms` thinking pauses before connectives and prepositions (`". And "` -> `" and "`, `". For "` -> `" for "`, `". In "` -> `" in "`, `". With "` -> `" with "`, `". When "` -> `" when "`, `". Before "` -> `" before "`, `". Called "` -> `" called "`) so multi-clause thoughts become one clean prompt.
+  3. **CLI subcommand casing normalization:**
+     - Lowercases known CLI subcommands (`build`, `test`, `check`, `clippy`, `fmt`, `run`, `status`, `short`, `diff`, `head`, `log`, `oneline`, `branch`, `list`, `push`, `origin`, `pull`, `rebase`, `stash`, `pop`, `get`, `pods`, `update`, `all`, `targets`, `release`) when an utterance begins with a CLI binary, and normalizes inline `"Cargo Test"` / `"Cargo Build"` / `"Cargo Check"` / `"Cargo Clippy"`.
+  4. **User-configurable Custom Developer Vocabulary (`customVocab`, `apply_custom_vocab_terms`, `#custom-vocab-input`):**
+     - Added `customVocab` (`#[serde(default)]` in `DictationConfig`) and a **Custom Developer Vocabulary** input in `index.html`.
+     - Normalizes both case-insensitive whole-term matches and spaced camelCase/PascalCase/hyphenated compounds (for example `"media pipe"` -> `"MediaPipe"`, `"whisper rs"` -> `"whisper-rs"`, `"type script"` -> `"TypeScript"`, plus optional `Term=spoken alias` rules).
+  5. **Measured Before vs After (VERIFIED via `cargo run --bin replay -- recordings` across the 34 target developer utterances):**
+     - **Developer command cleanup exact match:** Before (legacy cleanup) = `15 / 34` (**44.1%**), After (Improvement #5 cleanup) = `34 / 34` (**100.0%**).
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.

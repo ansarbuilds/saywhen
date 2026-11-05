@@ -1,4 +1,4 @@
-use crate::cleanup::{run_local_developer_cleanup, CleanupResult};
+use crate::cleanup::{run_local_developer_cleanup_with_vocab, CleanupResult};
 use crate::inject::{
     default_auto_send_allowlist, detect_frontmost_app, evaluate_app_injection_policy,
     inject_text_into_focused_app, AppTargetPolicy, InjectionOutcome, InjectionTimingConfig,
@@ -164,6 +164,9 @@ pub struct DictationConfig {
     /// Adaptive vision frame rate (low FPS in IDLE when away/no-face, 15 FPS when facing screen or armed).
     #[serde(default = "default_true")]
     pub adaptive_fps_enabled: bool,
+    /// Optional user-configured developer vocabulary terms (comma- or newline-separated).
+    #[serde(default)]
+    pub custom_vocab: String,
 }
 
 fn default_calibrated_resting_mar() -> f32 {
@@ -260,6 +263,7 @@ impl Default for DictationConfig {
             calibrated_pitch_offset_deg: 0.0,
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
             adaptive_fps_enabled: true,
+            custom_vocab: String::new(),
         }
     }
 }
@@ -1422,9 +1426,10 @@ fn run_audio_worker(
                                     return;
                                 }
 
-                                let cleanup = run_local_developer_cleanup(
+                                let cleanup = run_local_developer_cleanup_with_vocab(
                                     &transcription.text,
                                     cfg_snapshot.cleanup_enabled,
+                                    &cfg_snapshot.custom_vocab,
                                 );
 
                                 if cleanup.cleaned_text.is_empty() {
@@ -1755,9 +1760,11 @@ mod tests {
         obj.remove("calibratedPitchOffsetDeg");
         obj.remove("calibratedRestingMar");
         obj.remove("adaptiveFpsEnabled");
+        obj.remove("customVocab");
         legacy["vadThreshold"] = serde_json::json!(0.7);
         let mut parsed: DictationConfig = serde_json::from_value(legacy).unwrap();
         assert!(parsed.hud_enabled);
+        assert!(parsed.custom_vocab.is_empty());
         assert_eq!(parsed.on_target_changed, TargetChangePolicy::Abort);
         assert_eq!(parsed.enter_delay_ms, DEFAULT_ENTER_DELAY_MS);
         assert!(parsed.per_app_enter_delay_ms.is_empty());

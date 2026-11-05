@@ -379,11 +379,22 @@
                 />
               </div>
 
+              <div class="field-group">
+                <label class="field-label" for="custom-vocab-input">Custom Developer Vocabulary (Exact Casing &amp; Compound Terms)</label>
+                <input
+                  type="text"
+                  id="custom-vocab-input"
+                  class="text-control"
+                  placeholder="e.g. saywhen, MediaPipe, Silero, whisper-rs, TypeScript"
+                  value=""
+                />
+              </div>
+
               <div class="toggles-list">
                 <label class="toggle-row">
                   <div>
                     <div class="toggle-title">Developer Code Cleanup Pass</div>
-                    <div class="toggle-desc">Strips "um/uh", converts "dash dash" &rarr; "--", preserves CLI tokens</div>
+                    <div class="toggle-desc">Fixes CLI homophones (kubectl, git, npm), stitches thinking pauses, converts "dash dash" &rarr; "--", applies custom vocab</div>
                   </div>
                   <input type="checkbox" id="toggle-cleanup" checked />
                 </label>
