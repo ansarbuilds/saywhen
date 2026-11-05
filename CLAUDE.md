@@ -17,6 +17,7 @@ Status: Stages 1 through 5 are implemented and verified. Read `README.md`, `docs
 - `src-tauri/src/inject.rs` (+ `src-tauri/src/inject/macos.rs`, `src-tauri/src/inject/windows.rs`, `src-tauri/src/inject/tests.rs`): Main-thread `enigo` + `arboard` clipboard injection (`run_on_main_thread`), native frontmost app detection (`NSWorkspace.frontmostApplication` on macOS, Win32 `GetForegroundWindow` + `QueryFullProcessImageNameW` on Windows), bundle-id/exe allowlist matching, self-injection block, target-change verification before paste, length-scaled Enter delay, conditional text/image clipboard restore, modifier release, macOS Secure Event Input detection, and Windows UIPI elevation guard.
 - `src-tauri/src/hud.rs`: Floating HUD pill window placement and click-through, preview-only global `Esc` cancel, tray menu, close-to-background.
 - `src/hud.ts` + `hud.html`: Transparent, non-focusable HUD pill and preview card (event listener only).
+- `src/ui.ts` + `src/style.css`: Main window presentation layer (sidebar Home / Preferences / Lab navigation, view transitions, state orb level, slider fills). Presentation only, no backend calls.
 - `src/main.ts`: 15 FPS MediaPipe Face Landmarker vision gate, head gesture detector, live VAD/RMS oscilloscope, and cancelable Preview HUD.
 - `scripts/capture-screenshots.sh`: Headless Chrome screenshot generator for `docs/screenshots/stage1..stage5.png`.
 

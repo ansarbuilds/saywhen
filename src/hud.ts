@@ -79,22 +79,42 @@ function setFlash(text: string, kind: 'ok' | 'error') {
   flash = { text, kind, until: performance.now() + FLASH_MS };
 }
 
+// Center bars respond most, edges least, so the meter reads as a waveform.
+const BAR_WEIGHTS = [0.55, 0.85, 1, 0.8, 0.6];
+let meterLevel = 0;
+
 function renderMeter(t: AudioTelemetryEvent) {
   // RMS of normal speech sits around 0.02 to 0.15; VAD probability gives the speech shape.
-  const level = Math.min(1, Math.max(t.isSpeech ? t.vadProb : 0, t.rms * 8));
+  const raw = Math.min(1, Math.max(t.isSpeech ? t.vadProb : 0, t.rms * 8));
+  // Fast attack, slower release keeps the bars lively without flicker.
+  meterLevel = raw > meterLevel ? raw : meterLevel * 0.7 + raw * 0.3;
+  const now = performance.now();
   meterBars.forEach((bar, i) => {
-    const threshold = (i + 0.5) / meterBars.length;
-    const on = level >= threshold;
-    bar.classList.toggle('on', on);
-    bar.style.height = on ? `${4 + Math.round(level * 10)}px` : '3px';
+    const weight = BAR_WEIGHTS[i % BAR_WEIGHTS.length];
+    const wobble = meterLevel > 0.05 ? 0.12 * Math.sin(now / 90 + i * 1.7) : 0;
+    const scale = Math.max(0.18, Math.min(1, meterLevel * weight + wobble));
+    bar.classList.toggle('on', meterLevel >= (i + 0.5) / meterBars.length || scale > 0.3);
+    bar.style.setProperty('--s', scale.toFixed(3));
   });
+}
+
+let lastRenderedState = '';
+
+function replaySwap() {
+  root.classList.remove('is-swapping');
+  void root.offsetWidth;
+  root.classList.add('is-swapping');
 }
 
 function render(t: AudioTelemetryEvent) {
   hudEnabled = t.hudEnabled;
   root.classList.toggle('hud-off', !hudEnabled);
-  root.dataset.state = t.state;
-  label.textContent = t.state;
+  if (t.state !== lastRenderedState) {
+    lastRenderedState = t.state;
+    root.dataset.state = t.state;
+    label.textContent = t.state;
+    replaySwap();
+  }
   if (recBadge) {
     recBadge.classList.toggle('hidden', !t.saveTuningAudioEnabled);
   }
@@ -159,7 +179,7 @@ function render(t: AudioTelemetryEvent) {
   detail.textContent = text;
 
   if (t.state !== 'PREVIEW') {
-    previewCard.classList.add('hidden');
+    previewCard.classList.remove('is-open');
   }
   renderMeter(t);
 }
@@ -184,7 +204,7 @@ function showPreview(ev: PreviewStartedEvent) {
   previewHint.textContent = 'Esc or shake head to cancel. Nod to send now.';
   previewCountdown.textContent = `${(previewTotalMs / 1000).toFixed(1)}s`;
   previewFill.style.width = '100%';
-  previewCard.classList.remove('hidden');
+  previewCard.classList.add('is-open');
 }
 
 function onUtteranceComplete(ev: UtteranceCompleteEvent) {
@@ -203,14 +223,14 @@ function onUtteranceComplete(ev: UtteranceCompleteEvent) {
   } else {
     setFlash('Transcribed (auto-inject off)', 'ok');
   }
-  previewCard.classList.add('hidden');
+  previewCard.classList.remove('is-open');
 }
 
 async function initHud() {
   await listen<AudioTelemetryEvent>('audio-telemetry', (e) => render(e.payload));
   await listen<PreviewStartedEvent>('preview-started', (e) => showPreview(e.payload));
   await listen<string>('preview-canceled', (e) => {
-    previewCard.classList.add('hidden');
+    previewCard.classList.remove('is-open');
     setFlash(`Canceled: ${e.payload}`, 'ok');
   });
   await listen<string>('utterance-canceled', () => setFlash('Utterance canceled', 'ok'));
@@ -263,6 +283,7 @@ function applyDemo(state: string) {
 
 const demo = new URLSearchParams(window.location.search).get('demo');
 if (demo) {
+  document.documentElement.classList.add('no-motion');
   applyDemo(demo);
 } else {
   initHud().catch((err) => {
