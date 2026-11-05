@@ -33,34 +33,52 @@ pub struct TranscriptionResult {
 pub struct TranscriberEngine {
     loaded_model: Mutex<Option<(String, Arc<WhisperContext>)>>,
     selected_model_id: Mutex<String>,
+    app_models_dir: Option<PathBuf>,
 }
 
 impl TranscriberEngine {
     pub fn new() -> Self {
+        Self::with_app_data_dir(None)
+    }
+
+    pub fn with_app_data_dir(app_data_dir: Option<PathBuf>) -> Self {
         Self {
             loaded_model: Mutex::new(None),
             selected_model_id: Mutex::new("tiny.en".to_string()),
+            app_models_dir: app_data_dir.map(|d| d.join("models")),
         }
     }
 
-    pub fn resolve_models_dir() -> PathBuf {
-        let candidates = [
-            PathBuf::from("models"),
-            PathBuf::from("../models"),
-            PathBuf::from("/Users/mohamedansar/Projects/saywhen/models"),
-        ];
+    pub fn resolve_models_dir(&self) -> PathBuf {
+        let mut candidates = vec![PathBuf::from("models"), PathBuf::from("../models")];
+        if let Some(ref app_dir) = self.app_models_dir {
+            candidates.push(app_dir.clone());
+        }
+        candidates.push(PathBuf::from("/Users/mohamedansar/Projects/saywhen/models"));
+
+        // Prefer a candidate directory that already has a downloaded Whisper .bin model
+        for candidate in &candidates {
+            if candidate.join("ggml-tiny.en.bin").exists()
+                || candidate.join("ggml-base.en.bin").exists()
+            {
+                return candidate.clone();
+            }
+        }
         for candidate in &candidates {
             if candidate.exists() && candidate.is_dir() {
                 return candidate.clone();
             }
         }
-        let fallback = PathBuf::from("../models");
+        let fallback = self
+            .app_models_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("../models"));
         let _ = std::fs::create_dir_all(&fallback);
         fallback
     }
 
     pub fn list_models(&self) -> Vec<ModelInfo> {
-        let dir = Self::resolve_models_dir();
+        let dir = self.resolve_models_dir();
         let specs = [
             (
                 "tiny.en",
@@ -136,7 +154,7 @@ impl TranscriberEngine {
             _ => return Err(format!("Unsupported model id: {}", model_id)),
         };
 
-        let dir = Self::resolve_models_dir();
+        let dir = self.resolve_models_dir();
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create models dir: {}", e))?;
         let dest = dir.join(filename);
         let url = format!(
@@ -200,7 +218,7 @@ impl TranscriberEngine {
             "base.en" => "ggml-base.en.bin",
             _ => "ggml-tiny.en.bin",
         };
-        let model_path = Self::resolve_models_dir().join(filename);
+        let model_path = self.resolve_models_dir().join(filename);
         let ctx = self.ensure_context(&model_path)?;
 
         let start = Instant::now();

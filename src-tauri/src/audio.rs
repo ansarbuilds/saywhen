@@ -7,15 +7,16 @@ use crate::inject::{
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 use crate::turn_taking::{
-    append_session_metrics_line, end_of_turn, evaluate_arming_hysteresis,
-    has_minimum_speech_evidence, is_within_arm_exit_cone, resolve_recordings_dir,
-     sanitize_discarded_reason_for_metrics, save_tuning_utterance_wav_and_sidecar,
-    should_auto_start, silence_countdown_ms, ArmingHysteresisState, EndReason, GateInputs,
-    RecordedVisionSample, TuningRecordingSidecar, TurnState, TurnTakingConfig,
-    UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
-    DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
-    DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
-    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, VAD_FRAME_MS,
+    append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
+    evaluate_arming_hysteresis, evaluate_audio_stream_health, has_minimum_speech_evidence,
+    is_within_arm_exit_cone, resolve_recordings_dir, sanitize_discarded_reason_for_metrics,
+    save_tuning_utterance_wav_and_sidecar, should_auto_start, silence_countdown_ms,
+    ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs, RecordedVisionSample,
+    TuningRecordingSidecar, TurnState, TurnTakingConfig, UtteranceMetricsRecord,
+    DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG, DEFAULT_ARM_PITCH_EXIT_DEG,
+    DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG, DEFAULT_CALIBRATED_RESTING_MAR,
+    DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS, DEFAULT_MIN_SPEECH_HOTKEY_MS,
+    DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
@@ -455,6 +456,8 @@ struct SharedCaptureBuffer {
     arming_hysteresis: ArmingHysteresisState,
     vision_trace: VecDeque<(u64, VisionTelemetryPayload)>,
     camera_enabled: bool,
+    last_audio_callback_at: Option<Instant>,
+    stream_faulted: bool,
 }
 
 impl SharedCaptureBuffer {
@@ -486,6 +489,8 @@ impl SharedCaptureBuffer {
             arming_hysteresis: ArmingHysteresisState::default(),
             vision_trace: VecDeque::with_capacity(256),
             camera_enabled: false,
+            last_audio_callback_at: None,
+            stream_faulted: false,
         }
     }
 
@@ -758,7 +763,11 @@ fn build_cpal_stream(
     let stream_config: cpal::StreamConfig = supported_config.into();
 
     let err_handle = app_handle.clone();
+    let err_shared = Arc::clone(&shared);
     let err_fn = move |err: cpal::StreamError| {
+        if let Ok(mut guard) = err_shared.lock() {
+            guard.stream_faulted = true;
+        }
         let _ = err_handle.emit("pipeline-error", format!("Microphone stream error: {}", err));
     };
 
@@ -776,6 +785,8 @@ fn build_cpal_stream(
 
         let mut guard = shared.lock().unwrap();
         guard.latest_rms = rms;
+        guard.last_audio_callback_at = Some(Instant::now());
+        guard.stream_faulted = false;
 
         for &sample in &resampled {
             if guard.pre_roll.len() >= PREROLL_SAMPLES {
@@ -1073,10 +1084,127 @@ fn run_audio_worker(
     }
 
     let mut last_telemetry_emit = Instant::now();
+    let mut last_health_check = Instant::now();
+    let mut last_loop_wall_ms = unix_timestamp_ms();
 
     loop {
         let cfg = config.lock().unwrap().clone();
         let turn_cfg = cfg.to_turn_taking_config();
+
+        let now_wall_ms = unix_timestamp_ms();
+        if let Some(jump_ms) = detect_system_sleep_or_stall_jump(
+            last_loop_wall_ms,
+            now_wall_ms,
+            SYSTEM_SLEEP_JUMP_THRESHOLD_MS,
+        ) {
+            if let Some(ref mut v) = vad {
+                v.reset();
+            }
+            let (was_listening, was_preview) = {
+                let mut guard = shared.lock().unwrap();
+                let wl = guard.state == PipelineState::LISTENING;
+                let wp = guard.state == PipelineState::PREVIEW;
+                guard.cancel_active_or_preview(&turn_cfg);
+                guard.state = PipelineState::IDLE;
+                guard.arming_hysteresis.reset();
+                guard.pre_roll.clear();
+                guard.vad_pending.clear();
+                guard.last_vision_update = None;
+                guard.last_audio_callback_at = None;
+                (wl, wp)
+            };
+            let msg = format!(
+                "Canceled active dictation after {:.1}s system sleep or lock",
+                jump_ms as f64 / 1000.0
+            );
+            if was_preview {
+                let _ = app_handle.emit("preview-canceled", msg.clone());
+                let _ = app_handle.emit("pipeline-error", msg);
+            } else if was_listening {
+                let _ = app_handle.emit("utterance-canceled", msg.clone());
+                let _ = app_handle.emit("pipeline-error", msg);
+            }
+        }
+        last_loop_wall_ms = now_wall_ms;
+
+        if last_health_check.elapsed() >= Duration::from_millis(2000) {
+            last_health_check = Instant::now();
+            let (stream_faulted, ms_since_cb) = {
+                let guard = shared.lock().unwrap();
+                (
+                    guard.stream_faulted,
+                    guard
+                        .last_audio_callback_at
+                        .map(|t| t.elapsed().as_millis() as u64),
+                )
+            };
+            let available = list_input_devices();
+            let action = evaluate_audio_stream_health(
+                active_stream.is_some(),
+                &active_device_name,
+                cfg.preferred_device.as_deref(),
+                &available,
+                stream_faulted,
+                ms_since_cb,
+            );
+            match action {
+                AudioStreamRecoveryAction::Healthy => {}
+                AudioStreamRecoveryAction::ReconnectAfterFaultOrStall { reason } => {
+                    let prev_device = active_device_name.clone();
+                    drop(active_stream.take());
+                    {
+                        let mut guard = shared.lock().unwrap();
+                        guard.stream_faulted = false;
+                        guard.last_audio_callback_at = None;
+                        if guard.state == PipelineState::LISTENING {
+                            guard.cancel_active_or_preview(&turn_cfg);
+                            let _ = app_handle.emit("utterance-canceled", reason.clone());
+                        }
+                    }
+                    match build_cpal_stream(
+                        cfg.preferred_device.as_deref(),
+                        Arc::clone(&shared),
+                        app_handle.clone(),
+                    ) {
+                        Ok((stream, name)) => {
+                            active_stream = Some(stream);
+                            active_device_name = name.clone();
+                            let _ = app_handle.emit("audio-devices-changed", &available);
+                            if prev_device != name {
+                                let _ = app_handle.emit(
+                                    "pipeline-error",
+                                    format!(
+                                        "Microphone '{}' disconnected; switched to '{}'",
+                                        prev_device, name
+                                    ),
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            active_device_name = "Unavailable".to_string();
+                            let _ = app_handle.emit("pipeline-error", err);
+                        }
+                    }
+                }
+                AudioStreamRecoveryAction::SwitchBackToPreferred { preferred } => {
+                    drop(active_stream.take());
+                    match build_cpal_stream(
+                        Some(preferred.as_str()),
+                        Arc::clone(&shared),
+                        app_handle.clone(),
+                    ) {
+                        Ok((stream, name)) => {
+                            active_stream = Some(stream);
+                            active_device_name = name;
+                            let _ = app_handle.emit("audio-devices-changed", &available);
+                        }
+                        Err(err) => {
+                            let _ = app_handle.emit("pipeline-error", err);
+                        }
+                    }
+                }
+            }
+        }
 
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {

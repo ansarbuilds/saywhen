@@ -6,9 +6,9 @@ Status: draft, pre-prototype. Everything here is a plan, not a measured result.
 
 - **Shell:** Tauri v2 (Rust backend, TypeScript frontend in the system webview).
 - **Vision:** MediaPipe Tasks Vision (Face Landmarker + Hand Landmarker) running in the webview via WASM/WebGL. Chosen because it works the same on macOS, Windows and Linux without native per-platform vision code.
-- **Audio capture:** `cpal` in Rust.
+- **Audio capture:** `cpal` in Rust (`src-tauri/src/audio.rs`) with automatic hot-plug recovery (`evaluate_audio_stream_health`), preferred-device restoration, and wall-clock system sleep/lock detection (`detect_system_sleep_or_stall_jump`).
 - **Voice activity detection:** Silero VAD (ONNX).
-- **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run, never committed.
+- **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run to `<app_data_dir>/models` in packaged `.app` / `.exe` builds (or `./models` in dev runs), never committed.
 - **AI cleanup:** local LLM or bring-your-own-key provider. Optional, off by default until configured.
 - **Text injection:** `enigo` for keystrokes (`src-tauri/src/inject.rs`, `inject/macos.rs`, `inject/windows.rs`), clipboard paste via `arboard` as the default path, then a synthetic Enter after a length-scaled delay.
 - **Storage:** `<app_data_dir>/utterance-history.jsonl` for 7-day local transcript history (`src-tauri/src/history.rs`), automatically pruned on startup and write (`HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`), with one-click purge. Settings in `settings.local.json`.
