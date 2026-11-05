@@ -1,4 +1,8 @@
-use crate::cleanup::{run_local_developer_cleanup_with_vocab, CleanupResult};
+use crate::cleanup::{
+    check_destructive_command, classify_llm_endpoint_privacy,
+    run_local_developer_cleanup_with_vocab, run_opt_in_llm_cleanup, CleanupResult,
+    LlmCleanupConfig,
+};
 use crate::history::append_history_entry;
 use crate::inject::{
     default_auto_send_allowlist, detect_frontmost_app, evaluate_app_injection_policy,
@@ -172,6 +176,26 @@ pub struct DictationConfig {
     /// Persist recent utterances locally in `<app_data_dir>/utterance-history.jsonl`, auto-purged after 7 days.
     #[serde(default = "default_true")]
     pub history_persistence_enabled: bool,
+    /// Opt-in secondary AI cleanup pass via local Ollama (`127.0.0.1:11434`) or OpenAI-compatible BYOK endpoint.
+    #[serde(default)]
+    pub llm_cleanup_enabled: bool,
+    /// OpenAI-compatible chat completions URL (defaults to local Ollama loopback).
+    #[serde(default = "default_llm_endpoint_url")]
+    pub llm_endpoint_url: String,
+    /// Model identifier passed to the LLM cleanup endpoint.
+    #[serde(default = "default_llm_model")]
+    pub llm_model: String,
+    /// Optional Bearer API key kept in memory only (never serialized to settings.local.json).
+    #[serde(default, skip_serializing)]
+    pub llm_api_key: String,
+}
+
+fn default_llm_endpoint_url() -> String {
+    "http://127.0.0.1:11434/v1/chat/completions".to_string()
+}
+
+fn default_llm_model() -> String {
+    "qwen2.5-coder:1.5b".to_string()
 }
 
 fn default_calibrated_resting_mar() -> f32 {
@@ -270,6 +294,10 @@ impl Default for DictationConfig {
             adaptive_fps_enabled: true,
             custom_vocab: String::new(),
             history_persistence_enabled: true,
+            llm_cleanup_enabled: false,
+            llm_endpoint_url: default_llm_endpoint_url(),
+            llm_model: default_llm_model(),
+            llm_api_key: String::new(),
         }
     }
 }
@@ -1528,7 +1556,7 @@ fn run_audio_worker(
                             transcriber_ref.transcribe_pcm(&captured.samples, captured.peak_vad);
                         match tx_res {
                             Ok(transcription) => {
-                                let cleanup = run_local_developer_cleanup_with_vocab(
+                                let mut cleanup = run_local_developer_cleanup_with_vocab(
                                     &transcription.text,
                                     cfg_snapshot.cleanup_enabled,
                                     &cfg_snapshot.custom_vocab,
@@ -1617,6 +1645,37 @@ fn run_audio_worker(
                                     );
                                     let _ = app_for_tx.emit("utterance-discarded", reason);
                                     return;
+                                }
+
+                                if cfg_snapshot.llm_cleanup_enabled {
+                                    let llm_cfg = LlmCleanupConfig {
+                                        enabled: true,
+                                        endpoint_url: cfg_snapshot.llm_endpoint_url.clone(),
+                                        model: cfg_snapshot.llm_model.clone(),
+                                        api_key: cfg_snapshot.llm_api_key.clone(),
+                                        timeout_ms: 1200,
+                                    };
+                                    match run_opt_in_llm_cleanup(
+                                        &cleanup.cleaned_text,
+                                        &cfg_snapshot.custom_vocab,
+                                        &llm_cfg,
+                                    ) {
+                                        Ok(llm_out) => {
+                                            cleanup.modified = llm_out != cleanup.raw_text;
+                                            cleanup.cleaned_text = llm_out;
+                                            cleanup.is_destructive_command =
+                                                check_destructive_command(&cleanup.cleaned_text);
+                                            cleanup.mode_used = match classify_llm_endpoint_privacy(
+                                                &cfg_snapshot.llm_endpoint_url,
+                                            ) {
+                                                "local_loopback" => "local_ollama".to_string(),
+                                                _ => "byok_llm".to_string(),
+                                            };
+                                        }
+                                        Err(err) => {
+                                            let _ = app_for_tx.emit("pipeline-error", err);
+                                        }
+                                    }
                                 }
 
                                 let front_app = detect_frontmost_app();

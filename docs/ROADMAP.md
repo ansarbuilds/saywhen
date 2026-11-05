@@ -210,6 +210,17 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Cross-platform macOS + Windows GitHub Actions matrix (`.github/workflows/ci.yml`):**
      - Expanded the CI matrix to `[macos-latest, windows-latest]` so both the `objc2-app-kit` macOS path and `windows-sys` Win32 path compile and run unit tests on every push and PR.
 
+## Improvement #10: Opt-in local Ollama / OpenAI-compatible BYOK AI cleanup pass
+- **Status:** Implemented on 2026-11-04 on branch `feat/opt-in-llm-cleanup` (`src-tauri/src/cleanup.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `index.html`). All 34 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 3.8 Flash (local loopback vs remote BYOK classification, output fence/preamble sanitization, and opt-in settings wiring).
+- **What changed:**
+  1. **Opt-in secondary LLM cleanup client (`LlmCleanupConfig`, `run_opt_in_llm_cleanup`):**
+     - Off by default (`llmCleanupEnabled: false`), preserving 100% zero-network operation unless explicitly enabled by the user.
+     - Defaults to local Ollama loopback (`http://127.0.0.1:11434/v1/chat/completions`, `qwen2.5-coder:1.5b`) with a strict `1,200 ms` timeout (`reqwest::blocking::Client`).
+     - If the endpoint fails or times out, `saywhen` fails loudly with a `"pipeline-error"` notice while preserving the deterministic `cleanup.cleaned_text` and re-evaluating `check_destructive_command`.
+  2. **Loopback privacy classifier and output sanitizer (`classify_llm_endpoint_privacy`, `sanitize_llm_cleanup_output`):**
+     - Distinguishes `127.0.0.1` / `localhost` / `[::1]` (`"local_loopback"`) from external hosts (`"remote_byok"`), strips accidental markdown code fences or backticks around single-line commands, and rejects conversational preambles (`"Sure, here is..."`, verified in `test_llm_endpoint_privacy_classification_and_output_sanitization`).
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
