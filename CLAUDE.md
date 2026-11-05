@@ -9,6 +9,8 @@ Status: Stages 1 through 5 are implemented and verified. Read `README.md`, `docs
 ## Architecture & Key Files
 
 - `src-tauri/src/audio.rs`: 16 kHz `cpal` capture worker thread, 500 ms (`8,000`-sample) circular pre-roll ring buffer, Silero VAD v5 ONNX (`voice_activity_detector`), 5-state multimodal machine (`IDLE -> ARMED -> LISTENING -> TRANSCRIBING -> PREVIEW`), head gesture handling (`nod` / `shake`), and `settings.local.json` persistence.
+- `src-tauri/src/turn_taking.rs`: Pure turn-taking decision logic (`evaluate_arming_hysteresis`, `should_auto_start`, `has_minimum_speech_evidence`, `compute_adaptive_silence_timeout_ms`, `end_of_turn`, `silence_countdown_ms`), privacy-safe `session-metrics.jsonl` logger, and opt-in `recordings/` 16 kHz WAV + JSON sidecar writer.
+- `src-tauri/src/bin/replay.rs`: Offline replay and 56-utterance benchmark binary (`cargo run --bin replay -- [recordings_dir]`, `--generate-corpus`) comparing legacy vs Improved turn-taking on identical WAV + vision traces.
 - `src-tauri/src/transcribe.rs`: `whisper-rs` (`0.16.0`) Metal GPU engine (`use_gpu(true)`), model downloader, hallucination filter, and `"send it"` / `"submit it"` end-phrase stripping.
 - `src-tauri/src/cleanup.rs`: Local deterministic developer CLI/code cleanup pass (`run_local_developer_cleanup`) and destructive command guard (`check_destructive_command`).
 - `src-tauri/src/inject.rs` (+ `src-tauri/src/inject/macos.rs`, `src-tauri/src/inject/windows.rs`, `src-tauri/src/inject/tests.rs`): Main-thread `enigo` + `arboard` clipboard injection (`run_on_main_thread`), native frontmost app detection (`NSWorkspace.frontmostApplication` on macOS, Win32 `GetForegroundWindow` + `QueryFullProcessImageNameW` on Windows), bundle-id/exe allowlist matching, self-injection block, target-change verification before paste, length-scaled Enter delay, conditional text/image clipboard restore, modifier release, macOS Secure Event Input detection, and Windows UIPI elevation guard.
@@ -21,6 +23,7 @@ Status: Stages 1 through 5 are implemented and verified. Read `README.md`, `docs
 
 - Build frontend: `npm run build`
 - Run Rust unit & Metal benchmark tests: `export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" && cargo test --manifest-path src-tauri/Cargo.toml`
+- Run turn-taking offline replay benchmark: `export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" && cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- recordings`
 - Run desktop app in dev mode: `export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" && npx tauri dev`
 - Regenerate documentation screenshots: `./scripts/capture-screenshots.sh`
 
