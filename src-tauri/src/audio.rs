@@ -1528,8 +1528,13 @@ fn run_audio_worker(
                             transcriber_ref.transcribe_pcm(&captured.samples, captured.peak_vad);
                         match tx_res {
                             Ok(transcription) => {
-                                let trimmed_lower = transcription.text.trim().to_lowercase();
-                                if trimmed_lower == "cancel" || trimmed_lower == "cancel." {
+                                let cleanup = run_local_developer_cleanup_with_vocab(
+                                    &transcription.text,
+                                    cfg_snapshot.cleanup_enabled,
+                                    &cfg_snapshot.custom_vocab,
+                                );
+
+                                if cleanup.canceled_by_voice {
                                     {
                                         let mut guard = shared_after.lock().unwrap();
                                         guard.state = guard.resting_state(&turn_cfg_snapshot);
@@ -1564,16 +1569,10 @@ fn run_audio_worker(
                                     );
                                     let _ = app_for_tx.emit(
                                         "preview-canceled",
-                                        "Spoken 'cancel' command aborted utterance",
+                                        "Spoken cancel command aborted utterance",
                                     );
                                     return;
                                 }
-
-                                let cleanup = run_local_developer_cleanup_with_vocab(
-                                    &transcription.text,
-                                    cfg_snapshot.cleanup_enabled,
-                                    &cfg_snapshot.custom_vocab,
-                                );
 
                                 if cleanup.cleaned_text.is_empty() {
                                     {
@@ -1621,15 +1620,24 @@ fn run_audio_worker(
                                 }
 
                                 let front_app = detect_frontmost_app();
-                                let wants_enter = cfg_snapshot.auto_press_enter
-                                    || transcription.end_phrase_triggered;
-                                let target_policy = evaluate_app_injection_policy(
+                                let wants_enter = (cfg_snapshot.auto_press_enter
+                                    || transcription.end_phrase_triggered)
+                                    && !cleanup.force_paste_only;
+                                let mut target_policy = evaluate_app_injection_policy(
                                     &front_app,
                                     wants_enter,
                                     cfg_snapshot.per_app_rules_enabled,
                                     cleanup.is_destructive_command,
                                     &cfg_snapshot.auto_send_allowlist,
                                 );
+                                if cleanup.force_paste_only {
+                                    target_policy.policy = "paste_only".to_string();
+                                    target_policy.will_press_enter = false;
+                                    target_policy.reason = format!(
+                                        "Voice override ('paste only'): pasting into '{}' without pressing Enter",
+                                        target_policy.app_name
+                                    );
+                                }
 
                                 let tuning_capture = if cfg_snapshot.save_tuning_audio_enabled {
                                     Some((captured.samples, captured.vision_trace))

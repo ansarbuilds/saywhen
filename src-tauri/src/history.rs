@@ -181,6 +181,8 @@ mod tests {
                 modified: false,
                 mode_used: "local_dev_rules".to_string(),
                 is_destructive_command: false,
+                force_paste_only: false,
+                canceled_by_voice: false,
             },
             target_policy: AppTargetPolicy {
                 app_name: "Terminal".to_string(),
