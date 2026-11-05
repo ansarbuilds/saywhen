@@ -1,4 +1,203 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmCleanupConfig {
+    pub enabled: bool,
+    pub endpoint_url: String,
+    pub model: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_llm_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_llm_timeout_ms() -> u64 {
+    1200
+}
+
+impl Default for LlmCleanupConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint_url: "http://127.0.0.1:11434/v1/chat/completions".to_string(),
+            model: "qwen2.5-coder:1.5b".to_string(),
+            api_key: String::new(),
+            timeout_ms: default_llm_timeout_ms(),
+        }
+    }
+}
+
+/// Classifies an LLM endpoint URL as `"local_loopback"` (`127.0.0.1`, `localhost`, `[::1]`),
+/// `"remote_byok"` (any external host), or `"invalid_url"`.
+pub fn classify_llm_endpoint_privacy(endpoint_url: &str) -> &'static str {
+    let trimmed = endpoint_url.trim().to_ascii_lowercase();
+    let after_scheme = if let Some(rest) = trimmed.strip_prefix("http://") {
+        rest
+    } else if let Some(rest) = trimmed.strip_prefix("https://") {
+        rest
+    } else {
+        return "invalid_url";
+    };
+    let host_port = after_scheme.split('/').next().unwrap_or("");
+    if host_port.is_empty() {
+        return "invalid_url";
+    }
+    let host = if host_port.starts_with('[') {
+        host_port.split(']').next().unwrap_or("").trim_start_matches('[')
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+        "local_loopback"
+    } else {
+        "remote_byok"
+    }
+}
+
+/// Strips markdown code fences, backticks, or conversational preambles that small LLMs
+/// sometimes emit around a cleaned developer command. Falls back to `fallback` if the
+/// model output is empty or looks like a refusal/conversational explanation.
+pub fn sanitize_llm_cleanup_output(raw_llm_output: &str, fallback: &str) -> String {
+    let mut s = raw_llm_output.trim();
+    if s.is_empty() {
+        return fallback.to_string();
+    }
+    if s.starts_with("```") && s.ends_with("```") {
+        let inner = s.trim_start_matches("```");
+        let after_lang = if let Some(nl) = inner.find('\n') {
+            &inner[nl + 1..]
+        } else {
+            inner
+        };
+        s = after_lang.trim_end_matches("```").trim();
+    } else if s.starts_with('`') && s.ends_with('`') && s.len() > 2 && !s[1..s.len() - 1].contains('`') {
+        s = s[1..s.len() - 1].trim();
+    }
+    let lower = s.to_ascii_lowercase();
+    for bad_prefix in [
+        "sure,",
+        "sure!",
+        "here is the",
+        "here's the",
+        "cleaned command:",
+        "i cannot",
+        "i'm sorry",
+    ] {
+        if lower.starts_with(bad_prefix) {
+            return fallback.to_string();
+        }
+    }
+    if s.is_empty() {
+        fallback.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+/// Calls an opt-in local Ollama (`http://127.0.0.1:11434/v1/chat/completions`) or OpenAI-compatible
+/// BYOK endpoint with a strict timeout. Never called unless `llm_cfg.enabled == true`.
+pub fn run_opt_in_llm_cleanup(
+    deterministic_text: &str,
+    custom_vocab: &str,
+    llm_cfg: &LlmCleanupConfig,
+) -> Result<String, String> {
+    if !llm_cfg.enabled || deterministic_text.trim().is_empty() {
+        return Ok(deterministic_text.to_string());
+    }
+    let privacy = classify_llm_endpoint_privacy(&llm_cfg.endpoint_url);
+    if privacy == "invalid_url" {
+        return Err(format!(
+            "Invalid LLM cleanup endpoint URL '{}': kept deterministic transcript",
+            llm_cfg.endpoint_url
+        ));
+    }
+
+    let timeout_secs = format!("{:.2}", (llm_cfg.timeout_ms.clamp(250, 5000) as f64) / 1000.0);
+
+    let vocab_hint = if custom_vocab.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" Preserve these exact custom terms: {}.", custom_vocab.trim())
+    };
+    let sys_prompt = format!(
+        "You are a deterministic developer dictation formatter. Output ONLY the cleaned CLI command or coding agent prompt with no markdown fences, no quotes, and no explanation.{}",
+        vocab_hint
+    );
+
+    let payload = serde_json::json!({
+        "model": llm_cfg.model.trim(),
+        "temperature": 0.0,
+        "max_tokens": 256,
+        "messages": [
+            { "role": "system", "content": sys_prompt },
+            { "role": "user", "content": deterministic_text }
+        ]
+    });
+    let payload_bytes = serde_json::to_vec(&payload)
+        .map_err(|e| format!("Failed to serialize LLM request payload: {}", e))?;
+
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-sS",
+        "-f",
+        "--max-time",
+        &timeout_secs,
+        "-H",
+        "Content-Type: application/json",
+        "--data-binary",
+        "@-",
+    ]);
+    if !llm_cfg.api_key.trim().is_empty() {
+        cmd.arg("-H")
+            .arg(format!("Authorization: Bearer {}", llm_cfg.api_key.trim()));
+    }
+    cmd.arg(llm_cfg.endpoint_url.trim())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| {
+        format!(
+            "Opt-in LLM cleanup failed to launch curl ({}): kept deterministic transcript",
+            e
+        )
+    })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(&payload_bytes);
+    }
+
+    let output = child.wait_with_output().map_err(|e| {
+        format!(
+            "Opt-in LLM cleanup failed waiting for response ({}): kept deterministic transcript",
+            e
+        )
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Opt-in LLM cleanup request to '{}' failed ({}): kept deterministic transcript",
+            llm_cfg.endpoint_url,
+            stderr.trim()
+        ));
+    }
+
+    let body: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+        format!(
+            "Opt-in LLM cleanup response parse failed ({}): kept deterministic transcript",
+            e
+        )
+    })?;
+
+    let content = body["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("");
+    Ok(sanitize_llm_cleanup_output(content, deterministic_text))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -672,5 +871,37 @@ mod tests {
         assert_eq!(paste_only.cleaned_text, "git commit -m wip");
         assert!(paste_only.force_paste_only);
         assert!(!paste_only.canceled_by_voice);
+    }
+
+    #[test]
+    fn test_llm_endpoint_privacy_classification_and_output_sanitization() {
+        assert_eq!(
+            classify_llm_endpoint_privacy("http://127.0.0.1:11434/v1/chat/completions"),
+            "local_loopback"
+        );
+        assert_eq!(
+            classify_llm_endpoint_privacy("http://localhost:8080/v1/chat/completions"),
+            "local_loopback"
+        );
+        assert_eq!(
+            classify_llm_endpoint_privacy("https://api.openai.com/v1/chat/completions"),
+            "remote_byok"
+        );
+        assert_eq!(classify_llm_endpoint_privacy("not-a-url"), "invalid_url");
+
+        // Strips markdown code fences and backticks
+        assert_eq!(
+            sanitize_llm_cleanup_output("```bash\ncargo test --release\n```", "cargo test"),
+            "cargo test --release"
+        );
+        assert_eq!(
+            sanitize_llm_cleanup_output("`git status --short`", "git status"),
+            "git status --short"
+        );
+        // Rejects conversational preambles and keeps deterministic fallback
+        assert_eq!(
+            sanitize_llm_cleanup_output("Sure, here is the command: cargo test", "cargo test"),
+            "cargo test"
+        );
     }
 }
