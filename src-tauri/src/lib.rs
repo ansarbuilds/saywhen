@@ -1,15 +1,19 @@
 pub mod audio;
 pub mod cleanup;
+pub mod history;
 pub mod hud;
 pub mod inject;
 pub mod transcribe;
 pub mod turn_taking;
 
 use audio::{
-    list_input_devices, AudioCommand, AudioPipelineController, DictationConfig,
-    VisionTelemetryPayload,
+    list_input_devices, unix_timestamp_ms, AudioCommand, AudioPipelineController, DictationConfig,
+    UtteranceCompleteEvent, VisionTelemetryPayload,
 };
 use cleanup::{run_local_developer_cleanup, run_local_developer_cleanup_with_vocab, CleanupResult};
+use history::{
+    clear_utterance_history_file, load_and_prune_history, update_history_false_trigger_flag,
+};
 use inject::{
     check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
     inject_text_into_focused_app, open_accessibility_settings, InjectionOutcome,
@@ -37,19 +41,32 @@ pub struct SystemStatusSnapshot {
     pub selected_model_id: String,
     pub hotkey_label: String,
     pub frontmost_app: String,
+    pub recent_history: Vec<UtteranceCompleteEvent>,
 }
 
 #[tauri::command]
-fn get_system_status(state: State<'_, AppState>) -> SystemStatusSnapshot {
+fn get_system_status(app: AppHandle, state: State<'_, AppState>) -> SystemStatusSnapshot {
+    let config = state.audio.get_config();
+    let recent_history = if config.history_persistence_enabled {
+        app.path()
+            .app_data_dir()
+            .ok()
+            .map(|dir| load_and_prune_history(&dir, unix_timestamp_ms()))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     SystemStatusSnapshot {
         state: state.audio.current_state(),
         devices: list_input_devices(),
-        config: state.audio.get_config(),
+        config,
         accessibility_trusted: check_accessibility_permission(),
         models: state.transcriber.list_models(),
         selected_model_id: state.transcriber.get_selected_model_id(),
         hotkey_label: "Option + Space".to_string(),
         frontmost_app: detect_frontmost_app().name,
+        recent_history,
     }
 }
 
@@ -73,6 +90,15 @@ fn stop_and_transcribe(state: State<'_, AppState>) -> Result<(), String> {
 fn flag_false_trigger(app: AppHandle, utterance_id: u64, flagged: bool) -> Result<(), String> {
     if let Ok(app_data_dir) = app.path().app_data_dir() {
         update_false_trigger_flag_in_metrics(&app_data_dir, utterance_id, flagged)?;
+        let _ = update_history_false_trigger_flag(&app_data_dir, utterance_id, flagged);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_utterance_history(app: AppHandle) -> Result<(), String> {
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        clear_utterance_history_file(&app_data_dir)?;
     }
     Ok(())
 }
@@ -112,6 +138,11 @@ fn update_dictation_config(
     config: DictationConfig,
 ) -> Result<DictationConfig, String> {
     let updated = state.audio.update_config(config)?;
+    if !updated.history_persistence_enabled {
+        if let Ok(app_data_dir) = app.path().app_data_dir() {
+            let _ = clear_utterance_history_file(&app_data_dir);
+        }
+    }
     let _ = app.emit("dictation-config-updated", &updated);
     Ok(updated)
 }
@@ -283,6 +314,7 @@ pub fn run() {
             manual_inject_text,
             request_accessibility_settings,
             flag_false_trigger,
+            clear_utterance_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while building saywhen tauri application")
