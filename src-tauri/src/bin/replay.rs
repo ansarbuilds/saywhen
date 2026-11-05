@@ -15,6 +15,7 @@
 //!     `cargo run --bin replay -- --generate-corpus [recordings_dir]`
 
 use saywhen_lib::audio::VisionTelemetryPayload;
+use saywhen_lib::cleanup::{run_legacy_developer_cleanup, run_local_developer_cleanup};
 use saywhen_lib::transcribe::TranscriberEngine;
 use saywhen_lib::turn_taking::{
     end_of_turn, evaluate_arming_hysteresis, has_minimum_speech_evidence, is_within_arm_exit_cone,
@@ -958,6 +959,18 @@ fn median_u64(mut vals: Vec<u64>) -> u64 {
     vals[vals.len() / 2]
 }
 
+fn normalized_command_form(s: &str) -> String {
+    let s = s
+        .trim()
+        .trim_end_matches(|c: char| ".,;!?".contains(c))
+        .replace(" dot ", ".")
+        .replace('-', " ");
+    s.split_whitespace()
+        .map(|w| w.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn main() {
     whisper_rs::install_logging_hooks();
     let args: Vec<String> = std::env::args().collect();
@@ -1026,6 +1039,9 @@ fn main() {
     let mut before_clipped = 0usize;
     let mut after_clipped = 0usize;
 
+    let mut before_exact_cleanup_matches = 0usize;
+    let mut after_exact_cleanup_matches = 0usize;
+
     let mut before_latencies: Vec<u64> = Vec::new();
     let mut after_latencies: Vec<u64> = Vec::new();
 
@@ -1091,6 +1107,20 @@ fn main() {
         if should_tx {
             target_clips += 1;
             speech_peak_vads.push(after.peak_vad);
+            let exp_norm = normalized_command_form(sidecar.expected_phrase.as_deref().unwrap_or(""));
+            let legacy_cleaned = run_legacy_developer_cleanup(&after.transcript);
+            let improved_cleaned = run_local_developer_cleanup(&after.transcript, true).cleaned_text;
+            if normalized_command_form(&legacy_cleaned) == exp_norm {
+                before_exact_cleanup_matches += 1;
+            }
+            if normalized_command_form(&improved_cleaned) == exp_norm {
+                after_exact_cleanup_matches += 1;
+            } else if verbose {
+                println!(
+                    "   [CLEANUP MISMATCH #{}] expected={:?} vs cleaned={:?} (raw={:?})",
+                    sidecar.metrics.utterance_id, exp_norm, normalized_command_form(&improved_cleaned), after.transcript
+                );
+            }
             if category == "thinking_pause" {
                 thinking_clips += 1;
             }
@@ -1203,6 +1233,21 @@ fn main() {
     println!(
         "5. HUD arm/disarm flicker count per minute:       Before = {:.1}/min, After = {:.1}/min",
         before_flicker_per_min, after_flicker_per_min
+    );
+    let before_cleanup_rate = if target_clips > 0 {
+        (before_exact_cleanup_matches as f64 / target_clips as f64) * 100.0
+    } else {
+        0.0
+    };
+    let after_cleanup_rate = if target_clips > 0 {
+        (after_exact_cleanup_matches as f64 / target_clips as f64) * 100.0
+    } else {
+        0.0
+    };
+    println!(
+        "6. Developer command cleanup exact match:         Before = {}/{} ({:.1}%), After = {}/{} ({:.1}%)",
+        before_exact_cleanup_matches, target_clips, before_cleanup_rate,
+        after_exact_cleanup_matches, target_clips, after_cleanup_rate
     );
     if !speech_peak_vads.is_empty() {
         let min_speech_vad = speech_peak_vads

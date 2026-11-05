@@ -9,7 +9,7 @@ use audio::{
     list_input_devices, AudioCommand, AudioPipelineController, DictationConfig,
     VisionTelemetryPayload,
 };
-use cleanup::{run_local_developer_cleanup, CleanupResult};
+use cleanup::{run_local_developer_cleanup, run_local_developer_cleanup_with_vocab, CleanupResult};
 use inject::{
     check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
     inject_text_into_focused_app, open_accessibility_settings, InjectionOutcome,
@@ -100,8 +100,9 @@ fn cancel_preview(state: State<'_, AppState>, reason: Option<String>) -> Result<
 }
 
 #[tauri::command]
-fn test_cleanup_pass(sample_text: String) -> CleanupResult {
-    run_local_developer_cleanup(&sample_text, true)
+fn test_cleanup_pass(state: State<'_, AppState>, sample_text: String) -> CleanupResult {
+    let cfg = state.audio.get_config();
+    run_local_developer_cleanup_with_vocab(&sample_text, true, &cfg.custom_vocab)
 }
 
 #[tauri::command]

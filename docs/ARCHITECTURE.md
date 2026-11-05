@@ -107,6 +107,14 @@ A manual hotkey (`Option + Space`) can force LISTENING at any time with a lower 
 - **Opt-in measurement harness and offline replay (`src-tauri/src/bin/replay.rs`):**
   - `sessionMetricsEnabled` (default `false`): appends one JSON line per utterance to `<app_data_dir>/session-metrics.jsonl` containing timing, VAD, end reason, transcript character length, outcome, and false-trigger flags. **Never logs transcript text or audio.**
   - `saveTuningAudioEnabled` (default `false`, forced off on every app startup, shows a bright `REC WAV` badge in the HUD pill while active): saves 16 kHz mono WAV files and JSON vision/metrics sidecars to local `recordings/` (gitignored) for deterministic evaluation with `cargo run --bin replay`.
+- **Developer cleanup pass and custom vocabulary (`src-tauri/src/cleanup.rs`):**
+  - `run_local_developer_cleanup_with_vocab` runs in `< 50 us` locally with zero network latency:
+    1. Strips leading and inline spoken fillers (`"uh"`, `"um"`, `"er"`, `"you know"`, `"basically"`).
+    2. Corrects Whisper `tiny.en` / `base.en` phonetic CLI homophones (`"Cubectal"` / `"kube control"` -> `"kubectl"`, `"NTM RunBuild"` -> `"npm run build"`, `"Get status"` -> `"git status"`, `"Get If Had"` -> `"git diff head"`, `"Good Log Onaline"` -> `"git log oneline"`, `"Get Stash Pot"` -> `"git stash pop"`, `"SRC Torrey"` -> `"src-tauri"`, `"Czechmain.ts"` -> `"check main.ts"`, `"architecture dock"` -> `"architecture doc"`, `"say when"` -> `"saywhen"`).
+    3. Converts spoken CLI flags and file extensions (`"dash dash"` -> `"--"`, `"dot slash"` -> `"./"`, `"dot rs"` -> `".rs"`, `"dot ts"` -> `".ts"`, `"dot toml"` -> `".toml"`, `"dot json"` -> `".json"`, etc.).
+    4. Stitches mid-sentence thinking-pause periods before lowercase connectives and prepositions (`". And "` -> `" and "`, `". For "` -> `" for "`, `". In "` -> `" in "`, `". With "` -> `" with "`, `". When "` -> `" when "`, `". Before "` -> `" before "`, `". Called "` -> `" called "`).
+    5. Normalizes capitalized CLI binaries (`cargo`, `git`, `npm`, `kubectl`, `rustup`, ...) and subcommands (`build`, `test`, `check`, `clippy`, `fmt`, `run`, `status`, `diff`, `log`, `oneline`, `stash`, `pop`, ...), and strips trailing periods from pure CLI commands.
+    6. Applies user-configurable `customVocab` (`apply_custom_vocab_terms`, supporting both plain terms like `saywhen, MediaPipe, Silero, whisper-rs, TypeScript` and `Preferred=spoken alias` pairs) with whole-word and camelCase/hyphenated compound matching.
 
 ## Privacy design
 
