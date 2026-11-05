@@ -185,6 +185,19 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **App-bundle Whisper model path resolution (`TranscriberEngine::with_app_data_dir`):**
      - Resolves existing models across `./models`, `../models`, and `<app_data_dir>/models`, and defaults new downloads to `<app_data_dir>/models` when running from a packaged `.app` or `.exe` outside the source repository.
 
+## Improvement #8: Spoken self-correction ("scratch that"), paste-only voice override ("paste only"), and GitHub Actions CI
+- **Status:** Implemented on 2026-11-04 on branch `feat/voice-overrides-and-ci` (`src-tauri/src/cleanup.rs`, `src-tauri/src/audio.rs`, `.github/workflows/ci.yml`, `README.md`, `CLAUDE.md`). All 32 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 3.8 Flash (deterministic spoken self-correction and delivery override rules, CI workflow YAML, and README/docs synchronization).
+- **What changed:**
+  1. **Mid-utterance `"scratch that"` self-correction (`apply_scratch_that_correction`):**
+     - Discards any misspoken clause before the last `"scratch that"` in an utterance (for example `"cargo build, scratch that, cargo test --all-targets"` -> `"cargo test --all-targets"`), or cancels the entire utterance if nothing follows `"scratch that"`.
+  2. **Expanded spoken cancel commands (`is_spoken_cancel_command`):**
+     - Supports `"cancel"`, `"cancel that"`, `"never mind"`, and trailing `"scratch that"` (`test_scratch_that_correction_and_paste_only_voice_override`).
+  3. **Voice paste-only override (`strip_paste_only_phrase`, `force_paste_only`):**
+     - Saying `"paste only"`, `"just paste it"`, `"just paste"`, or `"no enter"` at the end of a command strips the phrase and forces `target_policy` into **Paste-Only** mode (`will_press_enter = false`) for that utterance even inside an allowlisted terminal.
+  4. **Automated GitHub Actions CI (`.github/workflows/ci.yml`):**
+     - Verifies zero em dashes, builds the TypeScript/Vite frontend (`npm ci && npm run build`), and runs the full Rust unit test suite (`cargo test --manifest-path src-tauri/Cargo.toml`) on every push and pull request.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
