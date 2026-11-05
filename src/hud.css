@@ -1,20 +1,25 @@
 /* Floating HUD pill. The window is transparent and click-through, so only the
    pill and the preview card are ever visible. No web fonts: the overlay must
-   render instantly and offline. */
+   render instantly and offline. A transparent webview cannot blur the desktop
+   behind it, so the glass look is built from layered translucency, an inner
+   highlight and a state-tinted rim instead of backdrop-filter. */
 :root {
-  --hud-bg: rgba(14, 17, 25, 0.9);
-  --hud-border: rgba(255, 255, 255, 0.12);
-  --hud-text: #f3f5f9;
-  --hud-muted: #9ba3b5;
-  --hud-idle: #636b7e;
-  --hud-armed: #10b981;
-  --hud-listening: #f43f5e;
-  --hud-transcribing: #f59e0b;
-  --hud-preview: #6366f1;
-  --hud-warn: #f59e0b;
-  --hud-danger: #f43f5e;
-  --hud-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --hud-bg: rgba(18, 19, 24, 0.86);
+  --hud-bg-2: rgba(28, 29, 36, 0.86);
+  --hud-rim: rgba(255, 255, 255, 0.1);
+  --hud-text: #f2f2f5;
+  --hud-muted: #a2a5b0;
+  --hud-idle: #8b8f9a;
+  --hud-armed: #34d399;
+  --hud-listening: #ff5f7e;
+  --hud-transcribing: #fbbf24;
+  --hud-preview: #8b7cff;
+  --hud-warn: #fbbf24;
+  --hud-danger: #ff5f7e;
+  --hud-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   --hud-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --accent: var(--hud-idle);
 }
 
@@ -53,12 +58,13 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 8px;
-  transition: opacity 180ms ease;
+  padding: 10px 10px 12px;
+  transition: opacity 260ms var(--ease-out), transform 360ms var(--ease-out);
 }
 
 .hud-root.hud-off {
   opacity: 0;
+  transform: translateY(6px) scale(0.98);
 }
 
 .hud-root[data-state='ARMED'] { --accent: var(--hud-armed); }
@@ -70,65 +76,113 @@ body {
 
 /* Pill */
 .pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 9px;
   height: 36px;
   max-width: 100%;
-  padding: 0 14px 0 12px;
+  padding: 0 15px 0 11px;
   border-radius: 999px;
-  background: var(--hud-bg);
-  border: 1px solid var(--hud-border);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
-    0 6px 20px rgba(0, 0, 0, 0.35);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 55%),
+    var(--hud-bg);
+  box-shadow:
+    0 0.5px 0 rgba(255, 255, 255, 0.18) inset,
+    0 0 0 1px var(--hud-rim) inset,
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 22px -6px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 8px 24px -6px rgba(0, 0, 0, 0.55);
   font-size: 12.5px;
   white-space: nowrap;
+  transition: box-shadow 420ms var(--ease-out);
+  animation: pill-in 520ms var(--ease-spring) both;
 }
 
 .pill-dot {
-  width: 9px;
-  height: 9px;
+  position: relative;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex: none;
-  background: var(--accent);
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.55), transparent 60%), var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition: background 300ms ease, box-shadow 300ms ease, transform 300ms var(--ease-spring);
 }
 
-.hud-root[data-state='LISTENING'] .pill-dot {
-  animation: hud-pulse 1s ease-in-out infinite;
+.pill-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+}
+
+.hud-root[data-state='ARMED'] .pill-dot {
+  animation: hud-breathe 2.4s ease-in-out infinite;
+}
+
+.hud-root[data-state='LISTENING'] .pill-dot::after {
+  animation: hud-ripple 1.4s var(--ease-out) infinite;
 }
 
 .hud-root[data-state='TRANSCRIBING'] .pill-dot {
   background: transparent;
+  box-shadow: none;
   border: 2px solid var(--accent);
   border-right-color: transparent;
-  animation: hud-spin 0.8s linear infinite;
+  animation: hud-spin 0.75s linear infinite;
 }
 
 .pill-label {
   font-family: var(--hud-mono);
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-weight: 650;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
   color: var(--accent);
+  transition: color 300ms ease;
+}
+
+.hud-root.is-swapping .pill-label,
+.hud-root.is-swapping .pill-detail {
+  animation: hud-swap 360ms var(--ease-out) both;
+}
+
+.hud-root.is-swapping .pill-detail {
+  animation-delay: 40ms;
 }
 
 .pill-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--hud-mono);
-  font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.05em;
+  font-weight: 650;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(244, 63, 94, 0.2);
-  border: 1px solid rgba(244, 63, 94, 0.55);
-  color: #fda4af;
+  background: rgba(255, 95, 126, 0.16);
+  box-shadow: 0 0 0 1px rgba(255, 95, 126, 0.45) inset;
+  color: #ffb3c1;
+}
+
+.pill-rec::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--hud-listening);
+  animation: hud-blink 1.2s ease-in-out infinite;
 }
 
 .pill-meter {
   display: none;
   align-items: center;
-  gap: 2px;
-  height: 14px;
+  gap: 2.5px;
+  height: 16px;
+  padding: 0 1px;
 }
 
 .hud-root[data-state='LISTENING'] .pill-meter,
@@ -139,11 +193,12 @@ body {
 .pill-meter i {
   display: block;
   width: 3px;
-  height: 3px;
+  height: 16px;
   border-radius: 2px;
   background: var(--accent);
-  opacity: 0.35;
-  transition: height 60ms linear, opacity 60ms linear;
+  opacity: 0.4;
+  transform: scaleY(var(--s, 0.18));
+  transition: transform 110ms var(--ease-out), opacity 160ms ease;
 }
 
 .pill-meter i.on {
@@ -154,6 +209,7 @@ body {
   color: var(--hud-muted);
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .hud-root.is-stalled .pill-detail,
@@ -161,27 +217,63 @@ body {
   color: var(--hud-warn);
 }
 
-/* Preview card */
+/* Preview card: always in the DOM so it can animate out as well as in. */
 .preview-card {
+  position: relative;
   width: 100%;
-  max-width: 500px;
-  padding: 10px 12px 9px;
-  border-radius: 12px;
-  background: var(--hud-bg);
-  border: 1px solid var(--hud-border);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 10px 28px rgba(0, 0, 0, 0.4);
+  max-width: 492px;
+  padding: 11px 14px 10px;
+  border-radius: 16px;
+  background:
+    radial-gradient(320px 90px at 0% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 45%),
+    var(--hud-bg-2);
+  box-shadow:
+    0 0.5px 0 rgba(255, 255, 255, 0.18) inset,
+    0 0 0 1px var(--hud-rim) inset,
+    0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent),
+    0 0 30px -8px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 14px 32px -10px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  transform-origin: bottom center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(14px) scale(0.96);
+  filter: blur(4px);
+  transition:
+    opacity 200ms ease,
+    transform 260ms var(--ease-out),
+    filter 220ms ease,
+    visibility 0s linear 260ms;
+}
+
+.preview-card.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  filter: none;
+  transition:
+    opacity 260ms ease,
+    transform 520ms var(--ease-spring),
+    filter 300ms ease,
+    visibility 0s;
 }
 
 .preview-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   font-size: 11px;
   color: var(--hud-muted);
+}
+
+.preview-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-target.policy-warn {
@@ -190,18 +282,24 @@ body {
 
 .preview-target.policy-danger {
   color: var(--hud-danger);
-  font-weight: 700;
+  font-weight: 650;
 }
 
 .preview-countdown {
+  flex: none;
   font-family: var(--hud-mono);
+  font-size: 11px;
   color: var(--hud-text);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-variant-numeric: tabular-nums;
 }
 
 .preview-text {
   font-family: var(--hud-mono);
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 13.5px;
+  line-height: 1.45;
   color: var(--hud-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -210,9 +308,13 @@ body {
   word-break: break-word;
 }
 
+.preview-card.is-open .preview-text {
+  animation: hud-swap 420ms var(--ease-out) 60ms both;
+}
+
 .preview-bar {
   height: 3px;
-  border-radius: 2px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
@@ -220,7 +322,10 @@ body {
 .preview-bar-fill {
   height: 100%;
   width: 100%;
-  background: var(--accent);
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 45%, white));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+  transition: width 90ms linear;
 }
 
 .preview-hint {
@@ -228,15 +333,58 @@ body {
   color: var(--hud-muted);
 }
 
-@keyframes hud-pulse {
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hud-swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes hud-breathe {
   0%,
   100% {
-    opacity: 1;
     transform: scale(1);
   }
   50% {
-    opacity: 0.45;
-    transform: scale(0.8);
+    transform: scale(0.78);
+  }
+}
+
+@keyframes hud-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes hud-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
   }
 }
 
@@ -246,8 +394,21 @@ body {
   }
 }
 
+/* Screenshot mode (?demo=...) */
+html.no-motion *,
+html.no-motion *::before,
+html.no-motion *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pill-dot {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
+    transition-duration: 1ms !important;
   }
 }

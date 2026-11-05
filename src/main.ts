@@ -1,6 +1,7 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { isMac, refreshRangeFills, setAudioLevel, setUiState } from './ui';
 
 interface DictationConfig {
   handsFreeEnabled: boolean;
@@ -570,21 +571,23 @@ function updatePipelineUiState(
   stepTranscribing.classList.toggle('active', state === 'TRANSCRIBING');
   stepPreview.classList.toggle('active', state === 'PREVIEW');
 
+  setUiState(state);
+
   if (state === 'PREVIEW') {
     const pct = Math.max(0, Math.min(100, (previewRemainingMs / activePreviewTotalMs) * 100));
     previewProgressFill.style.width = `${pct}%`;
     previewCountdownText.textContent = `Sending in ${(previewRemainingMs / 1000).toFixed(1)}s...`;
-    deckStatus.textContent = 'Preview Window: Review or Cancel';
-    deckSubtitle.textContent = 'Press Esc or shake head to cancel; press Enter or nod to send now';
+    deckStatus.textContent = 'Review before it sends';
+    deckSubtitle.textContent = 'Press Esc or shake your head to cancel. Press Enter or nod to send now.';
     startListenBtn.disabled = true;
     stopListenBtn.disabled = true;
     cancelListenBtn.disabled = false;
   } else if (state === 'ARMED') {
     pipelineBadge.classList.add('state-armed');
     commandDeck.classList.add('is-armed');
-    deckStatus.textContent = 'Armed: Facing Screen (Speak to Trigger)';
+    deckStatus.textContent = 'Armed. Start talking';
     deckSubtitle.textContent =
-      '500 ms audio ring buffer active. Start talking to trigger hands-free recording.';
+      'You are facing the screen. A 500 ms pre-roll catches your very first syllable.';
     utteranceTimer.textContent = '00:00.0';
     startListenBtn.disabled = false;
     stopListenBtn.disabled = true;
@@ -592,27 +595,28 @@ function updatePipelineUiState(
   } else if (state === 'LISTENING') {
     pipelineBadge.classList.add('state-listening');
     commandDeck.classList.add('is-listening');
-    deckStatus.textContent = 'Listening & Capturing Utterance...';
+    deckStatus.textContent = 'Listening';
     deckSubtitle.textContent =
-      'Close mouth + pause for 650 ms, say "send it", or nod head to transcribe';
+      'Pause and close your mouth, say "send it", or nod to finish.';
     utteranceTimer.textContent = formatDurationMs(listeningDurationMs);
     startListenBtn.disabled = true;
     stopListenBtn.disabled = false;
     cancelListenBtn.disabled = false;
   } else if (state === 'TRANSCRIBING') {
     pipelineBadge.classList.add('state-transcribing');
-    deckStatus.textContent = 'Transcribing & Running Developer Cleanup...';
-    deckSubtitle.textContent = 'Running Metal whisper.cpp + code identifier cleanup pass';
+    deckStatus.textContent = 'Transcribing';
+    deckSubtitle.textContent = 'Whisper on the GPU, then a developer cleanup pass.';
     startListenBtn.disabled = true;
     stopListenBtn.disabled = true;
     cancelListenBtn.disabled = true;
   } else {
-    deckStatus.textContent = cameraRunning
-      ? 'Idle: Look at Screen to Arm'
-      : 'Ready for Voice Input';
-    deckSubtitle.innerHTML = cameraRunning
-      ? 'Face not facing screen cone. Turn toward monitor to arm hands-free gate.'
-      : 'Click <strong>Enable Camera Gate</strong> for hands-free look-and-talk, or press <kbd>Option</kbd> + <kbd>Space</kbd>';
+    deckStatus.textContent = cameraRunning ? 'Look at the screen to arm' : 'Ready when you are';
+    const idleSubtitle = cameraRunning
+      ? 'Face your monitor and saywhen arms itself. Look away to pause.'
+      : `Turn on the camera gate for hands-free dictation, or press <kbd>${isMac ? 'Option' : 'Alt'}</kbd> <kbd>Space</kbd>`;
+    if (deckSubtitle.innerHTML !== idleSubtitle) {
+      deckSubtitle.innerHTML = idleSubtitle;
+    }
     utteranceTimer.textContent = '00:00.0';
     startListenBtn.disabled = false;
     stopListenBtn.disabled = true;
@@ -1062,7 +1066,7 @@ function drawVadChart() {
   const h = vadCanvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.045)';
   ctx.lineWidth = 1;
   for (const frac of [0.25, 0.5, 0.75]) {
     const y = h * frac;
@@ -1074,7 +1078,7 @@ function drawVadChart() {
 
   const threshY = h - currentConfig.vadThreshold * (h - 16) - 8;
   ctx.save();
-  ctx.strokeStyle = 'rgba(244, 63, 94, 0.65)';
+  ctx.strokeStyle = 'rgba(255, 95, 126, 0.6)';
   ctx.setLineDash([5 * dpr, 5 * dpr]);
   ctx.lineWidth = 1.5 * dpr;
   ctx.beginPath();
@@ -1095,8 +1099,8 @@ function drawVadChart() {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#10b981';
-  ctx.lineWidth = 1.8 * dpr;
+  ctx.strokeStyle = 'rgba(52, 211, 153, 0.85)';
+  ctx.lineWidth = 1.5 * dpr;
   ctx.stroke();
 
   ctx.beginPath();
@@ -1107,9 +1111,20 @@ function drawVadChart() {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#6366f1';
-  ctx.lineWidth = 2.4 * dpr;
+  ctx.strokeStyle = '#8b7cff';
+  ctx.lineWidth = 2 * dpr;
+  ctx.lineJoin = 'round';
   ctx.stroke();
+
+  // Soft area under the VAD curve.
+  ctx.lineTo((chartHistory.length - 1) * stepX, h);
+  ctx.lineTo(0, h);
+  ctx.closePath();
+  const fill = ctx.createLinearGradient(0, 0, 0, h);
+  fill.addColorStop(0, 'rgba(139, 124, 255, 0.28)');
+  fill.addColorStop(1, 'rgba(139, 124, 255, 0)');
+  ctx.fillStyle = fill;
+  ctx.fill();
 }
 
 // App names, window titles and error text come from other processes: never put them in HTML raw.
@@ -1120,6 +1135,22 @@ function escapeHtml(value: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function formatTriggerSource(source: string): string {
+  switch (source) {
+    case 'hands_free_multimodal':
+      return 'Hands-free';
+    case 'hotkey':
+      return 'Hotkey';
+    case 'manual':
+    case 'manual_stop':
+      return 'Manual';
+    case 'simulated_demo':
+      return 'Simulated';
+    default:
+      return String(source || '').replace(/_/g, ' ');
+  }
 }
 
 function appendUtteranceCard(
@@ -1147,30 +1178,35 @@ function appendUtteranceCard(
   card.className = 'utterance-card';
   card.dataset.searchText = `${cleanup.cleanedText} ${cleanup.rawText} ${targetPolicy.appName} ${triggerSource}`.toLowerCase();
 
-  const timeStr = new Date(timestampMs || Date.now()).toLocaleTimeString();
+  const timeStr = new Date(timestampMs || Date.now()).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const sourceLabel = formatTriggerSource(triggerSource);
   const displayTranscript =
     cleanup.cleanedText.length > 0 ? cleanup.cleanedText : '(No speech detected in audio segment)';
 
   const injectBadgeHtml = injection?.success
-    ? `<span class="u-badge u-badge-ok" title="${escapeHtml(injection.message)}">${escapeHtml(injection.targetApp || targetPolicy.appName)}: ${injection.pressedEnter ? 'Pasted + Enter' : 'Paste-Only'}</span>`
+    ? `<span class="u-badge u-badge-ok" title="${escapeHtml(injection.message)}">${injection.pressedEnter ? 'Sent to' : 'Pasted into'} ${escapeHtml(injection.targetApp || targetPolicy.appName)}</span>`
     : injectionError
-      ? `<span class="u-badge" title="${escapeHtml(injectionError)}">Aborted (On Clipboard)</span>`
+      ? `<span class="u-badge" title="${escapeHtml(injectionError)}">Kept on clipboard</span>`
       : `<span class="u-badge">Transcribed</span>`;
 
   const cleanupBadgeHtml = cleanup.modified
-    ? `<span class="u-badge u-badge-ok">Cleaned CLI/Code</span>`
+    ? `<span class="u-badge" title="${escapeHtml(cleanup.rawText)}">Cleaned</span>`
     : '';
 
   card.innerHTML = `
+    <div class="utterance-text"></div>
     <div class="utterance-meta">
-      <span>${escapeHtml(timeStr)} (${escapeHtml(triggerSource)})</span>
+      <span>${escapeHtml(timeStr)}</span>
+      <span>${escapeHtml(sourceLabel)}</span>
+      <span title="Whisper inference time">${transcription.inferenceMs} ms</span>
       <div class="utterance-badges">
-        <span class="u-badge">${transcription.inferenceMs} ms (${transcription.rtf.toFixed(2)}x)</span>
-        ${cleanupBadgeHtml}
         ${injectBadgeHtml}
+        ${cleanupBadgeHtml}
       </div>
     </div>
-    <div class="utterance-text"></div>
     <div class="utterance-actions">
       <button class="btn-xs btn-flag-false" title="Mark this utterance as an unintended false trigger">Flag False Trigger</button>
       <button class="btn-xs btn-copy">Copy</button>
@@ -1274,6 +1310,7 @@ async function syncConfigToBackend() {
   llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
   updateCalibrationDisplay();
   updateHistoryBadgeDisplay();
+  refreshRangeFills();
 
   try {
     await invoke('update_dictation_config', { config: currentConfig });
@@ -1345,6 +1382,7 @@ async function initApp() {
     }
 
     updatePipelineUiState(snapshot.state, 0, 0);
+    refreshRangeFills();
   } catch (err) {
     showError(`Backend connection warning: ${String(err)}`);
   }
@@ -1363,6 +1401,7 @@ async function initApp() {
     }
 
     valRms.textContent = t.rms.toFixed(3);
+    setAudioLevel(t.rms, t.vadProb, t.isSpeech);
     micDeviceTag.textContent = t.deviceName;
     prerollVal.textContent = `${t.preRollMs} ms`;
 
@@ -1649,7 +1688,7 @@ terminalInput.addEventListener('keydown', (e) => {
     if (!cmd) return;
     const line = document.createElement('div');
     line.className = 'term-line term-cmd';
-    line.textContent = `saywhen@mac ~ % ${cmd}`;
+    line.textContent = `saywhen ~ % ${cmd}`;
     terminalHistory.appendChild(line);
     terminalHistory.scrollTop = terminalHistory.scrollHeight;
     terminalInput.value = '';
@@ -1658,7 +1697,7 @@ terminalInput.addEventListener('keydown', (e) => {
 
 clearTerminalBtn.addEventListener('click', () => {
   terminalHistory.innerHTML =
-    '<div class="term-line term-muted"># Focus the input line below, speak or click "Simulate Cleanup Preview"</div>';
+    '<div class="term-line term-muted"># Focus the input below and speak, or click Simulate preview</div>';
 });
 
 historySearchInput.addEventListener('input', filterUtteranceFeed);
