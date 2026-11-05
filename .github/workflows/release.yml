@@ -49,6 +49,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
         with:
           tagName: v__VERSION__
           releaseName: 'saywhen v__VERSION__'
