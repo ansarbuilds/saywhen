@@ -6,21 +6,23 @@ use crate::cleanup::{
 use crate::history::append_history_entry;
 use crate::inject::{
     default_auto_send_allowlist, detect_frontmost_app, evaluate_app_injection_policy,
-    inject_text_into_focused_app, AppTargetPolicy, InjectionOutcome, InjectionTimingConfig,
-    TargetChangePolicy, DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
+    evaluate_gaze_window_alignment, inject_text_into_focused_app, AppTargetPolicy,
+    InjectionOutcome, InjectionTimingConfig, TargetChangePolicy,
+    DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 use crate::turn_taking::{
     append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
-    evaluate_arming_hysteresis, evaluate_audio_stream_health, has_minimum_speech_evidence,
-    is_within_arm_exit_cone, resolve_recordings_dir, sanitize_discarded_reason_for_metrics,
-    save_tuning_utterance_wav_and_sidecar, should_auto_start, silence_countdown_ms,
-    ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs, RecordedVisionSample,
-    TuningRecordingSidecar, TurnState, TurnTakingConfig, UtteranceMetricsRecord,
-    DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG, DEFAULT_ARM_PITCH_EXIT_DEG,
-    DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG, DEFAULT_CALIBRATED_RESTING_MAR,
-    DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS, DEFAULT_MIN_SPEECH_HOTKEY_MS,
-    DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
+    ends_with_connective, evaluate_arming_hysteresis, evaluate_audio_stream_health,
+    has_minimum_speech_evidence, is_within_arm_exit_cone, resolve_recordings_dir,
+    sanitize_discarded_reason_for_metrics, save_tuning_utterance_wav_and_sidecar,
+    should_auto_start, silence_countdown_ms, ArmingHysteresisState, AudioStreamRecoveryAction,
+    EndReason, GateInputs, RecordedVisionSample, TuningRecordingSidecar, TurnState,
+    TurnTakingConfig, UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
+    DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
+    DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
+    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
+    SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
@@ -402,6 +404,10 @@ pub struct AudioTelemetryEvent {
     pub hud_enabled: bool,
     pub save_tuning_audio_enabled: bool,
     pub session_metrics_enabled: bool,
+    #[serde(default)]
+    pub partial_transcript: String,
+    #[serde(default)]
+    pub partial_ends_with_connective: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -455,6 +461,8 @@ struct CapturedUtterance {
     end_reason: EndReason,
     post_roll_ms: u64,
     vision_trace: Vec<RecordedVisionSample>,
+    vision_fresh: bool,
+    latest_yaw_deg: f32,
 }
 
 struct SharedCaptureBuffer {
@@ -486,6 +494,10 @@ struct SharedCaptureBuffer {
     camera_enabled: bool,
     last_audio_callback_at: Option<Instant>,
     stream_faulted: bool,
+    partial_transcript: String,
+    partial_ends_with_connective: bool,
+    partial_checked_speech_frames: usize,
+    partial_check_in_flight: bool,
 }
 
 impl SharedCaptureBuffer {
@@ -519,6 +531,10 @@ impl SharedCaptureBuffer {
             camera_enabled: false,
             last_audio_callback_at: None,
             stream_faulted: false,
+            partial_transcript: String::new(),
+            partial_ends_with_connective: false,
+            partial_checked_speech_frames: 0,
+            partial_check_in_flight: false,
         }
     }
 
@@ -564,6 +580,10 @@ impl SharedCaptureBuffer {
         self.pending_end_reason = None;
         self.peak_vad_prob = self.latest_vad_prob;
         self.trigger_source = source.to_string();
+        self.partial_transcript.clear();
+        self.partial_ends_with_connective = false;
+        self.partial_checked_speech_frames = 0;
+        self.partial_check_in_flight = false;
     }
 
     fn build_turn_state(&self, hands_free_enabled: bool) -> TurnState {
@@ -579,7 +599,7 @@ impl SharedCaptureBuffer {
             lips_moving: self.vision.lips_moving,
             mouth_closed: self.vision.mouth_closed,
             gesture: self.vision.gesture.clone(),
-            ends_with_connective: false,
+            ends_with_connective: self.partial_ends_with_connective,
         }
     }
 
@@ -599,12 +619,18 @@ impl SharedCaptureBuffer {
         let trigger_source = self.trigger_source.clone();
         let lip_to_listening_ms = self.lip_to_listening_ms.take();
         let speech_frames = self.speech_frames_in_utterance;
+        let vision_fresh = self.is_vision_fresh();
+        let latest_yaw_deg = self.vision.yaw;
 
         self.peak_vad_prob = 0.0;
         self.speech_frames_in_utterance = 0;
         self.last_lip_motion_in_turn_ms = None;
         self.post_roll_started_at_ms = None;
         self.pending_end_reason = None;
+        self.partial_transcript.clear();
+        self.partial_ends_with_connective = false;
+        self.partial_checked_speech_frames = 0;
+        self.partial_check_in_flight = false;
 
         let vision_trace = if capture_vision_trace {
             self.vision_trace
@@ -638,6 +664,8 @@ impl SharedCaptureBuffer {
             end_reason,
             post_roll_ms,
             vision_trace,
+            vision_fresh,
+            latest_yaw_deg,
         }
     }
 
@@ -652,6 +680,10 @@ impl SharedCaptureBuffer {
         self.post_roll_started_at_ms = None;
         self.pending_end_reason = None;
         self.peak_vad_prob = 0.0;
+        self.partial_transcript.clear();
+        self.partial_ends_with_connective = false;
+        self.partial_checked_speech_frames = 0;
+        self.partial_check_in_flight = false;
     }
 }
 
@@ -1541,6 +1573,8 @@ fn run_audio_worker(
                             hud_enabled: cfg.hud_enabled,
                             save_tuning_audio_enabled: cfg.save_tuning_audio_enabled,
                             session_metrics_enabled: cfg.session_metrics_enabled,
+                            partial_transcript: String::new(),
+                            partial_ends_with_connective: false,
                         },
                     );
 
@@ -1696,6 +1730,16 @@ fn run_audio_worker(
                                         "Voice override ('paste only'): pasting into '{}' without pressing Enter",
                                         target_policy.app_name
                                     );
+                                } else if target_policy.will_press_enter && captured.vision_fresh {
+                                    let adjusted_yaw = captured.latest_yaw_deg
+                                        - cfg_snapshot.calibrated_yaw_offset_deg;
+                                    if let Some(gaze_reason) =
+                                        evaluate_gaze_window_alignment(&front_app, adjusted_yaw)
+                                    {
+                                        target_policy.policy = "paste_only".to_string();
+                                        target_policy.will_press_enter = false;
+                                        target_policy.reason = gaze_reason;
+                                    }
                                 }
 
                                 let tuning_capture = if cfg_snapshot.save_tuning_audio_enabled {
@@ -1839,10 +1883,47 @@ fn run_audio_worker(
                 if prob >= cfg.vad_threshold {
                     guard.speech_frames_in_utterance += 1;
                     guard.last_speech_at_ms = now_ms;
+                    guard.partial_ends_with_connective = false;
                     // If the user resumed speaking during a silence-triggered post-roll, abort the stop.
                     if guard.pending_end_reason == Some(EndReason::Silence) {
                         guard.post_roll_started_at_ms = None;
                         guard.pending_end_reason = None;
+                    }
+                } else if now_ms.saturating_sub(guard.last_speech_at_ms) >= 240
+                    && guard.speech_frames_in_utterance >= 8
+                    && !guard.partial_check_in_flight
+                    && guard.partial_checked_speech_frames != guard.speech_frames_in_utterance
+                    && transcriber.is_loaded()
+                {
+                    let tail_len = guard.utterance_pcm.len().min((TARGET_SAMPLE_RATE as usize) * 2);
+                    if tail_len >= (TARGET_SAMPLE_RATE as usize) / 2 {
+                        let start_idx = guard.utterance_pcm.len() - tail_len;
+                        let tail_samples = guard.utterance_pcm[start_idx..].to_vec();
+                        let peak_vad = guard.peak_vad_prob;
+                        let checked_frames = guard.speech_frames_in_utterance;
+                        guard.partial_check_in_flight = true;
+                        guard.partial_checked_speech_frames = checked_frames;
+
+                        let tx_clone = Arc::clone(&transcriber);
+                        let shared_partial = Arc::clone(&shared);
+                        thread::spawn(move || {
+                            let res = tx_clone.transcribe_pcm(&tail_samples, peak_vad);
+                            if let Ok(mut g) = shared_partial.lock() {
+                                g.partial_check_in_flight = false;
+                                if g.state == PipelineState::LISTENING
+                                    && g.speech_frames_in_utterance == checked_frames
+                                {
+                                    if let Ok(tx) = res {
+                                        let text = tx.text.trim().to_string();
+                                        if !text.is_empty() {
+                                            g.partial_ends_with_connective =
+                                                ends_with_connective(&text);
+                                            g.partial_transcript = text;
+                                        }
+                                    }
+                                }
+                            }
+                        });
                     }
                 }
 
@@ -1930,6 +2011,8 @@ fn run_audio_worker(
                     hud_enabled: cfg.hud_enabled,
                     save_tuning_audio_enabled: cfg.save_tuning_audio_enabled,
                     session_metrics_enabled: cfg.session_metrics_enabled,
+                    partial_transcript: guard.partial_transcript.clone(),
+                    partial_ends_with_connective: guard.partial_ends_with_connective,
                 }
             };
             let _ = app_handle.emit("audio-telemetry", payload);

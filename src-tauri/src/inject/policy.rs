@@ -20,6 +20,10 @@ pub struct FrontmostApp {
     pub pid: Option<u32>,
     #[serde(default)]
     pub detection_us: u64,
+    #[serde(default)]
+    pub window_center_x: Option<i32>,
+    #[serde(default)]
+    pub primary_screen_width: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +62,8 @@ impl AppTargetPolicy {
             exe: self.exe.clone(),
             pid: self.pid,
             detection_us: 0,
+            window_center_x: None,
+            primary_screen_width: None,
         }
     }
 }
@@ -494,4 +500,37 @@ pub fn should_press_enter_after_paste(
     now_frontmost: &FrontmostApp,
 ) -> bool {
     !is_saywhen_app(now_frontmost) && same_target_app(pasted_into, now_frontmost)
+}
+
+/// Checks whether the focused target window's horizontal display position (`window_center_x`)
+/// conflicts with the speaker's head yaw (`head_yaw_deg`).
+///
+/// If the focused target window is on an external left display (`window_center_x < -200`) while
+/// the speaker is looking to the right (`head_yaw_deg > 14.0°`), or on an external right display
+/// (`window_center_x > primary_screen_width + 200`) while the speaker is looking to the left
+/// (`head_yaw_deg < -14.0°`), returns a descriptive Paste-Only downgrade reason.
+pub fn evaluate_gaze_window_alignment(
+    app: &FrontmostApp,
+    head_yaw_deg: f32,
+) -> Option<String> {
+    let (Some(win_x), Some(screen_w)) = (app.window_center_x, app.primary_screen_width) else {
+        return None;
+    };
+    if screen_w == 0 {
+        return None;
+    }
+    let right_edge = (screen_w as i32) + 200;
+    if win_x < -200 && head_yaw_deg > 14.0 {
+        return Some(format!(
+            "Focused window '{}' is on the left display (x={}) while gaze is directed right (yaw={:+.1}°): enforcing Paste-Only",
+            app.name, win_x, head_yaw_deg
+        ));
+    }
+    if win_x > right_edge && head_yaw_deg < -14.0 {
+        return Some(format!(
+            "Focused window '{}' is on the right display (x={}) while gaze is directed left (yaw={:+.1}°): enforcing Paste-Only",
+            app.name, win_x, head_yaw_deg
+        ));
+    }
+    None
 }

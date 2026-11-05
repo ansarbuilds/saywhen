@@ -9,6 +9,8 @@ fn app(name: &str, bundle_id: Option<&str>, exe: Option<&str>, pid: Option<u32>)
         exe: exe.map(str::to_string),
         pid,
         detection_us: 0,
+        window_center_x: None,
+        primary_screen_width: None,
     }
 }
 
@@ -348,4 +350,45 @@ _NET_WM_NAME(UTF8_STRING) = \"zsh - ~/Projects/saywhen\"\n";
         Some(42191),
     );
     assert!(matches_allowlist(&gnome_term, &allow));
+}
+
+#[test]
+fn test_multi_monitor_gaze_window_alignment_guard() {
+    let mut left_display_terminal = app(
+        "Terminal",
+        Some("com.apple.Terminal"),
+        Some("Terminal"),
+        Some(9001),
+    );
+    left_display_terminal.window_center_x = Some(-1200);
+    left_display_terminal.primary_screen_width = Some(1920);
+
+    // Looking left or center toward the left display -> aligned (no warning)
+    assert!(evaluate_gaze_window_alignment(&left_display_terminal, -18.0).is_none());
+    assert!(evaluate_gaze_window_alignment(&left_display_terminal, 0.0).is_none());
+
+    // Looking strongly right (+19 deg) while focused terminal is on the left display -> mismatch!
+    let mismatch_left = evaluate_gaze_window_alignment(&left_display_terminal, 19.0)
+        .expect("should flag left-display window vs right gaze");
+    assert!(mismatch_left.contains("left display"));
+    assert!(mismatch_left.contains("Paste-Only"));
+
+    let mut right_display_cursor = app(
+        "Cursor",
+        Some("com.todesktop.230313mzl4w4u92"),
+        Some("Cursor"),
+        Some(9002),
+    );
+    right_display_cursor.window_center_x = Some(2800);
+    right_display_cursor.primary_screen_width = Some(1920);
+
+    // Looking right or center -> aligned
+    assert!(evaluate_gaze_window_alignment(&right_display_cursor, 16.0).is_none());
+    assert!(evaluate_gaze_window_alignment(&right_display_cursor, 0.0).is_none());
+
+    // Looking strongly left (-18 deg) while focused Cursor is on the right display -> mismatch!
+    let mismatch_right = evaluate_gaze_window_alignment(&right_display_cursor, -18.0)
+        .expect("should flag right-display window vs left gaze");
+    assert!(mismatch_right.contains("right display"));
+    assert!(mismatch_right.contains("Paste-Only"));
 }

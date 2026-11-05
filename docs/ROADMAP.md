@@ -221,6 +221,19 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   2. **Loopback privacy classifier and output sanitizer (`classify_llm_endpoint_privacy`, `sanitize_llm_cleanup_output`):**
      - Distinguishes `127.0.0.1` / `localhost` / `[::1]` (`"local_loopback"`) from external hosts (`"remote_byok"`), strips accidental markdown code fences or backticks around single-line commands, and rejects conversational preambles (`"Sure, here is..."`, verified in `test_llm_endpoint_privacy_classification_and_output_sanitization`).
 
+## Improvement #11: Live partial connective detection, multi-monitor gaze-window alignment guard, and release workflow
+- **Status:** Implemented on 2026-11-04 on branch `feat/partial-connectives-gaze-guard-and-release` (`src-tauri/src/audio.rs`, `src-tauri/src/inject/policy.rs`, `src-tauri/src/inject/windows.rs`, `src-tauri/src/inject/tests.rs`, `src/hud.ts`, `.github/workflows/release.yml`). All 35 Rust unit tests and the frontend build pass with zero compiler warnings.
+- **Recommended model:** Gemini 4 (real-time non-blocking partial Whisper inference scheduling, multi-monitor coordinate vs head-yaw alignment policy, and cross-platform release workflow).
+- **What changed:**
+  1. **Live partial Whisper connective detection during `LISTENING` (`src-tauri/src/audio.rs`, `src/hud.ts`):**
+     - When a speaker pauses for `>= 240 ms` after at least `256 ms` (`8` VAD frames) of speech during `LISTENING`, `run_audio_worker` spawns a non-blocking Whisper check on the trailing `2.0s` audio window (`partial_transcript`, `partial_ends_with_connective = ends_with_connective(&text)`).
+     - Wires `partial_ends_with_connective` directly into `SharedCaptureBuffer::build_turn_state` so `compute_adaptive_silence_timeout_ms` grants the `+350 ms` connective hold in live dictation, and surfaces the partial snippet / `(connective hold)` indicator in the floating HUD pill.
+  2. **Multi-monitor gaze-window alignment guard (`evaluate_gaze_window_alignment` in `src-tauri/src/inject/policy.rs`):**
+     - Compares the focused window's horizontal display center (`window_center_x`, `primary_screen_width`) against the user's calibrated head yaw (`head_yaw_deg`).
+     - Automatically downgrades delivery to **Paste-Only** (`will_press_enter = false`) if the focused window is on an external left monitor while the user is looking right, or on an external right monitor while the user is looking left (`test_multi_monitor_gaze_window_alignment_guard`).
+  3. **Cross-platform release packaging workflow (`.github/workflows/release.yml`):**
+     - Builds macOS Apple Silicon (`aarch64-apple-darwin`) and Windows x64 Tauri desktop bundles via `tauri-apps/tauri-action@v0` on `v*` tags and `workflow_dispatch`.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.

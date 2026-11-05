@@ -99,6 +99,8 @@ pub fn detect_frontmost_app() -> FrontmostApp {
                             exe,
                             pid,
                             detection_us: t0.elapsed().as_micros() as u64,
+                            window_center_x: None,
+                            primary_screen_width: None,
                         };
                     }
                 }
@@ -112,6 +114,8 @@ pub fn detect_frontmost_app() -> FrontmostApp {
         exe: None,
         pid: None,
         detection_us: t0.elapsed().as_micros() as u64,
+        window_center_x: None,
+        primary_screen_width: None,
     }
 }
 

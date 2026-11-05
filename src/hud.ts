@@ -18,6 +18,8 @@ interface AudioTelemetryEvent {
   cameraEnabled: boolean;
   hudEnabled: boolean;
   saveTuningAudioEnabled?: boolean;
+  partialTranscript?: string;
+  partialEndsWithConnective?: boolean;
 }
 
 interface PreviewStartedEvent {
@@ -41,6 +43,8 @@ interface UtteranceCompleteEvent {
 interface DictationConfigLite {
   hudEnabled: boolean;
   saveTuningAudioEnabled?: boolean;
+  partialTranscript?: string;
+  partialEndsWithConnective?: boolean;
 }
 
 const FLASH_MS = 2600;
@@ -105,10 +109,16 @@ function render(t: AudioTelemetryEvent) {
     case 'LISTENING': {
       const rem = t.silenceRemainingMs ?? 0;
       const tot = t.silenceTotalMs ?? 0;
+      const partial = (t.partialTranscript ?? '').trim();
+      const snippet =
+        partial.length > 34 ? `...${partial.slice(-31)}` : partial;
       if (t.postRollActive) {
         text = `${formatSeconds(t.listeningDurationMs)}  finishing...`;
       } else if (tot > 0 && rem < tot && rem <= tot - 120) {
-        text = `${formatSeconds(t.listeningDurationMs)}  end in ${(rem / 1000).toFixed(1)}s`;
+        const holdTag = t.partialEndsWithConnective ? ' (connective hold)' : '';
+        text = `${formatSeconds(t.listeningDurationMs)}  end in ${(rem / 1000).toFixed(1)}s${holdTag}`;
+      } else if (snippet) {
+        text = `${formatSeconds(t.listeningDurationMs)}  "${snippet}"`;
       } else {
         text = `${formatSeconds(t.listeningDurationMs)}  pause, say "send it" or nod`;
       }
