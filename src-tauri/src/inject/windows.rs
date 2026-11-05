@@ -1,7 +1,7 @@
 use crate::inject::FrontmostApp;
 use std::path::Path;
 use std::time::Instant;
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, HANDLE, RECT};
 use windows_sys::Win32::Security::{
     GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
 };
@@ -10,7 +10,7 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId,
+    GetForegroundWindow, GetSystemMetrics, GetWindowRect, GetWindowThreadProcessId, SM_CXSCREEN,
 };
 
 pub fn check_accessibility_permission() -> bool {
@@ -36,8 +36,24 @@ pub fn detect_frontmost_app() -> FrontmostApp {
                 exe: None,
                 pid: None,
                 detection_us: started.elapsed().as_micros() as u64,
+                window_center_x: None,
+                primary_screen_width: None,
             };
         }
+
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        let window_center_x = if GetWindowRect(hwnd, &mut rect) != 0 {
+            Some(rect.left + (rect.right - rect.left) / 2)
+        } else {
+            None
+        };
+        let cx = GetSystemMetrics(SM_CXSCREEN);
+        let primary_screen_width = if cx > 0 { Some(cx as u32) } else { None };
 
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
@@ -48,6 +64,8 @@ pub fn detect_frontmost_app() -> FrontmostApp {
                 exe: None,
                 pid: None,
                 detection_us: started.elapsed().as_micros() as u64,
+                window_center_x,
+                primary_screen_width,
             };
         }
 
@@ -59,6 +77,8 @@ pub fn detect_frontmost_app() -> FrontmostApp {
                 exe: None,
                 pid: Some(pid),
                 detection_us: started.elapsed().as_micros() as u64,
+                window_center_x,
+                primary_screen_width,
             };
         }
 
@@ -87,6 +107,8 @@ pub fn detect_frontmost_app() -> FrontmostApp {
                 exe,
                 pid: Some(pid),
                 detection_us: started.elapsed().as_micros() as u64,
+                window_center_x,
+                primary_screen_width,
             };
         }
 
@@ -96,6 +118,8 @@ pub fn detect_frontmost_app() -> FrontmostApp {
             exe: None,
             pid: Some(pid),
             detection_us: started.elapsed().as_micros() as u64,
+            window_center_x,
+            primary_screen_width,
         }
     }
 }
