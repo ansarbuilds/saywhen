@@ -22,6 +22,18 @@ pub const DEFAULT_MIN_SPEECH_MS: u64 = 250;
 pub const DEFAULT_MIN_SPEECH_HOTKEY_MS: u64 = 96;
 pub const DEFAULT_MAX_SILENCE_TIMEOUT_MS: u64 = 1350;
 pub const DEFAULT_POST_ROLL_MS: u64 = 200;
+pub const DEFAULT_CALIBRATED_RESTING_MAR: f32 = 0.016;
+pub const VISION_TICK_ACTIVE_MS: u64 = 66; // ~15.1 FPS when armed, listening, or facing screen
+pub const VISION_TICK_IDLE_AWAY_MS: u64 = 125; // 8.0 FPS when face present but turned away > 3s
+pub const VISION_TICK_IDLE_NO_FACE_MS: u64 = 200; // 5.0 FPS when no face in frame > 3s (66.7% fewer inferences)
+
+fn default_resting_mar() -> f32 {
+    DEFAULT_CALIBRATED_RESTING_MAR
+}
+
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +52,14 @@ pub struct TurnTakingConfig {
     pub min_speech_ms: u64,
     pub min_speech_hotkey_ms: u64,
     pub post_roll_ms: u64,
+    #[serde(default)]
+    pub calibrated_yaw_offset_deg: f32,
+    #[serde(default)]
+    pub calibrated_pitch_offset_deg: f32,
+    #[serde(default = "default_resting_mar")]
+    pub calibrated_resting_mar: f32,
+    #[serde(default = "default_true")]
+    pub adaptive_fps_enabled: bool,
 }
 
 impl Default for TurnTakingConfig {
@@ -59,6 +79,10 @@ impl Default for TurnTakingConfig {
             min_speech_ms: DEFAULT_MIN_SPEECH_MS,
             min_speech_hotkey_ms: DEFAULT_MIN_SPEECH_HOTKEY_MS,
             post_roll_ms: DEFAULT_POST_ROLL_MS,
+            calibrated_yaw_offset_deg: 0.0,
+            calibrated_pitch_offset_deg: 0.0,
+            calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
+            adaptive_fps_enabled: true,
         }
     }
 }
@@ -101,7 +125,8 @@ impl ArmingHysteresisState {
     }
 }
 
-/// Pure check whether a head pose is inside the tighter arm-enter cone.
+/// Pure check whether a head pose (adjusted by the user's calibrated monitor center offset)
+/// is inside the tighter arm-enter cone.
 pub fn is_within_arm_enter_cone(
     vision: &VisionTelemetryPayload,
     cfg: &TurnTakingConfig,
@@ -110,13 +135,21 @@ pub fn is_within_arm_enter_cone(
         return false;
     }
     // If legacy/synthetic telemetry only set `facing_screen` with zero angles, honor it.
-    if vision.yaw == 0.0 && vision.pitch == 0.0 && !vision.facing_screen {
+    if vision.yaw == 0.0
+        && vision.pitch == 0.0
+        && cfg.calibrated_yaw_offset_deg == 0.0
+        && cfg.calibrated_pitch_offset_deg == 0.0
+        && !vision.facing_screen
+    {
         return false;
     }
-    vision.yaw.abs() <= cfg.arm_yaw_enter_deg && vision.pitch.abs() <= cfg.arm_pitch_enter_deg
+    let rel_yaw = vision.yaw - cfg.calibrated_yaw_offset_deg;
+    let rel_pitch = vision.pitch - cfg.calibrated_pitch_offset_deg;
+    rel_yaw.abs() <= cfg.arm_yaw_enter_deg && rel_pitch.abs() <= cfg.arm_pitch_enter_deg
 }
 
-/// Pure check whether a head pose is still inside the wider arm-exit cone.
+/// Pure check whether a head pose (adjusted by the user's calibrated monitor center offset)
+/// is still inside the wider arm-exit cone.
 pub fn is_within_arm_exit_cone(
     vision: &VisionTelemetryPayload,
     cfg: &TurnTakingConfig,
@@ -124,10 +157,169 @@ pub fn is_within_arm_exit_cone(
     if !vision.face_present {
         return false;
     }
-    if vision.yaw == 0.0 && vision.pitch == 0.0 && !vision.facing_screen {
+    if vision.yaw == 0.0
+        && vision.pitch == 0.0
+        && cfg.calibrated_yaw_offset_deg == 0.0
+        && cfg.calibrated_pitch_offset_deg == 0.0
+        && !vision.facing_screen
+    {
         return false;
     }
-    vision.yaw.abs() <= cfg.arm_yaw_exit_deg && vision.pitch.abs() <= cfg.arm_pitch_exit_deg
+    let rel_yaw = vision.yaw - cfg.calibrated_yaw_offset_deg;
+    let rel_pitch = vision.pitch - cfg.calibrated_pitch_offset_deg;
+    rel_yaw.abs() <= cfg.arm_yaw_exit_deg && rel_pitch.abs() <= cfg.arm_pitch_exit_deg
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LipActivityKind {
+    Speaking,
+    Yawning,
+    Smiling,
+    Chewing,
+    OpenQuiet,
+    Closed,
+}
+
+impl LipActivityKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            LipActivityKind::Speaking => "LIPS: MOVING",
+            LipActivityKind::Yawning => "LIPS: YAWN CEILING",
+            LipActivityKind::Smiling => "LIPS: SMILE FILTER",
+            LipActivityKind::Chewing => "LIPS: CHEW FILTER",
+            LipActivityKind::OpenQuiet => "LIPS: OPEN (THINKING)",
+            LipActivityKind::Closed => "LIPS: STILL",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LipActivityInputs {
+    pub mar: f32,
+    pub mar_variance: f32,
+    pub jaw_open: f32,
+    pub smile_score: f32,
+    pub mouth_close_score: f32,
+    pub speech_articulation_score: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LipActivityClassification {
+    pub kind: LipActivityKind,
+    pub active_speech_motion: bool,
+    pub mouth_closed: bool,
+}
+
+/// Pure classifier separating real speech lip articulation from yawning, smiling,
+/// closed-lip chewing, and static open-mouth thinking pauses.
+pub fn classify_lip_activity(
+    inputs: &LipActivityInputs,
+    cfg: &TurnTakingConfig,
+) -> LipActivityClassification {
+    let resting_mar = cfg.calibrated_resting_mar.clamp(0.006, 0.045);
+
+    // 1. Yawn ceiling: wide anatomical stretch of mouth/jaw.
+    if inputs.mar > 0.45 || inputs.jaw_open > 0.35 {
+        return LipActivityClassification {
+            kind: LipActivityKind::Yawning,
+            active_speech_motion: false,
+            mouth_closed: false,
+        };
+    }
+
+    // 2. Smile filter: corners pulled wide (high mouthSmileLeft/Right) without vertical
+    //    vowel/consonant articulation (funnel/pucker/lower-lip depression).
+    let is_smiling = inputs.smile_score >= 0.45
+        && inputs.speech_articulation_score < 0.14
+        && inputs.mar < resting_mar + 0.068;
+    if is_smiling {
+        return LipActivityClassification {
+            kind: LipActivityKind::Smiling,
+            active_speech_motion: false,
+            mouth_closed: inputs.mar < resting_mar + 0.020,
+        };
+    }
+
+    // 3. Closed-lip / rhythmic chewing filter: jaw moves while lips stay pressed/sealed
+    //    (`mouthClose` blendshape high relative to inner lip aperture `mar`).
+    let is_chewing = inputs.jaw_open >= 0.055
+        && (inputs.mouth_close_score >= 0.20 || inputs.mar < resting_mar + 0.011)
+        && inputs.speech_articulation_score < 0.15;
+    if is_chewing {
+        return LipActivityClassification {
+            kind: LipActivityKind::Chewing,
+            active_speech_motion: false,
+            mouth_closed: true,
+        };
+    }
+
+    let min_speech_mar = (resting_mar + 0.002).max(0.016);
+    let closed_mar_ceiling = (resting_mar + 0.016).max(0.030);
+
+    // 4. Active speech articulation: inner lip aperture above resting baseline + temporal variance.
+    if inputs.mar >= min_speech_mar && inputs.mar_variance >= 0.000012 {
+        return LipActivityClassification {
+            kind: LipActivityKind::Speaking,
+            active_speech_motion: true,
+            mouth_closed: false,
+        };
+    }
+
+    // 5. Mouth held open statically (for example mid-sentence thinking pause).
+    if inputs.mar >= closed_mar_ceiling || inputs.mar_variance >= 0.00004 {
+        return LipActivityClassification {
+            kind: LipActivityKind::OpenQuiet,
+            active_speech_motion: false,
+            mouth_closed: false,
+        };
+    }
+
+    LipActivityClassification {
+        kind: LipActivityKind::Closed,
+        active_speech_motion: false,
+        mouth_closed: true,
+    }
+}
+
+/// Computes median `(yaw_offset_deg, pitch_offset_deg, resting_mar)` from a window of
+/// calibration frames captured while the user looks naturally at their target screen
+/// with a relaxed closed mouth.
+pub fn compute_calibration_baseline(samples: &[(f32, f32, f32)]) -> Option<(f32, f32, f32)> {
+    if samples.len() < 5 {
+        return None;
+    }
+    let mut yaws: Vec<f32> = samples.iter().map(|s| s.0).collect();
+    let mut pitches: Vec<f32> = samples.iter().map(|s| s.1).collect();
+    let mut mars: Vec<f32> = samples.iter().map(|s| s.2).collect();
+    yaws.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    pitches.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    mars.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = samples.len() / 2;
+    Some((
+        yaws[mid].clamp(-45.0, 45.0),
+        pitches[mid].clamp(-35.0, 35.0),
+        mars[mid].clamp(0.006, 0.045),
+    ))
+}
+
+/// Selects the Worker vision timer interval (ms) to save CPU/GPU when idle while keeping
+/// full `15 FPS` (`66 ms`) responsiveness whenever armed, listening, or facing the screen.
+pub fn choose_adaptive_vision_tick_ms(
+    adaptive_fps_enabled: bool,
+    pipeline_active: bool,
+    face_present: bool,
+    facing_screen: bool,
+    ms_since_last_on_screen: u64,
+) -> u64 {
+    if !adaptive_fps_enabled || pipeline_active || facing_screen || ms_since_last_on_screen < 3000 {
+        return VISION_TICK_ACTIVE_MS;
+    }
+    if face_present {
+        VISION_TICK_IDLE_AWAY_MS
+    } else {
+        VISION_TICK_IDLE_NO_FACE_MS
+    }
 }
 
 /// Evaluate whether the pipeline should be `ARMED` (`true`) or `IDLE` (`false`) at `now_ms`.
@@ -881,5 +1073,146 @@ mod tests {
             assert!((a - b).abs() < 0.001);
         }
         let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_calibrated_off_center_monitor_cone_and_median_baseline() {
+        // Developer looking at an external monitor 24 deg to the left and 12 deg up,
+        // with one noisy outlier frame.
+        let samples = vec![
+            (-24.2, 11.8, 0.017),
+            (-23.8, 12.1, 0.018),
+            (-24.0, 12.0, 0.017),
+            (-24.1, 12.2, 0.018),
+            (-5.0, 0.0, 0.040), // single-frame outlier
+            (-23.9, 11.9, 0.017),
+            (-24.0, 12.0, 0.017),
+        ];
+        let (yaw0, pitch0, mar0) = compute_calibration_baseline(&samples).unwrap();
+        assert!((yaw0 - (-24.0)).abs() < 0.25);
+        assert!((pitch0 - 12.0).abs() < 0.25);
+        assert!((mar0 - 0.017).abs() < 0.002);
+
+        let uncalibrated_cfg = TurnTakingConfig::default();
+        let mut calibrated_cfg = TurnTakingConfig::default();
+        calibrated_cfg.calibrated_yaw_offset_deg = yaw0;
+        calibrated_cfg.calibrated_pitch_offset_deg = pitch0;
+        calibrated_cfg.calibrated_resting_mar = mar0;
+
+        let side_monitor_pose = VisionTelemetryPayload {
+            face_present: true,
+            facing_screen: false,
+            yaw: -25.0,
+            pitch: 13.0,
+            ..Default::default()
+        };
+
+        // Without calibration, yaw = -25 deg is outside the 20 deg enter cone.
+        assert!(!is_within_arm_enter_cone(&side_monitor_pose, &uncalibrated_cfg));
+        // With calibration (yaw0 = -24 deg), relative yaw is -1.0 deg -> inside enter cone!
+        assert!(is_within_arm_enter_cone(&side_monitor_pose, &calibrated_cfg));
+        assert!(is_within_arm_exit_cone(&side_monitor_pose, &calibrated_cfg));
+    }
+
+    #[test]
+    fn test_classify_lip_activity_separates_speech_from_yawn_smile_and_chewing() {
+        let cfg = TurnTakingConfig::default();
+
+        // 1. Real speech articulation -> Speaking (`active_speech_motion = true`)
+        let speech = LipActivityInputs {
+            mar: 0.125,
+            mar_variance: 0.00038,
+            jaw_open: 0.14,
+            smile_score: 0.08,
+            mouth_close_score: 0.02,
+            speech_articulation_score: 0.28,
+        };
+        let res_speech = classify_lip_activity(&speech, &cfg);
+        assert_eq!(res_speech.kind, LipActivityKind::Speaking);
+        assert!(res_speech.active_speech_motion);
+        assert!(!res_speech.mouth_closed);
+
+        // 2. Wide yawn -> Yawning (`active_speech_motion = false`)
+        let yawn = LipActivityInputs {
+            mar: 0.49,
+            mar_variance: 0.0005,
+            jaw_open: 0.42,
+            smile_score: 0.02,
+            mouth_close_score: 0.0,
+            speech_articulation_score: 0.05,
+        };
+        let res_yawn = classify_lip_activity(&yawn, &cfg);
+        assert_eq!(res_yawn.kind, LipActivityKind::Yawning);
+        assert!(!res_yawn.active_speech_motion);
+
+        // 3. Smiling while reading code (MAR slightly elevated with variance, high smile blendshape)
+        let smile = LipActivityInputs {
+            mar: 0.052,
+            mar_variance: 0.000045,
+            jaw_open: 0.04,
+            smile_score: 0.64,
+            mouth_close_score: 0.05,
+            speech_articulation_score: 0.04,
+        };
+        let res_smile = classify_lip_activity(&smile, &cfg);
+        assert_eq!(res_smile.kind, LipActivityKind::Smiling);
+        assert!(!res_smile.active_speech_motion);
+
+        // 4. Closed-lip chewing (jaw moving rhythmically while lips stay pressed/sealed)
+        let chewing = LipActivityInputs {
+            mar: 0.022,
+            mar_variance: 0.000035,
+            jaw_open: 0.11,
+            smile_score: 0.05,
+            mouth_close_score: 0.29,
+            speech_articulation_score: 0.05,
+        };
+        let res_chew = classify_lip_activity(&chewing, &cfg);
+        assert_eq!(res_chew.kind, LipActivityKind::Chewing);
+        assert!(!res_chew.active_speech_motion);
+        assert!(res_chew.mouth_closed);
+
+        // 5. Open-mouth mid-thought pause (`mar = 0.055`, low variance)
+        let open_pause = LipActivityInputs {
+            mar: 0.055,
+            mar_variance: 0.000004,
+            jaw_open: 0.06,
+            smile_score: 0.04,
+            mouth_close_score: 0.01,
+            speech_articulation_score: 0.02,
+        };
+        let res_pause = classify_lip_activity(&open_pause, &cfg);
+        assert_eq!(res_pause.kind, LipActivityKind::OpenQuiet);
+        assert!(!res_pause.active_speech_motion);
+        assert!(!res_pause.mouth_closed);
+    }
+
+    #[test]
+    fn test_adaptive_vision_fps_scheduling_reduces_idle_duty_cycle() {
+        // Active pipeline or facing screen -> 66 ms (~15.1 FPS)
+        assert_eq!(
+            choose_adaptive_vision_tick_ms(true, true, true, true, 0),
+            VISION_TICK_ACTIVE_MS
+        );
+        // Within 3s grace window after looking away -> stays at 66 ms (~15.1 FPS)
+        assert_eq!(
+            choose_adaptive_vision_tick_ms(true, false, true, false, 1800),
+            VISION_TICK_ACTIVE_MS
+        );
+        // Face present but turned away > 3s in IDLE -> 125 ms (8.0 FPS, 47.2% fewer inferences)
+        assert_eq!(
+            choose_adaptive_vision_tick_ms(true, false, true, false, 4500),
+            VISION_TICK_IDLE_AWAY_MS
+        );
+        // No face in frame > 3s in IDLE -> 200 ms (5.0 FPS, 66.7% fewer inferences)
+        assert_eq!(
+            choose_adaptive_vision_tick_ms(true, false, false, false, 5000),
+            VISION_TICK_IDLE_NO_FACE_MS
+        );
+        // When adaptive FPS is disabled -> always 66 ms
+        assert_eq!(
+            choose_adaptive_vision_tick_ms(false, false, false, false, 10_000),
+            VISION_TICK_ACTIVE_MS
+        );
     }
 }
