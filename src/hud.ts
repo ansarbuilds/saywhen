@@ -24,6 +24,7 @@ interface AudioTelemetryEvent {
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
   sendMode?: string;
+  wakePending?: boolean;
 }
 
 interface PreviewStartedEvent {
@@ -148,7 +149,9 @@ function render(t: AudioTelemetryEvent) {
       const partial = (t.partialTranscript ?? '').trim();
       const snippet =
         partial.length > 34 ? `...${partial.slice(-31)}` : partial;
-      if (t.postRollActive) {
+      if (t.wakePending) {
+        text = `${formatSeconds(t.listeningDurationMs)}  checking for the wake word...`;
+      } else if (t.postRollActive) {
         text = `${formatSeconds(t.listeningDurationMs)}  finishing...`;
       } else if (tot > 0 && rem < tot && rem <= tot - 120) {
         const holdTag = t.partialEndsWithConnective ? ' (connective hold)' : '';

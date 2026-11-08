@@ -257,6 +257,16 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 - **Status:** Implemented on 2026-11-08 (`src/style.css`, `src/hud.css`, `src/main.ts`, `src/hud.ts`, `index.html`, `src-tauri/src/audio.rs`). Frontend build and all 40 Rust unit tests pass. Verified in the browser preview: picking a palette changes the resting tokens, mood colours still override in busy states, and turning mood colours off keeps the chosen palette. Not yet verified in the packaged desktop app.
 - **What changed:** all seven portfolio palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) are selectable in **Settings > Colours** (`ui_palette`, default `lumen`). A **Change colour with each mood** switch (`mood_colors`, default on) keeps the per-state palettes from Improvement #12. Both are presentation-only config fields, sent in `audio-telemetry` so the HUD matches from its first frame. The oscilloscope and lip overlay read the live palette tokens instead of fixed colours.
 
+## Improvement #15: Wake word fallback
+- **Status:** Implemented on 2026-11-08 (`src-tauri/src/wake_word.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `src/hud.ts`, `index.html`). 43 Rust unit tests pass, including 3 for the matcher. Not yet verified: real false-start rate in a room with other voices, Whisper spellings beyond the alias list, and CPU cost of candidate checks during long conversations.
+- **Recommended model:** Gemini 4 (it changes when the audio worker starts and drops recordings).
+- **What changed:**
+  1. **Opt-in `wake_word_enabled` (default off) and `wake_word` (default `eevee`).** While the pipeline is `IDLE` (camera says away, no face, or camera off), `3` consecutive VAD frames start a candidate with trigger source `wake_word`.
+  2. **Early check:** once the candidate holds `1.8 s` of audio (or pauses after `1 s`), the first `2.5 s` are transcribed locally. No wake word means a silent drop (`DropWakeCandidate`), no HUD flash, and a `600 ms` quiet gap before the next candidate, so room conversations do not re-trigger every couple of seconds.
+  3. **Final check:** the full transcript must still start with the wake word (after up to three fillers like "hmm, alright"). The wake word is stripped and the rest takes the normal cleanup, check step and send path. A bare wake word is discarded with a short notice.
+  4. **Matching:** position strict, spelling loose. The default word also matches Whisper's usual spellings (Evie, EV, E.V., IV, Ivy and others). "Every time..." or "ask Eevee later" do not match.
+  5. **UI:** a Calibrate button on the camera card, and Home and HUD hints while a candidate is being checked.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.

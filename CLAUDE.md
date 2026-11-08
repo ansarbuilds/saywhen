@@ -4,13 +4,14 @@
 
 saywhen is a Tauri v2 + Rust + TypeScript desktop app for hands-free, hotkey-free voice input aimed at developers using coding agents and terminals. It gates listening on webcam signals (face present, facing the screen, lips moving) plus audio speech detection, transcribes locally, runs an AI cleanup pass, shows a short cancelable preview, injects the text into the focused app and presses Enter.
 
-Status: Stages 1 through 5 and Improvements #2 to #14 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
+Status: Stages 1 through 5 and Improvements #2 to #15 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
 
 ## Architecture & Key Files
 
 - `src-tauri/src/audio.rs`: 16 kHz `cpal` capture worker thread, 500 ms (`8,000`-sample) circular pre-roll ring buffer, Silero VAD v5 ONNX (`voice_activity_detector`), 5-state multimodal machine (`IDLE -> ARMED -> LISTENING -> TRANSCRIBING -> PREVIEW`), head gesture handling (`nod` / `shake`), and `settings.local.json` persistence.
 - `src-tauri/src/turn_taking.rs`: Pure turn-taking decision logic (`evaluate_arming_hysteresis`, `should_auto_start`, `has_minimum_speech_evidence`, `compute_adaptive_silence_timeout_ms`, `end_of_turn`, `silence_countdown_ms`), send modes (`SendMode`: `pause` / `nod` / `phrase` / `paste_only`, `preview_deadline`, `should_cancel_preview_on_speech`), privacy-safe `session-metrics.jsonl` logger, and opt-in `recordings/` 16 kHz WAV + JSON sidecar writer.
 - `src-tauri/src/bin/replay.rs`: Offline replay and 56-utterance benchmark binary (`cargo run --bin replay -- [recordings_dir]`, `--generate-corpus`) comparing legacy vs Improved turn-taking on identical WAV + vision traces.
+- `src-tauri/src/wake_word.rs`: Opt-in wake word fallback (`strip_wake_word`, Whisper spelling aliases for the default `eevee`, filler words) used when the camera does not see the user facing the screen.
 - `src-tauri/src/transcribe.rs`: `whisper-rs` (`0.16.0`) Metal GPU engine (`use_gpu(true)`), model downloader, hallucination filter, and `"send it"` / `"submit it"` end-phrase stripping.
 - `src-tauri/src/cleanup.rs`: Local deterministic developer CLI/code cleanup pass (`run_local_developer_cleanup_with_vocab`), `"scratch that"` / `"paste only"` voice overrides, custom vocabulary (`apply_custom_vocab_terms`), and destructive command guard (`check_destructive_command`).
 - `src-tauri/src/history.rs`: Local 7-day auto-pruned utterance history (`<app_data_dir>/utterance-history.jsonl`, `HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`) and one-click purge.

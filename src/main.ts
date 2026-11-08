@@ -45,6 +45,8 @@ interface DictationConfig {
   calibratedRestingMar: number;
   adaptiveFpsEnabled: boolean;
   sideCameraMode: boolean;
+  wakeWordEnabled: boolean;
+  wakeWord: string;
   uiPalette: string;
   moodColors: boolean;
   customVocab: string;
@@ -99,6 +101,7 @@ interface AudioTelemetryEvent {
   silenceRemainingMs?: number;
   silenceTotalMs?: number;
   postRollActive?: boolean;
+  wakePending?: boolean;
   deviceName: string;
   speechDetectedInUtterance: boolean;
   visionActive: boolean;
@@ -217,6 +220,8 @@ let currentConfig: DictationConfig = {
   calibratedRestingMar: 0.016,
   adaptiveFpsEnabled: true,
   sideCameraMode: false,
+  wakeWordEnabled: false,
+  wakeWord: 'eevee',
   uiPalette: 'lumen',
   moodColors: true,
   customVocab: '',
@@ -417,6 +422,9 @@ const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputEleme
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleCancelOnSpeech = document.getElementById('toggle-cancel-on-speech') as HTMLInputElement;
 const toggleSideCamera = document.getElementById('toggle-side-camera') as HTMLInputElement;
+const toggleWakeWord = document.getElementById('toggle-wake-word') as HTMLInputElement;
+const wakeWordInput = document.getElementById('wake-word-input') as HTMLInputElement;
+const calibrateCardBtn = document.getElementById('calibrate-card-btn') as HTMLButtonElement;
 const sendModeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-send-mode]'));
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
@@ -770,11 +778,17 @@ function hidePreviewBanner() {
   previewHud.classList.add('hidden');
 }
 
+function wakeWordLabel(): string {
+  const w = (currentConfig.wakeWord || 'eevee').trim() || 'eevee';
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 function updatePipelineUiState(
   state: string,
   listeningDurationMs: number,
   previewRemainingMs: number,
-  postRollActive = false
+  postRollActive = false,
+  wakePending = false
 ) {
   currentPipelineState = state;
   pipelineStateLabel.textContent = STATE_LABELS[state] ?? state;
@@ -821,6 +835,8 @@ function updatePipelineUiState(
     deckStatus.textContent = 'Listening';
     deckSubtitle.textContent = postRollActive
       ? 'Got your nod. Capturing a short tail, then transcribing...'
+      : wakePending
+      ? `Heard a voice. Checking that it starts with "${wakeWordLabel()}". If not, it is dropped.`
       : listeningHint();
     utteranceTimer.textContent = formatDurationMs(listeningDurationMs);
     startListenBtn.disabled = true;
@@ -839,7 +855,11 @@ function updatePipelineUiState(
       cameraRunning && faceAwaySince > 0 && performance.now() - faceAwaySince > AWAY_HINT_AFTER_MS;
     if (seenButAway) deckStatus.textContent = 'I can see you, but you look away';
     const idleSubtitle = seenButAway
-      ? 'Is your camera off to the side? Look at the screen you talk to and click <strong>Calibrate</strong>. saywhen will learn that direction.'
+      ? currentConfig.wakeWordEnabled
+        ? `Start with "${wakeWordLabel()}" to talk anyway, or look at the screen you talk to and click <strong>Calibrate</strong>.`
+        : 'Is your camera off to the side? Look at the screen you talk to and click <strong>Calibrate</strong>. saywhen will learn that direction.'
+      : cameraRunning && currentConfig.wakeWordEnabled
+      ? `Look at your screen and start talking, or start with "${wakeWordLabel()}" from anywhere.`
       : cameraRunning
       ? 'Look at your screen and start talking. Look away and it stops listening.'
       : `Turn on the camera to talk hands-free, or press <kbd>${isMac ? 'Option' : 'Alt'}</kbd> <kbd>Space</kbd>`;
@@ -1581,6 +1601,8 @@ async function syncConfigToBackend() {
     sendMode: currentConfig.sendMode,
     cancelOnSpeech: toggleCancelOnSpeech.checked,
     sideCameraMode: toggleSideCamera.checked,
+    wakeWordEnabled: toggleWakeWord.checked,
+    wakeWord: wakeWordInput.value.trim().toLowerCase() || 'eevee',
     uiPalette: currentConfig.uiPalette,
     moodColors: toggleMoodColors.checked,
     hudEnabled: toggleHud.checked,
@@ -1660,6 +1682,8 @@ async function initApp() {
     }
     toggleCancelOnSpeech.checked = currentConfig.cancelOnSpeech !== false;
     toggleSideCamera.checked = Boolean(currentConfig.sideCameraMode);
+    toggleWakeWord.checked = Boolean(currentConfig.wakeWordEnabled);
+    wakeWordInput.value = currentConfig.wakeWord || 'eevee';
     toggleMoodColors.checked = currentConfig.moodColors !== false;
     renderPalette();
     renderSendMode();
@@ -1694,7 +1718,8 @@ async function initApp() {
       t.state,
       t.listeningDurationMs,
       t.previewRemainingMs,
-      Boolean(t.postRollActive)
+      Boolean(t.postRollActive),
+      Boolean(t.wakePending)
     );
 
     valVadProb.textContent = t.vadProb.toFixed(2);
@@ -1966,6 +1991,9 @@ togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
 toggleSideCamera.addEventListener('change', syncConfigToBackend);
+toggleWakeWord.addEventListener('change', syncConfigToBackend);
+wakeWordInput.addEventListener('change', syncConfigToBackend);
+calibrateCardBtn.addEventListener('click', () => calibrateVisionBtn.click());
 toggleMoodColors.addEventListener('change', () => {
   currentConfig = { ...currentConfig, moodColors: toggleMoodColors.checked };
   renderPalette();

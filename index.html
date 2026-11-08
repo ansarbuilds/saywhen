@@ -259,6 +259,14 @@
                     <h4>Camera</h4>
                     <span class="card-hint">Never saved, never sent</span>
                   </div>
+                  <div class="card-actions">
+                  <button
+                    id="calibrate-card-btn"
+                    class="btn-xs btn-accent"
+                    title="Look at the screen you talk to with your mouth closed, then click. Takes 1.5 seconds."
+                  >
+                    Calibrate
+                  </button>
                   <button
                     id="reset-calibration-btn"
                     class="btn-xs btn-quiet"
@@ -266,6 +274,7 @@
                   >
                     Reset calibration
                   </button>
+                  </div>
                 </div>
                 <div class="webcam-stage">
                   <video id="webcam-video" autoplay playsinline muted></video>
@@ -403,6 +412,22 @@
                     </div>
                     <input type="checkbox" id="toggle-side-camera" />
                   </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Wake word when you look away</div>
+                      <div class="toggle-desc">When the camera cannot see you facing the screen, start with the wake word, like &ldquo;Eevee, run the tests&rdquo;. Other talking is turned into text on this computer for a moment, checked, and thrown away.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-wake-word" />
+                  </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="wake-word-input">Wake word</label>
+                      <span class="pref-desc">A short, unusual name works best. Common words like &ldquo;alright&rdquo; or &ldquo;okay&rdquo; will start by mistake.</span>
+                    </div>
+                    <div class="pref-control">
+                      <input type="text" id="wake-word-input" class="text-control" value="eevee" spellcheck="false" autocomplete="off" />
+                    </div>
+                  </div>
                   <label class="toggle-row">
                     <div>
                       <div class="toggle-title">Battery saver</div>
