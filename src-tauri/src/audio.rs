@@ -416,14 +416,17 @@ impl DictationConfig {
         Self::default()
     }
 
-    pub fn save_to_disk(&self) {
+    pub fn save_to_disk(&self) -> Result<(), String> {
         let path = Self::config_file_path();
         let mut persisted = self.clone();
         // Never persist `save_tuning_audio_enabled: true` across restarts.
         persisted.save_tuning_audio_enabled = false;
-        if let Ok(json) = serde_json::to_string_pretty(&persisted) {
-            let _ = std::fs::write(path, json);
-        }
+        let json = serde_json::to_string_pretty(&persisted)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+        std::fs::write(&path, json).map_err(|e| {
+            let shown = std::fs::canonicalize(&path).unwrap_or(path.clone());
+            format!("Could not save settings to {}: {e}", shown.display())
+        })
     }
 }
 
@@ -461,6 +464,9 @@ pub struct AudioTelemetryEvent {
     /// Listening was started by voice alone and the wake word is not confirmed yet.
     #[serde(default)]
     pub wake_pending: bool,
+    /// The engine has the wake word switched on (shows the setting actually took effect).
+    #[serde(default)]
+    pub wake_word_active: bool,
     /// Chosen colour palette, so the HUD matches the main window from the first frame.
     #[serde(default)]
     pub ui_palette: String,
@@ -837,11 +843,12 @@ impl AudioPipelineController {
             }
             *guard = new_cfg.clone();
         }
-        new_cfg.save_to_disk();
+        let saved = new_cfg.save_to_disk();
         if device_changed {
             let _ = self.send_command(AudioCommand::SwitchDevice(preferred_device));
         }
-        Ok(new_cfg)
+        // The new settings are live either way; a failed save is reported so it is not silent.
+        saved.map(|_| new_cfg)
     }
 
     pub fn current_state(&self) -> String {
@@ -859,7 +866,9 @@ impl AudioPipelineController {
             guard.hud_enabled = !guard.hud_enabled;
             guard.clone()
         };
-        updated.save_to_disk();
+        if let Err(e) = updated.save_to_disk() {
+            eprintln!("{e}");
+        }
         updated
     }
 }
@@ -1683,6 +1692,7 @@ fn run_audio_worker(
                             partial_ends_with_connective: false,
                             send_mode: cfg.send_mode.as_str().to_string(),
                             wake_pending: false,
+                            wake_word_active: cfg.wake_word_enabled,
                             ui_palette: cfg.ui_palette.clone(),
                             mood_colors: cfg.mood_colors,
                         },
@@ -1976,6 +1986,8 @@ fn run_audio_worker(
         let mut should_auto_stop: Option<EndReason> = None;
         let mut should_auto_start_listening = false;
         let mut should_wake_start_listening = false;
+        // Checked once per tick: the model loads lazily, so `is_loaded` is false after launch.
+        let wake_model_available = cfg.wake_word_enabled && transcriber.is_model_available();
 
         loop {
             let chunk: Option<[f32; VAD_CHUNK_SAMPLES]> = {
@@ -2068,7 +2080,7 @@ fn run_audio_worker(
                 && !should_auto_start_listening
                 && guard.state == PipelineState::IDLE
                 && !guard.wake_needs_quiet
-                && transcriber.is_loaded()
+                && wake_model_available
                 && prob >= cfg.vad_threshold
                 && guard.consecutive_vad_frames >= WAKE_START_MIN_VAD_FRAMES
             {
@@ -2265,6 +2277,7 @@ fn run_audio_worker(
                     partial_ends_with_connective: guard.partial_ends_with_connective,
                     send_mode: cfg.send_mode.as_str().to_string(),
                     wake_pending: guard.is_unconfirmed_wake_candidate(),
+                    wake_word_active: cfg.wake_word_enabled,
                     ui_palette: cfg.ui_palette.clone(),
                     mood_colors: cfg.mood_colors,
                 }
