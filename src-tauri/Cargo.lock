@@ -3194,6 +3194,7 @@ name = "saywhen"
 version = "0.2.0"
 dependencies = [
  "arboard",
+ "core-foundation",
  "cpal",
  "enigo",
  "objc2",

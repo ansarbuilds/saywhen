@@ -287,6 +287,33 @@
                 </div>
               </section>
             </div>
+
+            <section class="card issues-panel" id="issues-panel" aria-labelledby="issues-title">
+              <div class="card-header">
+                <div class="card-title">
+                  <h4 id="issues-title">Issues</h4>
+                  <span class="card-hint">This session only</span>
+                  <span class="gauge-tag" id="issues-count-badge" title="Errors and warnings since launch">0</span>
+                </div>
+                <button id="clear-issues-btn" class="btn-xs btn-quiet" title="Clear the issues list for this session" disabled>
+                  Clear
+                </button>
+              </div>
+              <p class="issues-panel-hint">
+                In dev, enable <strong>saywhen</strong> under Privacy and Security (Accessibility / Device Control). If the toggle is already on but injection fails, remove saywhen from the list, quit the app, start dev again (re-signs with Apple Development), then add and enable it once. Cursor access is separate from saywhen.
+              </p>
+              <p class="issues-panel-hint issues-panel-hint-muted">
+                Alerts also appear in the bottom banner. Dismissing the banner does not remove entries here.
+              </p>
+              <div class="issues-list" id="issues-list">
+                <div class="empty-feed issues-empty" id="issues-empty">
+                  <strong>No issues yet</strong>
+                  <span>
+                    macOS setup prompts (for example Accessibility) and injection failures are saved here so you can copy the text later.
+                  </span>
+                </div>
+              </div>
+            </section>
           </section>
 
           <!-- PREFERENCES -->
@@ -599,7 +626,10 @@
         <div id="error-banner" class="error-banner hidden" role="alert">
           <div class="error-banner-content">
             <span class="error-badge" aria-hidden="true">!</span>
-            <span id="error-banner-text"></span>
+            <div class="error-banner-copy">
+              <span id="error-banner-text"></span>
+              <span class="error-banner-hint" id="error-banner-hint">Saved below in Issues on Home.</span>
+            </div>
           </div>
           <button id="error-dismiss-btn" class="btn-xs btn-quiet">Dismiss</button>
         </div>

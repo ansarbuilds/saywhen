@@ -220,6 +220,8 @@ let simulatedPreviewTimer: number | null = null;
 let totalTriggersCount = 0;
 let falseTriggersCount = 0;
 let canceledSendsCount = 0;
+let accessibilityPermissionTrusted = false;
+let accessibilityPollTimer: number | null = null;
 
 // Vision Gate State
 let faceLandmarker: FaceLandmarker | null = null;
@@ -421,6 +423,78 @@ const emptyFeed = document.getElementById('empty-feed') as HTMLElement;
 const clearFeedBtn = document.getElementById('clear-feed-btn') as HTMLButtonElement;
 const historySearchInput = document.getElementById('history-search-input') as HTMLInputElement;
 const historyTtlBadge = document.getElementById('history-ttl-badge') as HTMLElement;
+const issuesList = document.getElementById('issues-list') as HTMLElement;
+const issuesEmpty = document.getElementById('issues-empty') as HTMLElement;
+const clearIssuesBtn = document.getElementById('clear-issues-btn') as HTMLButtonElement;
+const issuesCountBadge = document.getElementById('issues-count-badge') as HTMLElement;
+const issuesPanel = document.getElementById('issues-panel') as HTMLElement;
+
+type SessionIssue = { id: number; message: string; timestampMs: number };
+const MAX_SESSION_ISSUES = 50;
+let nextIssueId = 1;
+const sessionIssues: SessionIssue[] = [];
+
+function isAccessibilityIssueMessage(message: string): boolean {
+  return /accessibility/i.test(message);
+}
+
+function renderIssuesList() {
+  if (issuesCountBadge) {
+    issuesCountBadge.textContent = String(sessionIssues.length);
+  }
+  if (clearIssuesBtn) {
+    clearIssuesBtn.disabled = sessionIssues.length === 0;
+  }
+
+  issuesList.querySelectorAll('.issue-row').forEach((row) => row.remove());
+
+  if (sessionIssues.length === 0) {
+    issuesEmpty.classList.remove('hidden');
+    return;
+  }
+
+  issuesEmpty.classList.add('hidden');
+  const frag = document.createDocumentFragment();
+  for (const issue of [...sessionIssues].reverse()) {
+    const timeStr = new Date(issue.timestampMs).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const row = document.createElement('div');
+    row.className = 'issue-row';
+    const axBtn = isAccessibilityIssueMessage(issue.message)
+      ? `<button type="button" class="btn-xs btn-accent" data-open-accessibility>Open Accessibility settings</button>`
+      : '';
+    row.innerHTML = `
+      <div class="issue-text"></div>
+      <div class="issue-meta">
+        <span>${escapeHtml(timeStr)}</span>
+        <div class="issue-actions">
+          <button type="button" class="btn-xs btn-quiet" data-copy-issue data-issue-id="${issue.id}">Copy</button>
+          ${axBtn}
+        </div>
+      </div>
+    `;
+    const textEl = row.querySelector('.issue-text') as HTMLElement;
+    textEl.textContent = issue.message;
+    frag.appendChild(row);
+  }
+  issuesList.appendChild(frag);
+}
+
+function logSessionIssue(message: string) {
+  const text = message.trim();
+  if (!text) return;
+  sessionIssues.push({ id: nextIssueId++, message: text, timestampMs: Date.now() });
+  while (sessionIssues.length > MAX_SESSION_ISSUES) {
+    sessionIssues.shift();
+  }
+  renderIssuesList();
+  if (!document.hidden && issuesPanel) {
+    issuesPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
 
 function updateHistoryBadgeDisplay() {
   if (!historyTtlBadge) return;
@@ -460,8 +534,11 @@ function formatDurationMs(ms: number): string {
 }
 
 function showError(msg: string) {
-  errorBannerText.textContent = msg;
+  const text = String(msg ?? '').trim();
+  if (!text) return;
+  errorBannerText.textContent = text;
   errorBanner.classList.remove('hidden');
+  logSessionIssue(text);
 }
 
 function updateStatsDisplay() {
@@ -472,12 +549,17 @@ function updateStatsDisplay() {
 }
 
 function updateAccessibilityBadge(trusted: boolean) {
+  accessibilityPermissionTrusted = trusted;
   if (trusted) {
     axDot.className = 'dot dot-emerald';
     axText.textContent = 'Accessibility: Trusted';
     if (obAxBadge) {
       obAxBadge.textContent = 'TRUSTED';
       obAxBadge.className = 'ob-badge ob-ok';
+    }
+    if (accessibilityPollTimer !== null) {
+      window.clearInterval(accessibilityPollTimer);
+      accessibilityPollTimer = null;
     }
   } else {
     axDot.className = 'dot dot-amber';
@@ -487,6 +569,24 @@ function updateAccessibilityBadge(trusted: boolean) {
       obAxBadge.className = 'ob-badge';
     }
   }
+}
+
+async function refreshAccessibilityStatus() {
+  try {
+    const snapshot = await invoke<SystemStatusSnapshot>('get_system_status');
+    if (snapshot.accessibilityTrusted !== accessibilityPermissionTrusted) {
+      updateAccessibilityBadge(snapshot.accessibilityTrusted);
+    }
+  } catch {
+    // Backend may be busy during transcribe; ignore and retry on next tick.
+  }
+}
+
+function startAccessibilityPoll() {
+  if (accessibilityPermissionTrusted || accessibilityPollTimer !== null) return;
+  accessibilityPollTimer = window.setInterval(() => {
+    void refreshAccessibilityStatus();
+  }, 2000);
 }
 
 function renderModelsDropdown() {
@@ -1351,6 +1451,7 @@ async function initApp() {
     selectedModelId = snapshot.selectedModelId;
 
     updateAccessibilityBadge(snapshot.accessibilityTrusted);
+    startAccessibilityPoll();
 
     renderDevicesDropdown(snapshot.devices);
 
@@ -1636,6 +1737,29 @@ accessibilityPill.addEventListener('click', async () => {
 errorDismissBtn.addEventListener('click', () => {
   errorBanner.classList.add('hidden');
 });
+
+clearIssuesBtn?.addEventListener('click', () => {
+  sessionIssues.length = 0;
+  renderIssuesList();
+});
+
+issuesList?.addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const copyBtn = target.closest('[data-copy-issue]') as HTMLElement | null;
+  if (copyBtn) {
+    const id = Number(copyBtn.dataset.issueId);
+    const issue = sessionIssues.find((item) => item.id === id);
+    if (issue) {
+      void navigator.clipboard.writeText(issue.message);
+    }
+    return;
+  }
+  if (target.closest('[data-open-accessibility]')) {
+    void invoke('request_accessibility_settings').catch((err) => showError(String(err)));
+  }
+});
+
+renderIssuesList();
 
 deviceSelect.addEventListener('change', syncConfigToBackend);
 vadThreshSlider.addEventListener('input', syncConfigToBackend);
