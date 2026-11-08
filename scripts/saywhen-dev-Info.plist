@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>saywhen</string>
+  <key>CFBundleDisplayName</key>
+  <string>saywhen</string>
+  <key>CFBundleIdentifier</key>
+  <string>dev.saywhen.app</string>
+  <key>CFBundleVersion</key>
+  <string>0.2.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.2.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleExecutable</key>
+  <string>saywhen</string>
+  <key>CFBundleIconFile</key>
+  <string>icon</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>saywhen needs microphone access to capture speech locally for on-device transcription.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>saywhen processes webcam landmarks in memory to detect when you are looking at the screen and speaking.</string>
+</dict>
+</plist>
