@@ -141,6 +141,16 @@ impl TranscriberEngine {
         self.selected_model_id.lock().unwrap().clone()
     }
 
+    /// True when the selected model file is on disk. The model itself loads lazily on the
+    /// first transcription, so `is_loaded` is false right after launch.
+    pub fn is_model_available(&self) -> bool {
+        let filename = match self.get_selected_model_id().as_str() {
+            "base.en" => "ggml-base.en.bin",
+            _ => "ggml-tiny.en.bin",
+        };
+        self.resolve_models_dir().join(filename).exists()
+    }
+
     pub fn is_loaded(&self) -> bool {
         self.loaded_model
             .lock()

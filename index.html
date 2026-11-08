@@ -7,18 +7,14 @@
     <title>saywhen</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body data-state="IDLE" data-send-mode="pause" data-palette="lumen" data-mood-colors="on">
-    <div class="grain" aria-hidden="true"></div>
-
+  <body data-state="IDLE" data-send-mode="pause" data-palette="saywhen" data-mood-colors="on">
     <div class="app-shell">
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-drag" data-tauri-drag-region></div>
 
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <span class="brand-mark-core"></span>
-          </div>
+          <img class="brand-logo" src="/src/assets/logo.png" alt="" width="38" height="38" draggable="false" />
           <div class="brand-text">
             <h1>say<em>when</em></h1>
             <span class="brand-sub">Look. Talk. Sent.</span>
@@ -28,19 +24,24 @@
         <nav class="nav" id="app-nav" aria-label="Sections">
           <span class="nav-indicator" id="nav-indicator" aria-hidden="true"></span>
           <button class="nav-item is-active" data-tab="home" aria-current="page">
-            <span class="nav-num">01</span>
+            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9 10 3.8 16.5 9v6.7a1 1 0 0 1-1 1h-3.3v-4.4H7.8v4.4H4.5a1 1 0 0 1-1-1z" /></svg>
             <span>Home</span>
             <kbd class="nav-kbd" data-mod>1</kbd>
           </button>
           <button class="nav-item" data-tab="preferences">
-            <span class="nav-num">02</span>
+            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h7M15 6h1M4 14h1M9 14h7" /><circle cx="13" cy="6" r="2" /><circle cx="7" cy="14" r="2" /></svg>
             <span>Settings</span>
             <kbd class="nav-kbd" data-mod>2</kbd>
           </button>
           <button class="nav-item" data-tab="lab">
-            <span class="nav-num">03</span>
+            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h2.5l2-5 3 9 2-6 1.5 2H17" /></svg>
             <span>Lab</span>
             <kbd class="nav-kbd" data-mod>3</kbd>
+          </button>
+          <button class="nav-item" data-tab="guide">
+            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H15v11.5H5.5A1.5 1.5 0 0 0 4 16zM4 16a1.5 1.5 0 0 0 1.5 1.5H15V14.5" /><path d="M7.5 7h4.5M7.5 10h3" /></svg>
+            <span>Guide</span>
+            <kbd class="nav-kbd" data-mod>4</kbd>
           </button>
         </nav>
 
@@ -111,7 +112,7 @@
                 <div class="hero-actions">
                   <button id="toggle-camera-btn" class="btn btn-camera">
                     <span class="btn-icon-circle"></span>
-                    <span id="toggle-camera-label">Enable Camera Gate</span>
+                    <span id="toggle-camera-label">Turn on camera</span>
                   </button>
                   <button
                     id="calibrate-vision-btn"
@@ -219,7 +220,7 @@
             </section>
 
             <section class="mode-section" aria-labelledby="mode-title">
-              <div class="section-label"><span>A</span><span id="mode-title">How do you want to send?</span></div>
+              <div class="section-label"><span><svg viewBox="0 0 20 20" aria-hidden="true" style="width:12px;height:12px"><path d="M4 10h9M10 6l4 4-4 4" /></svg></span><span id="mode-title">How do you want to send?</span></div>
               <div class="mode-picker" role="radiogroup" aria-labelledby="mode-title">
                 <button class="mode-card" data-send-mode="pause" role="radio" aria-checked="true">
                   <span class="mode-glyph" aria-hidden="true">
@@ -259,6 +260,14 @@
                     <h4>Camera</h4>
                     <span class="card-hint">Never saved, never sent</span>
                   </div>
+                  <div class="card-actions">
+                  <button
+                    id="calibrate-card-btn"
+                    class="btn-xs btn-accent"
+                    title="Look at the screen you talk to with your mouth closed, then click. Takes 1.5 seconds."
+                  >
+                    Calibrate
+                  </button>
                   <button
                     id="reset-calibration-btn"
                     class="btn-xs btn-quiet"
@@ -266,6 +275,7 @@
                   >
                     Reset calibration
                   </button>
+                  </div>
                 </div>
                 <div class="webcam-stage">
                   <video id="webcam-video" autoplay playsinline muted></video>
@@ -399,10 +409,33 @@
                   <label class="toggle-row">
                     <div>
                       <div class="toggle-title">Camera is off to the side</div>
-                      <div class="toggle-desc">Turn on if your webcam is not in front of the screen you talk to, like a laptop next to a big monitor. Look at that screen and click Calibrate afterwards. Works up to about a 65&deg; head turn.</div>
+                      <div class="toggle-desc">For a webcam that is not in front of the screen you talk to, like a laptop next to a big monitor. It switches on by itself when you calibrate while turned away from the camera. Works up to about a 65&deg; head turn.</div>
                     </div>
                     <input type="checkbox" id="toggle-side-camera" />
                   </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Wake word when you look away</div>
+                      <div class="toggle-desc">When the camera cannot see you facing the screen, start with the wake word, like &ldquo;Eevee, run the tests&rdquo;. Other talking is turned into text on this computer for a moment, checked, and thrown away.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-wake-word" />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Chime when it hears the wake word</div>
+                      <div class="toggle-desc">Two soft notes when it caught you and you are already talking, one note when it is waiting for the rest.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-wake-chime" checked />
+                  </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="wake-word-input">Wake word</label>
+                      <span class="pref-desc">A short, unusual name works best. Common words like &ldquo;alright&rdquo; or &ldquo;okay&rdquo; will start by mistake.</span>
+                    </div>
+                    <div class="pref-control">
+                      <input type="text" id="wake-word-input" class="text-control" value="eevee" spellcheck="false" autocomplete="off" />
+                    </div>
+                  </div>
                   <label class="toggle-row">
                     <div>
                       <div class="toggle-title">Battery saver</div>
@@ -541,6 +574,11 @@
                 </header>
                 <div class="pref-group">
                   <div class="palette-grid" role="group" aria-label="Colour palette">
+                    <button type="button" class="palette-card" data-palette="saywhen" style="--sw-paper: #f7f4f7; --sw-ink: #2a0823; --sw-accent: #4a0b3e; --sw-on-dark: #fbb303;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">saywhen</span>
+                      <span class="palette-desc">Plum, silver, amber (from the logo)</span>
+                    </button>
                     <button type="button" class="palette-card" data-palette="lumen" style="--sw-paper: #e6d5bd; --sw-ink: #101010; --sw-accent: #d5360c; --sw-on-dark: #ff8a5f;" aria-pressed="false">
                       <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
                       <span class="palette-name">Lumen</span>
@@ -580,7 +618,7 @@
                   <label class="toggle-row">
                     <div>
                       <div class="toggle-title">Change colour with each mood</div>
-                      <div class="toggle-desc">Ready turns teal, Listening pink, Writing sand and Check blue, so you can tell what saywhen is doing from across the room. Turn off to keep your palette all the time.</div>
+                      <div class="toggle-desc">A soft glow behind the window shows what saywhen is doing: silver when Ready, amber while Listening, lilac while Writing. Turn off for a calmer, still window.</div>
                     </div>
                     <input type="checkbox" id="toggle-mood-colors" checked />
                   </label>
@@ -711,6 +749,91 @@
               </section>
             </div>
           </section>
+
+          <!-- GUIDE -->
+          <section class="view" data-view="guide" id="view-guide">
+            <div class="guide">
+              <section class="guide-hero">
+                <img class="guide-logo" src="/src/assets/logo.png" alt="" width="64" height="64" draggable="false" />
+                <div>
+                  <h3>Talk to your computer like a colleague</h3>
+                  <p>saywhen types what you say into your terminal or coding assistant. Look at the screen, talk, stop. It shows you the text for a moment, then sends it.</p>
+                </div>
+              </section>
+
+              <section class="guide-card">
+                <h4><span class="guide-num">1</span> Get started in three steps</h4>
+                <ol class="guide-steps">
+                  <li><strong>Turn on the camera</strong> on Home. Pictures are checked on this computer and never saved.</li>
+                  <li><strong>Look at the screen you talk to</strong>, keep your mouth closed and click <em>Calibrate</em>. Do this again if you move your laptop or camera.</li>
+                  <li><strong>Talk.</strong> When you stop, saywhen shows your words, counts down and sends them. Say &ldquo;cancel&rdquo;, shake your head or press <kbd>Esc</kbd> to stop it.</li>
+                </ol>
+              </section>
+
+              <section class="guide-card">
+                <h4><span class="guide-num">2</span> Choose how you send</h4>
+                <div class="guide-modes">
+                  <div><strong>Just pause</strong><span>Stop talking and it sends after a short countdown. Best for quick commands.</span></div>
+                  <div><strong>Nod to send</strong><span>Nothing goes out until you nod. Best when you think out loud.</span></div>
+                  <div><strong>Say &ldquo;send it&rdquo;</strong><span>Enter is pressed only when you end with &ldquo;send it&rdquo;.</span></div>
+                  <div><strong>Type only</strong><span>Your words are typed and you press Enter yourself. The safest way to start.</span></div>
+                </div>
+              </section>
+
+              <div class="guide-pair">
+                <section class="guide-card guide-do">
+                  <h4><span class="guide-badge guide-badge-do">Do</span> These work well</h4>
+                  <ul>
+                    <li>Speak in whole sentences, then stop for a moment.</li>
+                    <li>Say commands the way you would type them: &ldquo;git status&rdquo;, &ldquo;cargo test dash dash release&rdquo;.</li>
+                    <li>Calibrate again if it says &ldquo;I can see you, but you look away&rdquo;.</li>
+                    <li>Start with &ldquo;Eevee&rdquo; when you are not facing the camera, if the wake word is on.</li>
+                    <li>Add your project names under <em>Settings &rarr; Words to always spell right</em>.</li>
+                  </ul>
+                </section>
+                <section class="guide-card guide-dont">
+                  <h4><span class="guide-badge guide-badge-dont">Don&rsquo;t</span> Avoid these</h4>
+                  <ul>
+                    <li>Don&rsquo;t expect risky commands like <code>rm -rf</code> to send by themselves. They are only typed, on purpose.</li>
+                    <li>Don&rsquo;t switch windows during the countdown. saywhen stops instead of typing into the wrong place.</li>
+                    <li>Don&rsquo;t pick a common wake word like &ldquo;okay&rdquo;. It will start by mistake.</li>
+                    <li>Don&rsquo;t start saywhen from an AI assistant&rsquo;s shell on a Mac. The camera may be blocked. Use Terminal.</li>
+                  </ul>
+                </section>
+              </div>
+
+              <section class="guide-card">
+                <h4><span class="guide-num">3</span> Ways to stop or fix a send</h4>
+                <div class="guide-keys">
+                  <div><kbd>Esc</kbd><span>Cancel the countdown</span></div>
+                  <div><kbd data-guide-mod>Option</kbd> <kbd>Space</kbd><span>Start or stop by hand, no camera needed</span></div>
+                  <div><span class="guide-say">&ldquo;scratch that&rdquo;</span><span>Throw away what you just said</span></div>
+                  <div><span class="guide-say">&ldquo;paste only&rdquo;</span><span>Type it without pressing Enter</span></div>
+                  <div><span class="guide-say">Shake your head</span><span>Cancel, hands free</span></div>
+                  <div><span class="guide-say">Nod</span><span>Send now</span></div>
+                </div>
+              </section>
+
+              <section class="guide-card">
+                <h4><span class="guide-num">4</span> When something goes wrong</h4>
+                <dl class="guide-faq">
+                  <div><dt>It never starts listening</dt><dd>Check the camera is on and click Calibrate while looking at your screen. Or turn on the wake word in Settings.</dd></div>
+                  <div><dt>Nothing gets typed</dt><dd>On a Mac, allow saywhen under System Settings &rarr; Privacy &amp; Security &rarr; Accessibility.</dd></div>
+                  <div><dt>It typed but did not press Enter</dt><dd>The app may not be on the safe list in Settings, or the command looked risky.</dd></div>
+                  <div><dt>It starts when I do not want it to</dt><dd>Turn up the noise filter in Settings, or pick Nod to send.</dd></div>
+                  <div><dt>Something else</dt><dd>Read the Problems list on Home. You can copy the message and open an issue on GitHub.</dd></div>
+                </dl>
+              </section>
+
+              <section class="guide-card guide-privacy">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8 4.5 5v4.4c0 3.6 2.4 6.4 5.5 7.8 3.1-1.4 5.5-4.2 5.5-7.8V5z" /><path d="m7.5 10 1.8 1.8 3.2-3.4" /></svg>
+                <div>
+                  <h4>Your privacy</h4>
+                  <p>Camera pictures and your voice never leave this computer. Audio is thrown away as soon as it becomes text. The last 7 days of text are kept here so you can search them, and you can clear them any time.</p>
+                </div>
+              </section>
+            </div>
+          </section>
         </div>
 
         <div id="error-banner" class="error-banner hidden" role="alert">
@@ -729,7 +852,8 @@
     <div class="modal-backdrop hidden" id="onboarding-modal">
       <div class="modal-card" role="dialog" aria-labelledby="onboarding-title">
         <div class="modal-header">
-          <span class="modal-kicker">Welcome</span>
+          <img class="modal-logo" src="/src/assets/logo.png" alt="" width="56" height="56" draggable="false" />
+          <span class="modal-kicker">Welcome to saywhen</span>
           <h2 class="modal-title" id="onboarding-title">Look. Talk. <em>Sent.</em></h2>
           <p class="modal-sub">saywhen types what you say into your terminal or coding assistant. No buttons, no hotkeys. It only listens while you are looking at the screen and talking.</p>
           <button id="onboarding-close-btn" class="modal-close" aria-label="Close">

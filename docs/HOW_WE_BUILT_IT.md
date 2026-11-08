@@ -74,6 +74,10 @@ At the same time the app got a complete makeover. It now uses a warm, magazine-l
 
 The first tester to try the new look had a laptop camera beside a big monitor, so the camera saw the side of their face. saywhen said "looking away" and "lips still" even while they were talking. Three fixes: calibration can now point up to 65 degrees away from the camera (it stopped at 45), a **Camera is off to the side** switch widens the allowed head turn, and the lip measurement now corrects for how a turned head makes the mouth look narrower.
 
+## A logo and a calmer look (8 November 2026)
+
+saywhen got its own logo: a ribbon "S" in silver and amber on deep plum. The app was redesigned around it, aiming for the calm, rounded feel of the best voice tools: soft white cards, rounded buttons, one strong colour (plum) and amber only for "live" moments like listening and the send countdown. The logo now sits in the sidebar, the welcome screen, the floating pill and the app icon, and a new **Guide** page inside the app explains what to do and what to avoid in plain words.
+
 ## What is next
 
 - Sending text to the window you are *looking at*, not just the one in front.
