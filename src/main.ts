@@ -2,6 +2,7 @@ import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
+import { playWakeChime, unlockChimeOnFirstInteraction } from './chime';
 import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
 
 type SendMode = 'pause' | 'nod' | 'phrase' | 'paste_only';
@@ -47,6 +48,7 @@ interface DictationConfig {
   sideCameraMode: boolean;
   wakeWordEnabled: boolean;
   wakeWord: string;
+  wakeChimeEnabled: boolean;
   uiPalette: string;
   moodColors: boolean;
   customVocab: string;
@@ -223,6 +225,7 @@ let currentConfig: DictationConfig = {
   sideCameraMode: false,
   wakeWordEnabled: false,
   wakeWord: 'eevee',
+  wakeChimeEnabled: true,
   uiPalette: 'lumen',
   moodColors: true,
   customVocab: '',
@@ -425,6 +428,7 @@ const toggleCancelOnSpeech = document.getElementById('toggle-cancel-on-speech') 
 const toggleSideCamera = document.getElementById('toggle-side-camera') as HTMLInputElement;
 const toggleWakeWord = document.getElementById('toggle-wake-word') as HTMLInputElement;
 const wakeWordInput = document.getElementById('wake-word-input') as HTMLInputElement;
+const toggleWakeChime = document.getElementById('toggle-wake-chime') as HTMLInputElement;
 const calibrateCardBtn = document.getElementById('calibrate-card-btn') as HTMLButtonElement;
 const sendModeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-send-mode]'));
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
@@ -1607,6 +1611,7 @@ async function syncConfigToBackend() {
     sideCameraMode: toggleSideCamera.checked,
     wakeWordEnabled: toggleWakeWord.checked,
     wakeWord: wakeWordInput.value.trim().toLowerCase() || 'eevee',
+    wakeChimeEnabled: toggleWakeChime.checked,
     uiPalette: currentConfig.uiPalette,
     moodColors: toggleMoodColors.checked,
     hudEnabled: toggleHud.checked,
@@ -1688,6 +1693,7 @@ async function initApp() {
     toggleSideCamera.checked = Boolean(currentConfig.sideCameraMode);
     toggleWakeWord.checked = Boolean(currentConfig.wakeWordEnabled);
     wakeWordInput.value = currentConfig.wakeWord || 'eevee';
+    toggleWakeChime.checked = currentConfig.wakeChimeEnabled !== false;
     toggleMoodColors.checked = currentConfig.moodColors !== false;
     renderPalette();
     renderSendMode();
@@ -1752,6 +1758,19 @@ async function initApp() {
 
   await listen<PreviewStartedEvent>('preview-started', (event) => {
     showPreviewBanner(event.payload);
+  });
+
+  let chimeLockWarned = false;
+  await listen<boolean>('wake-word-heard', (event) => {
+    if (currentConfig.wakeChimeEnabled === false) return;
+    void playWakeChime(Boolean(event.payload)).then((played) => {
+      if (!played && !chimeLockWarned) {
+        chimeLockWarned = true;
+        showError(
+          'The wake word chime could not play because sound is still locked in this window. Click anywhere in saywhen once to allow it.'
+        );
+      }
+    });
   });
 
   await listen<string>('preview-canceled', () => {
@@ -1998,6 +2017,12 @@ toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
 toggleSideCamera.addEventListener('change', syncConfigToBackend);
 toggleWakeWord.addEventListener('change', syncConfigToBackend);
 wakeWordInput.addEventListener('change', syncConfigToBackend);
+toggleWakeChime.addEventListener('change', () => {
+  void syncConfigToBackend();
+  // Clicking the switch counts as an interaction, so this also unlocks audio and previews it.
+  if (toggleWakeChime.checked) void playWakeChime(false);
+});
+unlockChimeOnFirstInteraction();
 calibrateCardBtn.addEventListener('click', () => calibrateVisionBtn.click());
 toggleMoodColors.addEventListener('change', () => {
   currentConfig = { ...currentConfig, moodColors: toggleMoodColors.checked };
