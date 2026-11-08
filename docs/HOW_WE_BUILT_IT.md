@@ -70,6 +70,10 @@ People asked for different ways to send. Some love nodding, some never want Ente
 
 At the same time the app got a complete makeover. It now uses a warm, magazine-like design with bundled fonts that work offline, and the window gently changes colour with each mood so you can tell what saywhen is doing from across the room.
 
+## Cameras off to the side (8 November 2026)
+
+The first tester to try the new look had a laptop camera beside a big monitor, so the camera saw the side of their face. saywhen said "looking away" and "lips still" even while they were talking. Three fixes: calibration can now point up to 65 degrees away from the camera (it stopped at 45), a **Camera is off to the side** switch widens the allowed head turn, and the lip measurement now corrects for how a turned head makes the mouth look narrower.
+
 ## What is next
 
 - Sending text to the window you are *looking at*, not just the one in front.
