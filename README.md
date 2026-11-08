@@ -121,7 +121,7 @@ Yes, by design.
 | --- | --- |
 | Nothing gets typed | On a Mac, check **System Settings > Privacy & Security > Accessibility** and allow saywhen. |
 | It never starts listening | Make sure the camera is on and click **Calibrate**. Or use the hotkey. |
-| My webcam is to the side of my screen | Turn on **Settings > Camera is off to the side**, look at the screen you talk to and click **Calibrate**. It works up to about a 65 degree head turn. |
+| My webcam is to the side of my screen | Look at the screen you talk to, keep your mouth closed and click **Calibrate**. saywhen notices the camera is off to the side and adjusts by itself. It works up to about a 65 to 70 degree head turn. |
 | It starts when I do not want it to | Turn up **Settings > Noise filter**, or pick **Nod to send**. |
 | My first or last word is cut off | Speak a little more slowly at the end. Report it so we can tune it. |
 | It typed but did not press Enter | The app may not be on the trusted list (Settings > Apps where Enter can be pressed), or the command looked risky. |
