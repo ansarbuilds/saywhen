@@ -11,8 +11,15 @@ use crate::inject::{
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
+/// Wake word decision log (terminal, plus a temp file in development builds).
+macro_rules! wake_log {
+    ($($arg:tt)*) => {
+        crate::wake_word::wake_log_line(&format!($($arg)*))
+    };
+}
+
 use crate::wake_word::{
-    early_wake_verdict, effective_wake_word, first_word, strip_wake_word, word_count,
+    early_wake_verdict, effective_wake_word, wake_vad_threshold, WAKE_DIAG_SOUND_LEVEL, first_word, strip_wake_word, word_count,
     WAKE_CHECK_MIN_SAMPLES_ON_PAUSE, wake_holds_turn, EarlyWakeVerdict, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
     WAKE_CHECK_MIN_SAMPLES, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
 };
@@ -583,6 +590,11 @@ struct SharedCaptureBuffer {
     wake_confirmed_at_ms: u64,
     /// After a dropped wake candidate, wait for a short quiet gap before starting another.
     wake_needs_quiet: bool,
+    /// Consecutive frames over the (lower) wake word voice threshold.
+    wake_consecutive_frames: usize,
+    /// Diagnostics: a burst of sound while waiting that never became a wake candidate.
+    wake_burst_frames: usize,
+    wake_burst_peak: f32,
 }
 
 impl SharedCaptureBuffer {
@@ -626,6 +638,9 @@ impl SharedCaptureBuffer {
             wake_awaiting_command: false,
             wake_confirmed_at_ms: 0,
             wake_needs_quiet: false,
+            wake_consecutive_frames: 0,
+            wake_burst_frames: 0,
+            wake_burst_peak: 0.0,
         }
     }
 
@@ -681,7 +696,7 @@ impl SharedCaptureBuffer {
         self.wake_awaiting_command = false;
         self.wake_confirmed_at_ms = 0;
         if source == WAKE_WORD_TRIGGER {
-            eprintln!("[saywhen wake] voice heard while not facing the screen: checking for the wake word");
+            wake_log!("[saywhen wake] voice heard while not facing the screen: checking for the wake word");
         }
     }
 
@@ -1400,7 +1415,7 @@ fn run_audio_worker(
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
                         } else if source == WAKE_WORD_TRIGGER {
-                            guard.consecutive_vad_frames.min(WAKE_START_MIN_VAD_FRAMES)
+                            guard.wake_consecutive_frames.min(WAKE_START_MIN_VAD_FRAMES)
                         } else {
                             0
                         };
@@ -1424,7 +1439,7 @@ fn run_audio_worker(
                             v.reset();
                         }
                         guard.cancel_active_or_preview(&turn_cfg);
-                        eprintln!("[saywhen wake] no wake word at the start: dropped");
+                        wake_log!("[saywhen wake] no wake word at the start: dropped");
                         guard.wake_needs_quiet = true;
                         guard.wake_check_in_flight = false;
                     }
@@ -1692,7 +1707,9 @@ fn run_audio_worker(
                             tuning_capture,
                         );
                         // A wake word candidate that was too short is room noise, not a mistake.
-                        if !was_wake_candidate {
+                        if was_wake_candidate {
+                            wake_log!("[saywhen wake] too little clear speech to check: dropped");
+                        } else {
                             let _ = app_handle.emit("utterance-discarded", discard_msg);
                         }
                         continue;
@@ -1746,7 +1763,7 @@ fn run_audio_worker(
                                     let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
                                     match strip_wake_word(&transcription.text, wake_word) {
                                         Some(rest) if !rest.trim().is_empty() => {
-                                            eprintln!("[saywhen wake] wake word found: sending the rest to the check step");
+                                            wake_log!("[saywhen wake] wake word found: sending the rest to the check step");
                                             transcription.text = rest;
                                         }
                                         stripped => {
@@ -1755,7 +1772,7 @@ fn run_audio_worker(
                                                 guard.state =
                                                     guard.resting_state(&turn_cfg_snapshot);
                                             }
-                                            eprintln!(
+                                            wake_log!(
                                                 "[saywhen wake] full transcript: {}{}",
                                                 if stripped.is_some() {
                                                     "only the wake word, nothing after it"
@@ -2066,6 +2083,12 @@ fn run_audio_worker(
             } else {
                 guard.consecutive_vad_frames = 0;
             }
+            let wake_thr = wake_vad_threshold(cfg.vad_threshold);
+            if prob >= wake_thr {
+                guard.wake_consecutive_frames += 1;
+            } else {
+                guard.wake_consecutive_frames = 0;
+            }
 
             if guard.state == PipelineState::PREVIEW && !cancel_preview_for_speech {
                 let elapsed = guard
@@ -2122,29 +2145,46 @@ fn run_audio_worker(
             // motion is not detected, and then the normal camera path never starts.
             let wake_can_start_here =
                 matches!(guard.state, PipelineState::IDLE | PipelineState::ARMED);
-            if cfg.wake_word_enabled
-                && !should_auto_start_listening
-                && wake_can_start_here
+            let wake_watching =
+                cfg.wake_word_enabled && !should_auto_start_listening && wake_can_start_here;
+            if wake_watching
                 && !guard.wake_needs_quiet
                 && wake_model_available
-                && prob >= cfg.vad_threshold
-                && guard.consecutive_vad_frames >= WAKE_START_MIN_VAD_FRAMES
+                && prob >= wake_thr
+                && guard.wake_consecutive_frames >= WAKE_START_MIN_VAD_FRAMES
             {
                 should_wake_start_listening = true;
-            } else if cfg.wake_word_enabled
-                && !should_auto_start_listening
-                && wake_can_start_here
-                && guard.consecutive_vad_frames == WAKE_START_MIN_VAD_FRAMES
+                guard.wake_burst_frames = 0;
+                guard.wake_burst_peak = 0.0;
+            } else if wake_watching
+                && guard.wake_consecutive_frames == WAKE_START_MIN_VAD_FRAMES
             {
                 // Once per burst of speech: say why the wake word did not start.
                 let why = if guard.wake_needs_quiet {
                     "still waiting for a short quiet gap after the last dropped attempt"
-                } else if !wake_model_available {
-                    "the speech model is not downloaded"
                 } else {
-                    "voice too quiet for the noise filter"
+                    "the speech model is not downloaded"
                 };
-                eprintln!("[saywhen wake] voice heard but not started: {why}");
+                wake_log!("[saywhen wake] voice heard but not started: {why}");
+            }
+
+            // Diagnostics: a burst of sound that never looked enough like a voice to start.
+            if wake_watching && !should_wake_start_listening {
+                if prob >= WAKE_DIAG_SOUND_LEVEL {
+                    guard.wake_burst_frames += 1;
+                    guard.wake_burst_peak = guard.wake_burst_peak.max(prob);
+                } else if guard.wake_burst_frames > 0 {
+                    if guard.wake_burst_frames >= 5 && guard.wake_burst_peak < wake_thr {
+                        wake_log!(
+                            "[saywhen wake] sound heard for {} ms but the voice detector was unsure (peak {:.2}, needs {:.2}): too quiet or too far from the microphone",
+                            guard.wake_burst_frames as u64 * VAD_FRAME_MS,
+                            guard.wake_burst_peak,
+                            wake_thr
+                        );
+                    }
+                    guard.wake_burst_frames = 0;
+                    guard.wake_burst_peak = 0.0;
+                }
             }
 
             if guard.state == PipelineState::LISTENING {
@@ -2178,7 +2218,7 @@ fn run_audio_worker(
                             .unwrap_or_default();
                         let verdict = early_wake_verdict(&heard, &wake_word);
                         // Word count only: this may be someone else talking, so never log text.
-                        eprintln!(
+                        wake_log!(
                             "[saywhen wake] early check on the first {:.1} s: {:?} ({} words heard{})",
                             head.len() as f32 / TARGET_SAMPLE_RATE as f32,
                             verdict,
@@ -2218,7 +2258,14 @@ fn run_audio_worker(
                     guard.last_lip_motion_in_turn_ms = Some(now_ms);
                 }
 
-                if prob >= cfg.vad_threshold {
+                // Wake word candidates count speech with the lower wake threshold, so a voice
+                // aimed away from the microphone is not cut off or discarded as too short.
+                let speech_thr = if guard.trigger_source == WAKE_WORD_TRIGGER {
+                    wake_thr
+                } else {
+                    cfg.vad_threshold
+                };
+                if prob >= speech_thr {
                     guard.speech_frames_in_utterance += 1;
                     guard.last_speech_at_ms = now_ms;
                     guard.partial_ends_with_connective = false;
@@ -2266,7 +2313,7 @@ fn run_audio_worker(
                 }
 
                 if guard.wake_awaiting_command
-                    && prob >= cfg.vad_threshold
+                    && prob >= wake_thr
                     && now_ms > guard.wake_confirmed_at_ms
                 {
                     guard.wake_awaiting_command = false;
