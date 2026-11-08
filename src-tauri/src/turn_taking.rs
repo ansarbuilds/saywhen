@@ -472,6 +472,96 @@ impl EndReason {
     }
 }
 
+/// How a finished utterance gets sent. Chosen once in Settings so people do not have to
+/// reason about separate preview, Enter and gesture toggles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SendMode {
+    /// Stop talking, a short countdown runs, then it sends. Talk, shake or press Esc to cancel.
+    #[default]
+    Pause,
+    /// Nothing sends until you nod. Shake or press Esc to cancel.
+    Nod,
+    /// Only sends (presses Enter) when you end with "send it". Otherwise it just types the text.
+    Phrase,
+    /// Always types the text and never presses Enter.
+    PasteOnly,
+}
+
+/// How long a preview waits for a nod in `SendMode::Nod` before giving up without sending.
+pub const NOD_WAIT_TIMEOUT_MS: u64 = 15_000;
+/// Speech in the first part of a preview is usually the tail of the user's own sentence.
+pub const SPEECH_CANCEL_GRACE_MS: u64 = 350;
+/// About 190 ms of continuous speech is needed before talking cancels a preview.
+pub const SPEECH_CANCEL_MIN_FRAMES: usize = 6;
+
+impl SendMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SendMode::Pause => "pause",
+            SendMode::Nod => "nod",
+            SendMode::Phrase => "phrase",
+            SendMode::PasteOnly => "paste_only",
+        }
+    }
+
+    /// Whether the user asked for Enter to be pressed. App rules and the destructive command
+    /// guard can still downgrade this to paste only afterwards.
+    pub fn wants_enter(&self, auto_press_enter: bool, end_phrase_triggered: bool) -> bool {
+        match self {
+            SendMode::Pause | SendMode::Nod => auto_press_enter || end_phrase_triggered,
+            SendMode::Phrase => end_phrase_triggered,
+            SendMode::PasteOnly => false,
+        }
+    }
+
+    /// Whether this utterance's preview must wait for a nod instead of counting down.
+    /// A nod that already ended the turn counts as the go-ahead, so it gets the normal
+    /// short countdown (still cancelable) instead of asking for a second nod.
+    pub fn preview_waits_for_nod(&self, end_reason: EndReason) -> bool {
+        *self == SendMode::Nod && end_reason != EndReason::Nod
+    }
+}
+
+/// What happens when a preview's timer runs out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewDeadline {
+    /// Countdown finished: send it.
+    Send,
+    /// Nobody nodded in time: drop it and say so.
+    GiveUp,
+}
+
+pub fn preview_deadline(
+    waits_for_nod: bool,
+    elapsed_ms: u64,
+    countdown_ms: u64,
+) -> Option<PreviewDeadline> {
+    if elapsed_ms < countdown_ms {
+        return None;
+    }
+    Some(if waits_for_nod {
+        PreviewDeadline::GiveUp
+    } else {
+        PreviewDeadline::Send
+    })
+}
+
+/// Talking during the preview cancels it ("no, wait" or "cancel"). When the camera is on we
+/// also require moving lips, so someone else talking in the room does not cancel your send.
+pub fn should_cancel_preview_on_speech(
+    enabled: bool,
+    preview_elapsed_ms: u64,
+    consecutive_vad_frames: usize,
+    vision_fresh: bool,
+    lips_moving: bool,
+) -> bool {
+    enabled
+        && preview_elapsed_ms >= SPEECH_CANCEL_GRACE_MS
+        && consecutive_vad_frames >= SPEECH_CANCEL_MIN_FRAMES
+        && (!vision_fresh || lips_moving)
+}
+
 #[derive(Debug, Clone)]
 pub struct TurnState {
     pub started_at_ms: u64,
@@ -965,6 +1055,61 @@ pub fn detect_system_sleep_or_stall_jump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_send_mode_enter_rules() {
+        assert!(SendMode::Pause.wants_enter(true, false));
+        assert!(SendMode::Nod.wants_enter(true, false));
+        assert!(!SendMode::Phrase.wants_enter(true, false));
+        assert!(SendMode::Phrase.wants_enter(true, true));
+        assert!(!SendMode::PasteOnly.wants_enter(true, true));
+        // Legacy auto_press_enter = false still respected for pause and nod modes.
+        assert!(!SendMode::Pause.wants_enter(false, false));
+        assert!(SendMode::Pause.wants_enter(false, true));
+    }
+
+    #[test]
+    fn test_send_mode_nod_waiting() {
+        assert!(SendMode::Nod.preview_waits_for_nod(EndReason::Silence));
+        assert!(SendMode::Nod.preview_waits_for_nod(EndReason::Hotkey));
+        assert!(!SendMode::Nod.preview_waits_for_nod(EndReason::Nod));
+        assert!(!SendMode::Pause.preview_waits_for_nod(EndReason::Silence));
+        assert_eq!(
+            serde_json::from_str::<SendMode>("\"paste_only\"").unwrap(),
+            SendMode::PasteOnly
+        );
+        assert_eq!(SendMode::default(), SendMode::Pause);
+    }
+
+    #[test]
+    fn test_preview_deadline() {
+        assert_eq!(preview_deadline(false, 100, 1800), None);
+        assert_eq!(
+            preview_deadline(false, 1800, 1800),
+            Some(PreviewDeadline::Send)
+        );
+        assert_eq!(preview_deadline(true, 1800, NOD_WAIT_TIMEOUT_MS), None);
+        assert_eq!(
+            preview_deadline(true, NOD_WAIT_TIMEOUT_MS, NOD_WAIT_TIMEOUT_MS),
+            Some(PreviewDeadline::GiveUp)
+        );
+    }
+
+    #[test]
+    fn test_speech_cancels_preview() {
+        // Grace period: the tail of the user's own sentence must not cancel.
+        assert!(!should_cancel_preview_on_speech(true, 100, 10, true, true));
+        // Too short a burst (a cough or click).
+        assert!(!should_cancel_preview_on_speech(true, 800, 3, true, true));
+        // Someone else talking while the user's lips are still.
+        assert!(!should_cancel_preview_on_speech(true, 800, 10, true, false));
+        // The user says "cancel".
+        assert!(should_cancel_preview_on_speech(true, 800, 6, true, true));
+        // Camera off (hotkey use): voice alone is enough.
+        assert!(should_cancel_preview_on_speech(true, 800, 6, false, false));
+        // Turned off in settings.
+        assert!(!should_cancel_preview_on_speech(false, 800, 10, true, true));
+    }
 
     #[test]
     fn test_arming_hysteresis_prevents_flicker_and_glance_arming() {

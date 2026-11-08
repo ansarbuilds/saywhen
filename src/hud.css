@@ -1,25 +1,26 @@
 /* Floating HUD pill. The window is transparent and click-through, so only the
-   pill and the preview card are ever visible. No web fonts: the overlay must
-   render instantly and offline. A transparent webview cannot blur the desktop
+   pill and the preview card are ever visible. Fonts are bundled with the app
+   (src/fonts.ts), so the overlay still renders instantly and offline. A transparent webview cannot blur the desktop
    behind it, so the glass look is built from layered translucency, an inner
    highlight and a state-tinted rim instead of backdrop-filter. */
 :root {
-  --hud-bg: rgba(18, 19, 24, 0.86);
-  --hud-bg-2: rgba(28, 29, 36, 0.86);
-  --hud-rim: rgba(255, 255, 255, 0.1);
-  --hud-text: #f2f2f5;
-  --hud-muted: #a2a5b0;
-  --hud-idle: #8b8f9a;
-  --hud-armed: #34d399;
-  --hud-listening: #ff5f7e;
-  --hud-transcribing: #fbbf24;
-  --hud-preview: #8b7cff;
-  --hud-warn: #fbbf24;
-  --hud-danger: #ff5f7e;
-  --hud-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
-  --hud-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --hud-bg: rgba(16, 16, 16, 0.92);
+  --hud-bg-2: rgba(24, 21, 19, 0.95);
+  --hud-rim: rgba(230, 213, 189, 0.12);
+  --hud-text: #f1e6d6;
+  --hud-muted: #b9ab97;
+  --hud-idle: #b9ab97;
+  --hud-armed: #00c9d6;
+  --hud-listening: #ff5aad;
+  --hud-transcribing: #d4b98d;
+  --hud-preview: #ff8a5f;
+  --hud-warn: #ffcf7a;
+  --hud-danger: #ff6b5e;
+  --hud-font: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --hud-serif: 'Instrument Serif', Georgia, serif;
+  --hud-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.34, 1.45, 0.5, 1);
   --accent: var(--hud-idle);
 }
 
@@ -90,8 +91,7 @@ body {
   box-shadow:
     0 0.5px 0 rgba(255, 255, 255, 0.18) inset,
     0 0 0 1px var(--hud-rim) inset,
-    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-    0 0 22px -6px color-mix(in srgb, var(--accent) 55%, transparent),
+    inset 0 -2px 0 var(--accent),
     0 8px 24px -6px rgba(0, 0, 0, 0.55);
   font-size: 12.5px;
   white-space: nowrap;
@@ -163,9 +163,9 @@ body {
   letter-spacing: 0.06em;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(255, 95, 126, 0.16);
-  box-shadow: 0 0 0 1px rgba(255, 95, 126, 0.45) inset;
-  color: #ffb3c1;
+  background: rgba(255, 90, 173, 0.16);
+  box-shadow: 0 0 0 1px rgba(255, 90, 173, 0.45) inset;
+  color: #ffb3d6;
 }
 
 .pill-rec::before {
@@ -222,17 +222,12 @@ body {
   position: relative;
   width: 100%;
   max-width: 492px;
-  padding: 11px 14px 10px;
-  border-radius: 16px;
-  background:
-    radial-gradient(320px 90px at 0% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 45%),
-    var(--hud-bg-2);
+  padding: 12px 14px 11px;
+  border-radius: 4px;
+  background: var(--hud-bg-2);
   box-shadow:
-    0 0.5px 0 rgba(255, 255, 255, 0.18) inset,
     0 0 0 1px var(--hud-rim) inset,
-    0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent),
-    0 0 30px -8px color-mix(in srgb, var(--accent) 50%, transparent),
+    inset 0 -3px 0 var(--accent),
     0 14px 32px -10px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
@@ -287,12 +282,11 @@ body {
 
 .preview-countdown {
   flex: none;
-  font-family: var(--hud-mono);
-  font-size: 11px;
-  color: var(--hud-text);
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
+  font-family: var(--hud-serif);
+  font-style: italic;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -322,15 +316,19 @@ body {
 .preview-bar-fill {
   height: 100%;
   width: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 45%, white));
-  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+  background: var(--accent);
   transition: width 90ms linear;
 }
 
 .preview-hint {
-  font-size: 10.5px;
+  font-family: var(--hud-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
   color: var(--hud-muted);
+}
+
+.preview-card.waits-for-nod .preview-bar-fill {
+  animation: hud-blink 1.6s ease-in-out infinite;
 }
 
 @keyframes pill-in {
