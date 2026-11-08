@@ -91,6 +91,8 @@ The first build compiles everything and can take 5 to 15 minutes. Tell the perso
 
 On macOS the development build runs as **saywhen-dev.app**. That name is what will appear in permission prompts.
 
+**Important on macOS:** macOS gives camera and microphone access to the app that *started* saywhen. If you (the assistant) start it from your own background shell, the camera is usually blocked with "NotAllowedError". So do not start it yourself. Ask the person to open the **Terminal** app, then run `cd saywhen && npx tauri dev` there, so the permission prompts appear for them.
+
 ## Step 5: Walk the person through first launch
 
 Say these steps out loud, one at a time, and wait for them to confirm each one:

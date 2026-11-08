@@ -988,7 +988,14 @@ async function toggleCameraGate() {
     toggleCameraLabel.textContent = 'Turn off camera';
     startVisionTicker();
   } catch (err) {
-    showError(`Camera initialization error: ${String(err)}`);
+    const denied = err instanceof DOMException && err.name === 'NotAllowedError';
+    showError(
+      denied
+        ? isMac
+          ? 'The camera was blocked. macOS asks the app that started saywhen, so if you launched it from an AI assistant, an editor or a terminal, that app needs camera access: System Settings > Privacy & Security > Camera. Or start saywhen from your own Terminal. Then quit and reopen saywhen.'
+          : 'The camera was blocked. Allow camera access for desktop apps in Settings > Privacy & security > Camera, then reopen saywhen.'
+        : `Camera initialization error: ${String(err)}`
+    );
     toggleCameraLabel.textContent = 'Turn on camera';
   } finally {
     toggleCameraBtn.disabled = false;
