@@ -68,15 +68,15 @@ And you can always stop it: shake your head, press Esc, or (in the countdown) ju
 
 ## The five moods of saywhen
 
-You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults. In **Settings > Colours** you can pick one of seven palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) and choose whether the colour changes with each mood.
+You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults, taken from the saywhen logo (plum, silver and amber). In **Settings > Colours** you can pick another palette and choose whether the glow changes with each mood. There is also a **Guide** page inside the app with the do's and don'ts.
 
 | Mood | What it means | Colour |
 | --- | --- | --- |
-| **Waiting** | Nobody is looking at the screen | Warm ivory and orange |
-| **Ready** | You are looking. Start talking any time. | Teal |
-| **Listening** | You are talking and it is recording | Pink |
-| **Writing** | It is turning your voice into text | Sand |
-| **Check** | It is showing you the text before sending | Blue and coral |
+| **Waiting** | Nobody is looking at the screen | Calm plum |
+| **Ready** | You are looking. Start talking any time. | A soft silver glow |
+| **Listening** | You are talking and it is recording | Amber, the bars move with your voice |
+| **Writing** | It is turning your voice into text | Lilac, with a spinning ring |
+| **Check** | It is showing you the text before sending | Amber countdown bar |
 
 ## The safety rules
 

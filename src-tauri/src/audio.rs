@@ -237,7 +237,7 @@ fn default_wake_word() -> String {
 }
 
 fn default_ui_palette() -> String {
-    "lumen".to_string()
+    "saywhen".to_string()
 }
 
 fn default_calibrated_resting_mar() -> f32 {

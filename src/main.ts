@@ -226,7 +226,7 @@ let currentConfig: DictationConfig = {
   wakeWordEnabled: false,
   wakeWord: 'eevee',
   wakeChimeEnabled: true,
-  uiPalette: 'lumen',
+  uiPalette: 'saywhen',
   moodColors: true,
   customVocab: '',
   historyPersistenceEnabled: true,
@@ -705,14 +705,14 @@ function listeningHint(): string {
   }
 }
 
-const PALETTE_IDS = ['lumen', 'bloom', 'lumora', 'neon', 'choreo', 'field', 'blue-bloom'];
+const PALETTE_IDS = ['saywhen', 'lumen', 'bloom', 'lumora', 'neon', 'choreo', 'field', 'blue-bloom'];
 const paletteButtons = Array.from(
   document.querySelectorAll<HTMLButtonElement>('.palette-card[data-palette]')
 );
 const toggleMoodColors = document.getElementById('toggle-mood-colors') as HTMLInputElement;
 
 function renderPalette() {
-  const palette = PALETTE_IDS.includes(currentConfig.uiPalette) ? currentConfig.uiPalette : 'lumen';
+  const palette = PALETTE_IDS.includes(currentConfig.uiPalette) ? currentConfig.uiPalette : 'saywhen';
   document.body.dataset.palette = palette;
   document.body.dataset.moodColors = currentConfig.moodColors === false ? 'off' : 'on';
   for (const btn of paletteButtons) {
@@ -1695,6 +1695,16 @@ async function initApp() {
     wakeWordInput.value = currentConfig.wakeWord || 'eevee';
     toggleWakeChime.checked = currentConfig.wakeChimeEnabled !== false;
     toggleMoodColors.checked = currentConfig.moodColors !== false;
+    // Lumen was the old default. Move people to the logo palette once; a later pick sticks.
+    try {
+      if (currentConfig.uiPalette === 'lumen' && !localStorage.getItem('saywhen-palette-v2')) {
+        currentConfig.uiPalette = 'saywhen';
+        void invoke('update_dictation_config', { config: currentConfig }).catch(() => undefined);
+      }
+      localStorage.setItem('saywhen-palette-v2', '1');
+    } catch {
+      // Storage can be unavailable; keeping the saved palette is fine.
+    }
     renderPalette();
     renderSendMode();
     toggleHud.checked = currentConfig.hudEnabled;
@@ -1824,7 +1834,7 @@ toggleCameraBtn.addEventListener('click', toggleCameraGate);
 calibrateVisionBtn.addEventListener('click', () => {
   if (!cameraRunning) {
     showError(
-      'Enable Camera Gate first, then look naturally at your target coding screen with a relaxed closed mouth and click Calibrate Gaze.'
+      'Turn on the camera first. Then look at the screen you talk to, keep your mouth closed and click Calibrate.'
     );
     return;
   }
@@ -2203,9 +2213,9 @@ function applyDocumentationDemoState(demoMode: string) {
     // Draw synthetic privacy-safe face & lip landmark mesh on webcam overlay
     webcamOverlay.width = 640;
     webcamOverlay.height = 360;
-    overlayCtx.fillStyle = '#0b101b';
+    overlayCtx.fillStyle = '#22061c';
     overlayCtx.fillRect(0, 0, 640, 360);
-    overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.28)';
+    overlayCtx.strokeStyle = 'rgba(223, 229, 236, 0.22)';
     overlayCtx.lineWidth = 1.5;
     overlayCtx.beginPath();
     overlayCtx.ellipse(320, 175, 92, 122, 0, 0, Math.PI * 2);
@@ -2222,12 +2232,12 @@ function applyDocumentationDemoState(demoMode: string) {
       [342, 218],
       [342, 240],
     ];
-    overlayCtx.strokeStyle = 'rgba(244, 63, 94, 0.75)';
+    overlayCtx.strokeStyle = 'rgba(251, 179, 3, 0.8)';
     overlayCtx.lineWidth = 2;
     overlayCtx.beginPath();
     overlayCtx.ellipse(320, 229, 38, 15, 0, 0, Math.PI * 2);
     overlayCtx.stroke();
-    overlayCtx.fillStyle = '#f43f5e';
+    overlayCtx.fillStyle = '#fbb303';
     for (const [lx, ly] of synthLips) {
       overlayCtx.beginPath();
       overlayCtx.arc(lx, ly, 4, 0, Math.PI * 2);
@@ -2258,15 +2268,15 @@ function applyDocumentationDemoState(demoMode: string) {
 
     webcamOverlay.width = 640;
     webcamOverlay.height = 360;
-    overlayCtx.fillStyle = '#0b101b';
+    overlayCtx.fillStyle = '#22061c';
     overlayCtx.fillRect(0, 0, 640, 360);
-    overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+    overlayCtx.strokeStyle = 'rgba(223, 229, 236, 0.3)';
     overlayCtx.lineWidth = 1.5;
     overlayCtx.beginPath();
     overlayCtx.ellipse(320, 175, 92, 122, 0, 0, Math.PI * 2);
     overlayCtx.stroke();
 
-    overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+    overlayCtx.strokeStyle = 'rgba(223, 229, 236, 0.8)';
     overlayCtx.lineWidth = 2;
     overlayCtx.beginPath();
     overlayCtx.moveTo(284, 228);

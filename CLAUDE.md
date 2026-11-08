@@ -4,7 +4,7 @@
 
 saywhen is a Tauri v2 + Rust + TypeScript desktop app for hands-free, hotkey-free voice input aimed at developers using coding agents and terminals. It gates listening on webcam signals (face present, facing the screen, lips moving) plus audio speech detection, transcribes locally, runs an AI cleanup pass, shows a short cancelable preview, injects the text into the focused app and presses Enter.
 
-Status: Stages 1 through 5 and Improvements #2 to #15 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
+Status: Stages 1 through 5 and Improvements #2 to #16 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
 
 ## Architecture & Key Files
 
@@ -20,7 +20,7 @@ Status: Stages 1 through 5 and Improvements #2 to #15 are implemented (see `docs
 - `src/hud.ts` + `hud.html`: Transparent, non-focusable HUD pill and preview card (event listener only).
 - `src/ui.ts` + `src/style.css`: Main window presentation layer (sidebar Home / Preferences / Lab navigation, view transitions, state orb level, slider fills). Presentation only, no backend calls.
 - `src/main.ts`: 15 FPS MediaPipe Face Landmarker vision gate, head gesture detector, live VAD/RMS oscilloscope, and cancelable Preview HUD.
-- `src/style.css` + `src/fonts.ts`: Editorial main window theme (ivory / soft black / burnt orange, per-state palettes via registered `@property` colors) and bundled `@fontsource` fonts so the UI renders offline.
+- `src/style.css` + `src/fonts.ts` + `src/assets/logo.png`: Main window theme built on the logo (plum / silver / amber, rounded white cards, registered `@property` palette colors, a per-state "mood" glow), the in-app Guide page styles, and bundled `@fontsource` fonts so the UI renders offline. App icons in `src-tauri/icons/` are generated from `icon-source.png` with `npx tauri icon`.
 - `INSTALL_WITH_AI.md`, `docs/HOW_IT_WORKS.md`, `docs/HOW_WE_BUILT_IT.md`: Plain-language install guide for coding assistants and non-technical explainers. Keep user-facing copy at that reading level.
 - `scripts/capture-screenshots.sh`: Headless Chrome screenshot generator for `docs/screenshots/stage1..stage5.png`.
 

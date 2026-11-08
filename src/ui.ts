@@ -2,12 +2,13 @@
 // transitions, slider fills, the state orb's live audio level and hero copy
 // swap animation. Nothing here talks to the backend.
 
-type TabId = 'home' | 'preferences' | 'lab';
+type TabId = 'home' | 'preferences' | 'lab' | 'guide';
 
 const TAB_META: Record<TabId, { num: string; title: string; subtitle: string }> = {
   home: { num: '01', title: 'Home', subtitle: 'Talk, check, send' },
   preferences: { num: '02', title: 'Settings', subtitle: 'Listening, sending and privacy' },
   lab: { num: '03', title: 'Lab', subtitle: 'Live numbers and a practice box' },
+  guide: { num: '04', title: 'Guide', subtitle: 'How to use saywhen, what to do and what to avoid' },
 };
 
 const STATE_WORDS: Record<string, string> = {
@@ -64,7 +65,7 @@ export function switchTab(tab: TabId) {
   const title = document.getElementById('page-title');
   const subtitle = document.getElementById('page-subtitle');
   const kicker = document.querySelector('.page-kicker .stage-tag');
-  if (kicker) kicker.textContent = `${TAB_META[tab].num} / saywhen`;
+  if (kicker) kicker.textContent = 'saywhen';
   if (title) title.textContent = TAB_META[tab].title;
   if (subtitle) subtitle.textContent = TAB_META[tab].subtitle;
   replay(heading, 'is-swapping');
@@ -141,7 +142,7 @@ function initNav() {
   window.addEventListener('keydown', (e) => {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (!mod || e.altKey || e.shiftKey) return;
-    const map: Record<string, TabId> = { '1': 'home', '2': 'preferences', '3': 'lab' };
+    const map: Record<string, TabId> = { '1': 'home', '2': 'preferences', '3': 'lab', '4': 'guide' };
     const tab = map[e.key];
     if (tab) {
       e.preventDefault();
@@ -158,11 +159,14 @@ function initNav() {
   requestAnimationFrame(moveNavIndicator);
 
   const kicker = document.querySelector('.page-kicker .stage-tag');
-  if (kicker) kicker.textContent = `${TAB_META[activeTab].num} / saywhen`;
+  if (kicker) kicker.textContent = 'saywhen';
+  if (!isMac) {
+    document.querySelectorAll<HTMLElement>('[data-guide-mod]').forEach((k) => (k.textContent = 'Alt'));
+  }
 
   const requested = new URLSearchParams(window.location.search).get('tab');
-  if (requested === 'preferences' || requested === 'lab' || requested === 'home') {
-    switchTab(requested);
+  if (requested && requested in TAB_META) {
+    switchTab(requested as TabId);
   }
 }
 
