@@ -12,7 +12,7 @@ use crate::inject::{
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 use crate::wake_word::{
-    effective_wake_word, strip_wake_word, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
+    early_wake_verdict, effective_wake_word, strip_wake_word, wake_holds_turn, EarlyWakeVerdict, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
     WAKE_CHECK_MIN_SAMPLES, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
 };
 use crate::turn_taking::{
@@ -571,6 +571,11 @@ struct SharedCaptureBuffer {
     /// Wake word candidate: the early check found the wake word at the start.
     wake_confirmed: bool,
     wake_check_in_flight: bool,
+    /// The early check runs once per candidate.
+    wake_check_done: bool,
+    /// Only the wake word has been heard so far; give the user time to say the command.
+    wake_awaiting_command: bool,
+    wake_confirmed_at_ms: u64,
     /// After a dropped wake candidate, wait for a short quiet gap before starting another.
     wake_needs_quiet: bool,
 }
@@ -612,6 +617,9 @@ impl SharedCaptureBuffer {
             partial_check_in_flight: false,
             wake_confirmed: false,
             wake_check_in_flight: false,
+            wake_check_done: false,
+            wake_awaiting_command: false,
+            wake_confirmed_at_ms: 0,
             wake_needs_quiet: false,
         }
     }
@@ -664,6 +672,12 @@ impl SharedCaptureBuffer {
         self.partial_check_in_flight = false;
         self.wake_confirmed = false;
         self.wake_check_in_flight = false;
+        self.wake_check_done = false;
+        self.wake_awaiting_command = false;
+        self.wake_confirmed_at_ms = 0;
+        if source == WAKE_WORD_TRIGGER {
+            eprintln!("[saywhen wake] voice heard while not facing the screen: checking for the wake word");
+        }
     }
 
     fn is_unconfirmed_wake_candidate(&self) -> bool {
@@ -1393,6 +1407,7 @@ fn run_audio_worker(
                             v.reset();
                         }
                         guard.cancel_active_or_preview(&turn_cfg);
+                        eprintln!("[saywhen wake] no wake word at the start: dropped");
                         guard.wake_needs_quiet = true;
                         guard.wake_check_in_flight = false;
                     }
@@ -1714,6 +1729,7 @@ fn run_audio_worker(
                                     let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
                                     match strip_wake_word(&transcription.text, wake_word) {
                                         Some(rest) if !rest.trim().is_empty() => {
+                                            eprintln!("[saywhen wake] wake word found: sending the rest to the check step");
                                             transcription.text = rest;
                                         }
                                         stripped => {
@@ -1722,6 +1738,14 @@ fn run_audio_worker(
                                                 guard.state =
                                                     guard.resting_state(&turn_cfg_snapshot);
                                             }
+                                            eprintln!(
+                                                "[saywhen wake] full transcript: {}",
+                                                if stripped.is_some() {
+                                                    "only the wake word, nothing after it"
+                                                } else {
+                                                    "no wake word at the start, dropped"
+                                                }
+                                            );
                                             // Only the wake word on its own is worth telling
                                             // the user about; anything else was not for us.
                                             if stripped.is_some() {
@@ -2097,9 +2121,11 @@ fn run_audio_worker(
                     && guard.utterance_pcm.len() >= (TARGET_SAMPLE_RATE as usize);
                 if guard.is_unconfirmed_wake_candidate()
                     && !guard.wake_check_in_flight
+                    && !guard.wake_check_done
                     && (guard.utterance_pcm.len() >= WAKE_CHECK_MIN_SAMPLES || paused)
                 {
                     guard.wake_check_in_flight = true;
+                    guard.wake_check_done = true;
                     let head_len = guard.utterance_pcm.len().min(WAKE_CHECK_MAX_SAMPLES);
                     let head = guard.utterance_pcm[..head_len].to_vec();
                     let token = guard.listening_started_at_ms;
@@ -2113,20 +2139,33 @@ fn run_audio_worker(
                             .transcribe_pcm(&head, peak_vad)
                             .map(|t| t.text)
                             .unwrap_or_default();
-                        // The head may end mid-word, so also accept a cut-off sentence that
-                        // already shows the wake word as its first word.
-                        let matched = strip_wake_word(&heard, &wake_word).is_some();
+                        let verdict = early_wake_verdict(&heard, &wake_word);
+                        // Word count only: this may be someone else talking, so never log text.
+                        eprintln!(
+                            "[saywhen wake] early check on the first {:.1} s: {:?} ({} words heard)",
+                            head.len() as f32 / TARGET_SAMPLE_RATE as f32,
+                            verdict,
+                            heard.split_whitespace().count()
+                        );
                         let mut g = shared_wake.lock().unwrap();
                         if g.listening_started_at_ms != token || !g.is_unconfirmed_wake_candidate()
                         {
                             return;
                         }
                         g.wake_check_in_flight = false;
-                        if matched {
-                            g.wake_confirmed = true;
-                        } else {
-                            drop(g);
-                            let _ = cmd_wake.send(AudioCommand::DropWakeCandidate(token));
+                        match verdict {
+                            EarlyWakeVerdict::Confirmed => g.wake_confirmed = true,
+                            EarlyWakeVerdict::AwaitingCommand => {
+                                g.wake_confirmed = true;
+                                g.wake_awaiting_command = true;
+                                g.wake_confirmed_at_ms = g.now_ms();
+                            }
+                            // Let the full transcript decide; Whisper is unreliable on 1 s clips.
+                            EarlyWakeVerdict::Unclear => {}
+                            EarlyWakeVerdict::NotForUs => {
+                                drop(g);
+                                let _ = cmd_wake.send(AudioCommand::DropWakeCandidate(token));
+                            }
                         }
                     });
                 }
@@ -2181,7 +2220,21 @@ fn run_audio_worker(
                     }
                 }
 
-                if guard.post_roll_started_at_ms.is_none() {
+                if guard.wake_awaiting_command
+                    && prob >= cfg.vad_threshold
+                    && now_ms > guard.wake_confirmed_at_ms
+                {
+                    guard.wake_awaiting_command = false;
+                }
+                let wake_hold = guard.trigger_source == WAKE_WORD_TRIGGER
+                    && wake_holds_turn(
+                        guard.wake_confirmed,
+                        guard.wake_awaiting_command,
+                        now_ms.saturating_sub(guard.listening_started_at_ms),
+                        now_ms.saturating_sub(guard.last_speech_at_ms),
+                    );
+
+                if guard.post_roll_started_at_ms.is_none() && !wake_hold {
                     let turn_state = guard.build_turn_state(cfg.hands_free_enabled);
                     if let Some(reason) = end_of_turn(&turn_state, &turn_cfg, now_ms) {
                         if cfg.post_roll_ms > 0 && reason != EndReason::MaxLength {

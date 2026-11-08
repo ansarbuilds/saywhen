@@ -24,6 +24,11 @@ pub const WAKE_CHECK_MAX_SAMPLES: usize = 16_000 * 5 / 2; // 2.5 s
 pub const WAKE_REARM_QUIET_MS: u64 = 600;
 /// Consecutive VAD speech frames (32 ms each) needed to start a candidate.
 pub const WAKE_START_MIN_VAD_FRAMES: usize = 3;
+/// An unconfirmed candidate is not ended by silence for this long, so the early check gets
+/// to run even when the user pauses right after the wake word.
+pub const WAKE_UNCONFIRMED_HOLD_MS: u64 = 4_000;
+/// After only the wake word was heard, wait this long in silence for the command.
+pub const WAKE_COMMAND_WAIT_MS: u64 = 2_500;
 
 /// Words people say before the wake word ("hmm, alright, Eevee, ...").
 const FILLERS: &[&str] = &[
@@ -56,6 +61,23 @@ fn tokenize(text: &str) -> Vec<(String, usize)> {
     out
 }
 
+/// Rough sound key for the default wake word, so Whisper's many spellings of "ee-vee"
+/// (Eevee, Evie, Evy, Ivy, Eve, Eevy, ...) all match without listing each one.
+fn sounds_like_eevee(token: &str) -> bool {
+    if !(2..=6).contains(&token.len()) || !token.chars().all(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    let mut key = token.replace("ee", "i").replace("ea", "i").replace("ie", "i").replace("ei", "i");
+    key = key.replace('y', "i").replace('e', "i");
+    let mut collapsed = String::new();
+    for c in key.chars() {
+        if !collapsed.ends_with(c) {
+            collapsed.push(c);
+        }
+    }
+    collapsed == "ivi" || collapsed == "iv"
+}
+
 fn aliases_for(wake_word: &str) -> Vec<Vec<String>> {
     let normalized: Vec<String> = tokenize(wake_word).into_iter().map(|(t, _)| t).collect();
     let mut list: Vec<Vec<String>> = Vec::new();
@@ -82,6 +104,10 @@ pub fn strip_wake_word(text: &str, wake_word: &str) -> Option<String> {
     if aliases.is_empty() {
         return None;
     }
+    let is_default = tokenize(wake_word)
+        .iter()
+        .map(|(t, _)| t.as_str())
+        .eq([DEFAULT_WAKE_WORD]);
     for skip in 0..=MAX_LEADING_FILLERS.min(tokens.len()) {
         if skip > 0 && !FILLERS.contains(&tokens[skip - 1].0.as_str()) {
             break;
@@ -91,10 +117,13 @@ pub fn strip_wake_word(text: &str, wake_word: &str) -> Option<String> {
             if end > tokens.len() {
                 continue;
             }
-            if tokens[skip..end]
-                .iter()
-                .zip(alias.iter())
-                .all(|((tok, _), want)| tok == want)
+            let fuzzy_single =
+                alias.len() == 1 && is_default && sounds_like_eevee(&tokens[skip].0);
+            if fuzzy_single
+                || tokens[skip..end]
+                    .iter()
+                    .zip(alias.iter())
+                    .all(|((tok, _), want)| tok == want)
             {
                 let cut = tokens[end - 1].1;
                 let rest = text[cut..]
@@ -114,6 +143,42 @@ fn capitalize_first(s: &str) -> String {
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
     }
+}
+
+/// What the early check on the first couple of seconds decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EarlyWakeVerdict {
+    /// Starts with the wake word and the command already follows.
+    Confirmed,
+    /// Only the wake word so far; wait for the command.
+    AwaitingCommand,
+    /// Too little was heard to tell (Whisper often mangles a 1 s clip); let the full
+    /// transcript decide.
+    Unclear,
+    /// Clearly someone talking without the wake word: drop it now.
+    NotForUs,
+}
+
+pub fn early_wake_verdict(heard: &str, wake_word: &str) -> EarlyWakeVerdict {
+    match strip_wake_word(heard, wake_word) {
+        Some(rest) if rest.trim().is_empty() => EarlyWakeVerdict::AwaitingCommand,
+        Some(_) => EarlyWakeVerdict::Confirmed,
+        None if tokenize(heard).len() >= 3 => EarlyWakeVerdict::NotForUs,
+        None => EarlyWakeVerdict::Unclear,
+    }
+}
+
+/// Whether silence should be ignored for now on a wake word candidate.
+pub fn wake_holds_turn(
+    confirmed: bool,
+    awaiting_command: bool,
+    listening_ms: u64,
+    silence_ms: u64,
+) -> bool {
+    if !confirmed {
+        return listening_ms < WAKE_UNCONFIRMED_HOLD_MS;
+    }
+    awaiting_command && silence_ms < WAKE_COMMAND_WAIT_MS
 }
 
 /// Wake word to use, falling back to the default for an empty setting.
@@ -162,6 +227,36 @@ mod tests {
         ] {
             assert_eq!(strip_wake_word(heard, "eevee"), None, "heard: {heard}");
         }
+    }
+
+    #[test]
+    fn sound_alike_spellings_match_but_common_words_do_not() {
+        for heard in ["Evy, run it", "Eve, run it", "Eevy run it", "Eevie, run it"] {
+            assert!(strip_wake_word(heard, "eevee").is_some(), "heard: {heard}");
+        }
+        for heard in ["Even so", "Evil plan", "Eva said", "Ever wonder", "Eleven tests"] {
+            assert!(strip_wake_word(heard, "eevee").is_none(), "heard: {heard}");
+        }
+        // A custom word is matched exactly, without the Eevee sound key.
+        assert!(strip_wake_word("Evie, run it", "computer").is_none());
+    }
+
+    #[test]
+    fn early_verdicts_and_turn_hold() {
+        use EarlyWakeVerdict::*;
+        assert_eq!(early_wake_verdict("Eevee.", "eevee"), AwaitingCommand);
+        assert_eq!(early_wake_verdict("Eevee, run the", "eevee"), Confirmed);
+        assert_eq!(early_wake_verdict("", "eevee"), Unclear);
+        assert_eq!(early_wake_verdict("TV.", "eevee"), Unclear);
+        assert_eq!(early_wake_verdict("so I told him that", "eevee"), NotForUs);
+        // Pause right after the wake word, before the check ran: keep listening.
+        assert!(wake_holds_turn(false, false, 1_200, 900));
+        assert!(!wake_holds_turn(false, false, 4_500, 900));
+        // Only the wake word so far: wait for the command, but not forever.
+        assert!(wake_holds_turn(true, true, 2_000, 1_500));
+        assert!(!wake_holds_turn(true, true, 5_000, 2_600));
+        // Command under way: normal end of turn.
+        assert!(!wake_holds_turn(true, false, 3_000, 900));
     }
 
     #[test]
