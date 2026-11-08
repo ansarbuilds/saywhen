@@ -188,6 +188,9 @@ pub struct DictationConfig {
     /// The wake word (default "eevee"; common spellings are matched too).
     #[serde(default = "default_wake_word")]
     pub wake_word: String,
+    /// Play a short chime when the wake word is heard (played by the main window).
+    #[serde(default = "default_true")]
+    pub wake_chime_enabled: bool,
     /// Colour palette for the main window and HUD (presentation only).
     #[serde(default = "default_ui_palette")]
     pub ui_palette: String,
@@ -333,6 +336,7 @@ impl Default for DictationConfig {
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
             wake_word_enabled: false,
             wake_word: default_wake_word(),
+            wake_chime_enabled: true,
             ui_palette: default_ui_palette(),
             mood_colors: true,
             side_camera_mode: false,
@@ -2152,6 +2156,7 @@ fn run_audio_worker(
                     let tx_clone = Arc::clone(&transcriber);
                     let shared_wake = Arc::clone(&shared);
                     let cmd_wake = cmd_tx_self.clone();
+                    let app_wake = app_handle.clone();
                     thread::spawn(move || {
                         let heard = tx_clone
                             .transcribe_pcm(&head, peak_vad)
@@ -2172,11 +2177,18 @@ fn run_audio_worker(
                         }
                         g.wake_check_in_flight = false;
                         match verdict {
-                            EarlyWakeVerdict::Confirmed => g.wake_confirmed = true,
+                            EarlyWakeVerdict::Confirmed => {
+                                g.wake_confirmed = true;
+                                drop(g);
+                                let _ = app_wake.emit("wake-word-heard", false);
+                            }
                             EarlyWakeVerdict::AwaitingCommand => {
                                 g.wake_confirmed = true;
                                 g.wake_awaiting_command = true;
                                 g.wake_confirmed_at_ms = g.now_ms();
+                                drop(g);
+                                // true: only the wake word so far, waiting for the command.
+                                let _ = app_wake.emit("wake-word-heard", true);
                             }
                             // Let the full transcript decide; Whisper is unreliable on 1 s clips.
                             EarlyWakeVerdict::Unclear => {}
