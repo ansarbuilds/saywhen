@@ -102,6 +102,7 @@ interface AudioTelemetryEvent {
   silenceTotalMs?: number;
   postRollActive?: boolean;
   wakePending?: boolean;
+  wakeWordActive?: boolean;
   deviceName: string;
   speechDetectedInUtterance: boolean;
   visionActive: boolean;
@@ -778,6 +779,9 @@ function hidePreviewBanner() {
   previewHud.classList.add('hidden');
 }
 
+// What the audio engine reports, so the hints show whether the setting really took effect.
+let engineWakeWordActive = false;
+
 function wakeWordLabel(): string {
   const w = (currentConfig.wakeWord || 'eevee').trim() || 'eevee';
   return w.charAt(0).toUpperCase() + w.slice(1);
@@ -855,10 +859,10 @@ function updatePipelineUiState(
       cameraRunning && faceAwaySince > 0 && performance.now() - faceAwaySince > AWAY_HINT_AFTER_MS;
     if (seenButAway) deckStatus.textContent = 'I can see you, but you look away';
     const idleSubtitle = seenButAway
-      ? currentConfig.wakeWordEnabled
+      ? engineWakeWordActive
         ? `Start with "${wakeWordLabel()}" to talk anyway, or look at the screen you talk to and click <strong>Calibrate</strong>.`
         : 'Is your camera off to the side? Look at the screen you talk to and click <strong>Calibrate</strong>. saywhen will learn that direction.'
-      : cameraRunning && currentConfig.wakeWordEnabled
+      : cameraRunning && engineWakeWordActive
       ? `Look at your screen and start talking, or start with "${wakeWordLabel()}" from anywhere.`
       : cameraRunning
       ? 'Look at your screen and start talking. Look away and it stops listening.'
@@ -1714,6 +1718,7 @@ async function initApp() {
 
   await listen<AudioTelemetryEvent>('audio-telemetry', (event) => {
     const t = event.payload;
+    engineWakeWordActive = Boolean(t.wakeWordActive);
     updatePipelineUiState(
       t.state,
       t.listeningDurationMs,
