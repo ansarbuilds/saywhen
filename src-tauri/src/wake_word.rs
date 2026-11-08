@@ -17,6 +17,9 @@ pub const DEFAULT_WAKE_WORD: &str = "eevee";
 
 /// Audio (including the 500 ms pre-roll) needed before the early wake word check runs.
 pub const WAKE_CHECK_MIN_SAMPLES: usize = 16_000 * 9 / 5; // 1.8 s
+/// When the speaker pauses early, the check still waits for this much audio (pre-roll
+/// included), so Whisper gets at least ~1 s of actual speech.
+pub const WAKE_CHECK_MIN_SAMPLES_ON_PAUSE: usize = 16_000 * 3 / 2; // 1.5 s
 /// The early check only transcribes this much from the start of the candidate.
 pub const WAKE_CHECK_MAX_SAMPLES: usize = 16_000 * 5 / 2; // 2.5 s
 /// After a dropped candidate, wait for this much quiet before starting another one, so a
@@ -143,6 +146,18 @@ fn capitalize_first(s: &str) -> String {
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
     }
+}
+
+/// Words as the matcher counts them.
+pub fn word_count(text: &str) -> usize {
+    tokenize(text).len()
+}
+
+/// First word as the matcher sees it (lowercase letters and digits only). Development
+/// builds log this for dropped attempts so a misheard wake word can be added; it is never
+/// logged in release builds because it may be someone else talking.
+pub fn first_word(text: &str) -> Option<String> {
+    tokenize(text).into_iter().next().map(|(t, _)| t)
 }
 
 /// What the early check on the first couple of seconds decided.

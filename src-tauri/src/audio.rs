@@ -12,7 +12,8 @@ use crate::inject::{
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 use crate::wake_word::{
-    early_wake_verdict, effective_wake_word, strip_wake_word, wake_holds_turn, EarlyWakeVerdict, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
+    early_wake_verdict, effective_wake_word, first_word, strip_wake_word, word_count,
+    WAKE_CHECK_MIN_SAMPLES_ON_PAUSE, wake_holds_turn, EarlyWakeVerdict, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
     WAKE_CHECK_MIN_SAMPLES, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
 };
 use crate::turn_taking::{
@@ -891,6 +892,18 @@ impl AudioPipelineController {
     }
 }
 
+/// In development builds only, the first word Whisper heard, so a misheard wake word can be
+/// spotted in the terminal. Empty in release builds.
+fn dev_first_word_note(text: &str) -> String {
+    if !cfg!(debug_assertions) {
+        return String::new();
+    }
+    match first_word(text) {
+        Some(w) => format!(", first word \"{w}\""),
+        None => ", nothing recognized".to_string(),
+    }
+}
+
 pub fn list_input_devices() -> Vec<String> {
     let host = cpal::default_host();
     let mut names = Vec::new();
@@ -1743,12 +1756,13 @@ fn run_audio_worker(
                                                     guard.resting_state(&turn_cfg_snapshot);
                                             }
                                             eprintln!(
-                                                "[saywhen wake] full transcript: {}",
+                                                "[saywhen wake] full transcript: {}{}",
                                                 if stripped.is_some() {
                                                     "only the wake word, nothing after it"
                                                 } else {
                                                     "no wake word at the start, dropped"
-                                                }
+                                                },
+                                                dev_first_word_note(&transcription.text)
                                             );
                                             // Only the wake word on its own is worth telling
                                             // the user about; anything else was not for us.
@@ -2140,7 +2154,7 @@ fn run_audio_worker(
 
                 // Early wake word check on the first ~2 s so room chatter is dropped quickly.
                 let paused = now_ms.saturating_sub(guard.last_speech_at_ms) >= 240
-                    && guard.utterance_pcm.len() >= (TARGET_SAMPLE_RATE as usize);
+                    && guard.utterance_pcm.len() >= WAKE_CHECK_MIN_SAMPLES_ON_PAUSE;
                 if guard.is_unconfirmed_wake_candidate()
                     && !guard.wake_check_in_flight
                     && !guard.wake_check_done
@@ -2165,10 +2179,11 @@ fn run_audio_worker(
                         let verdict = early_wake_verdict(&heard, &wake_word);
                         // Word count only: this may be someone else talking, so never log text.
                         eprintln!(
-                            "[saywhen wake] early check on the first {:.1} s: {:?} ({} words heard)",
+                            "[saywhen wake] early check on the first {:.1} s: {:?} ({} words heard{})",
                             head.len() as f32 / TARGET_SAMPLE_RATE as f32,
                             verdict,
-                            heard.split_whitespace().count()
+                            word_count(&heard),
+                            dev_first_word_note(&heard)
                         );
                         let mut g = shared_wake.lock().unwrap();
                         if g.listening_started_at_ms != token || !g.is_unconfirmed_wake_candidate()
