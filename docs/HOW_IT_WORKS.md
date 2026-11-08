@@ -20,6 +20,8 @@ The watcher looks through your webcam about 15 times a second and answers three 
 
 It does this by finding a few hundred dots on your face (corners of your eyes, edges of your lips) and doing a little maths on them. **The picture itself is thrown away straight after.** Nothing is saved, nothing leaves your computer. Only the yes-or-no answers are used.
 
+**What if the camera is not in front of you?** Lots of people use a laptop camera next to a bigger monitor, so the camera sees the side of their face. Switch on **Camera is off to the side** in Settings, look at the screen you actually talk to, and click **Calibrate**. saywhen then treats that direction as "looking at the screen". It works until your head is turned about 65 degrees from the camera. Past that, the camera cannot see enough of your lips, so use the keyboard shortcut instead.
+
 The watcher also notices two head movements:
 
 - **A nod** means "yes, send it".

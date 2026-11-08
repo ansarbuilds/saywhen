@@ -44,6 +44,7 @@ interface DictationConfig {
   calibratedPitchOffsetDeg: number;
   calibratedRestingMar: number;
   adaptiveFpsEnabled: boolean;
+  sideCameraMode: boolean;
   customVocab: string;
   historyPersistenceEnabled: boolean;
   llmCleanupEnabled: boolean;
@@ -213,6 +214,7 @@ let currentConfig: DictationConfig = {
   calibratedPitchOffsetDeg: 0.0,
   calibratedRestingMar: 0.016,
   adaptiveFpsEnabled: true,
+  sideCameraMode: false,
   customVocab: '',
   historyPersistenceEnabled: true,
   llmCleanupEnabled: false,
@@ -410,6 +412,7 @@ const togglePreview = document.getElementById('toggle-preview') as HTMLInputElem
 const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputElement;
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleCancelOnSpeech = document.getElementById('toggle-cancel-on-speech') as HTMLInputElement;
+const toggleSideCamera = document.getElementById('toggle-side-camera') as HTMLInputElement;
 const sendModeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-send-mode]'));
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
@@ -798,14 +801,26 @@ function distance2D(a: NormalizedLandmark, b: NormalizedLandmark): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function computeMAR(landmarks: NormalizedLandmark[]): number {
+// When the head turns away from the camera the mouth looks narrower (by cos(yaw)) while the
+// lip gap stays about the same, so a plain ratio grows with head turn. Undo that so the
+// resting baseline and speech thresholds mean the same thing at 0 and at 60 degrees.
+const MAR_YAW_CORRECTION_MIN_COS = 0.4; // about 66 degrees
+
+function computeMAR(landmarks: NormalizedLandmark[], cameraYawDeg = 0): number {
   const vCenter = distance2D(landmarks[13], landmarks[14]);
   const vLeft = distance2D(landmarks[82], landmarks[87]);
   const vRight = distance2D(landmarks[312], landmarks[317]);
-  const horiz = distance2D(landmarks[78], landmarks[308]);
+  const horizSeen = distance2D(landmarks[78], landmarks[308]);
+  const cosYaw = Math.max(MAR_YAW_CORRECTION_MIN_COS, Math.cos((cameraYawDeg * Math.PI) / 180));
+  const horiz = horizSeen / cosYaw;
   if (horiz < 1e-6) return 0;
   return (vCenter + vLeft + vRight) / (3.0 * horiz);
 }
+
+// Must match turn_taking.rs (SIDE_CAMERA_YAW_*_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG).
+const SIDE_CAMERA_YAW_ENTER_DEG = 35.0;
+const SIDE_CAMERA_YAW_EXIT_DEG = 48.0;
+const MAX_CALIBRATED_YAW_OFFSET_DEG = 65.0;
 
 // MediaPipe Face Landmarker outputs a 4x4 column-major facial transform.
 // Use the rotation row (r20, r21, r22) so pitch moves on nods; the old third-column
@@ -947,8 +962,8 @@ function finalizeVisionCalibration() {
     return;
   }
   const yaw0 = Math.max(
-    -45,
-    Math.min(45, medianValue(calibrationSamples.map((s) => s.yaw)))
+    -MAX_CALIBRATED_YAW_OFFSET_DEG,
+    Math.min(MAX_CALIBRATED_YAW_OFFSET_DEG, medianValue(calibrationSamples.map((s) => s.yaw)))
   );
   const pitch0 = Math.max(
     -35,
@@ -997,16 +1012,6 @@ function processVisionFrame(now: number) {
 
     if (result.faceLandmarks && result.faceLandmarks.length > 0) {
       const landmarks = result.faceLandmarks[0];
-      const mar = computeMAR(landmarks);
-
-      marWindow.push({ timestamp: now, mar });
-      while (marWindow.length > 0 && now - marWindow[0].timestamp > 320) {
-        marWindow.shift();
-      }
-
-      const meanMar = marWindow.reduce((acc, p) => acc + p.mar, 0) / marWindow.length;
-      const marVariance =
-        marWindow.reduce((acc, p) => acc + Math.pow(p.mar - meanMar, 2), 0) / marWindow.length;
 
       let yaw = 0;
       let pitch = 0;
@@ -1020,6 +1025,17 @@ function processVisionFrame(now: number) {
         yaw = pose.yaw;
         pitch = pose.pitch;
       }
+
+      const mar = computeMAR(landmarks, yaw);
+
+      marWindow.push({ timestamp: now, mar });
+      while (marWindow.length > 0 && now - marWindow[0].timestamp > 320) {
+        marWindow.shift();
+      }
+
+      const meanMar = marWindow.reduce((acc, p) => acc + p.mar, 0) / marWindow.length;
+      const marVariance =
+        marWindow.reduce((acc, p) => acc + Math.pow(p.mar - meanMar, 2), 0) / marWindow.length;
 
       if (isCalibrating) {
         calibrationSamples.push({ yaw, pitch, mar });
@@ -1058,8 +1074,11 @@ function processVisionFrame(now: number) {
       const relYaw = yaw - yawOffset;
       const relPitch = pitch - pitchOffset;
 
-      const enterYaw = currentConfig.armYawEnterDeg || 20.0;
-      const exitYaw = currentConfig.armYawExitDeg || 28.0;
+      const sideCamera = Boolean(currentConfig.sideCameraMode);
+      const baseEnterYaw = currentConfig.armYawEnterDeg || 20.0;
+      const baseExitYaw = currentConfig.armYawExitDeg || 28.0;
+      const enterYaw = sideCamera ? Math.max(baseEnterYaw, SIDE_CAMERA_YAW_ENTER_DEG) : baseEnterYaw;
+      const exitYaw = sideCamera ? Math.max(baseExitYaw, SIDE_CAMERA_YAW_EXIT_DEG) : baseExitYaw;
       const enterPitch = currentConfig.armPitchEnterDeg || 18.0;
       const exitPitch = currentConfig.armPitchExitDeg || 25.0;
 
@@ -1468,6 +1487,7 @@ async function syncConfigToBackend() {
     autoPressEnter: true,
     sendMode: currentConfig.sendMode,
     cancelOnSpeech: toggleCancelOnSpeech.checked,
+    sideCameraMode: toggleSideCamera.checked,
     hudEnabled: toggleHud.checked,
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
     historyPersistenceEnabled: toggleHistoryPersistence.checked,
@@ -1544,6 +1564,7 @@ async function initApp() {
       void invoke('update_dictation_config', { config: currentConfig }).catch(() => undefined);
     }
     toggleCancelOnSpeech.checked = currentConfig.cancelOnSpeech !== false;
+    toggleSideCamera.checked = Boolean(currentConfig.sideCameraMode);
     renderSendMode();
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
@@ -1847,6 +1868,7 @@ togglePreview.addEventListener('change', syncConfigToBackend);
 togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
+toggleSideCamera.addEventListener('change', syncConfigToBackend);
 obAxBadge?.addEventListener('click', () => {
   if (accessibilityPermissionTrusted) return;
   void invoke('request_accessibility_settings').catch((err) => showError(String(err)));
