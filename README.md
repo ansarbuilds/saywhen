@@ -1,126 +1,193 @@
 # saywhen
 
-> Hands-free, hotkey-free voice input for developers.
+> **Look. Talk. Sent.** Talk to your terminal or coding assistant without touching the keyboard.
 
-**saywhen** is a 100% local, cross-platform desktop app (Tauri v2 + Rust + TypeScript) that lets you talk to your coding agent or terminal without touching the keyboard. It watches your webcam locally in memory, notices when you are looking at the screen, your lips are moving, and the microphone hears speech, then listens, transcribes on-device with GPU-accelerated `whisper.cpp`, formats spoken CLI/code syntax, shows a short cancelable preview, types it into the focused app, and presses Enter for you.
+saywhen is a free, open source desktop app for macOS and Windows. You look at your screen, say what you want, and saywhen types it into the app you are using (Terminal, Cursor, VS Code, Claude Code and more). Then it presses Enter for you, unless you stop it.
 
-No hotkey required. No "review, then click Send". Just look, talk, done.
+No hotkey to hold. No "click Send". Everything runs on your own computer.
 
-**Positioning:** hands-free voice for coding agents and terminals (Claude Code, Codex, Antigravity, Cursor, shells). Not "another dictation app".
-
----
-
-## Visual Walkthrough (Stages 1 to 5)
-
-### Stage 4: Developer Code Cleanup, Cancelable Preview & Per-App Auto-Enter
-![Stage 4: Developer Code Cleanup & Preview HUD](docs/screenshots/stage4-cleanup-preview.png)
-
-### Stage 3: Gated Multimodal Auto Start/Stop (`IDLE -> ARMED -> LISTENING -> TRANSCRIBING`)
-![Stage 3: Gated Multimodal Listening](docs/screenshots/stage3-multimodal-listening.png)
-
-### Stage 2: Handy-Core Audio Dictation (16 kHz `cpal`, 500 ms Pre-Roll, Silero VAD v5, Metal Whisper)
-![Stage 2: Handy-Core Audio Dictation](docs/screenshots/stage2-audio-core.png)
-
-### Stage 5: Onboarding, Privacy Checklist & Cross-Platform Settings
-![Stage 5: Onboarding & Privacy Checklist](docs/screenshots/stage5-onboarding-polish.png)
-
-### Stage 1: MediaPipe Feasibility Sensor Bench
-![Stage 1: MediaPipe Feasibility Sensor Bench](docs/screenshots/stage1-mediapipe-bench.png)
+![saywhen main window](docs/screenshots/stage4-cleanup-preview.png)
 
 ---
 
-## Verified Empirical Benchmarks (Apple Silicon M-Series)
+## How it works, in one minute
 
-| Subsystem | Metric | Verified Measurement |
+1. **Look** at your screen. saywhen uses your webcam to notice you are facing it. *(It only looks at a few numbers, like how your head is turned. Pictures are never saved or sent anywhere.)*
+2. **Talk.** When your lips move and the microphone hears your voice, it starts listening.
+3. **Stop talking.** saywhen writes down what you said, tidies it up (`dash dash release` becomes `--release`), and shows it to you for a moment.
+4. **It sends.** The text is typed into your app and Enter is pressed. Changed your mind? Say "cancel", shake your head or press **Esc**.
+
+Want the longer, friendly explanation? Read **[How saywhen works](docs/HOW_IT_WORKS.md)**.
+
+---
+
+## Pick how you send
+
+You choose this once on the Home screen. You can change it any time.
+
+| Send style | What you do | Good for |
 | --- | --- | --- |
-| **MediaPipe Face Landmarker** | WebGL Inference Latency (15 FPS active / 8-5 FPS idle) | `12 ms to 15 ms` per frame (`47% to 67%` fewer idle frames) |
-| **Visual Gaze Gate** | Screen-Facing Separation (`\|Yaw\| <= 20°` enter, `28°` exit) | `100.0%` separation (`5.0 / min` edge-cone events vs `332 / min` without hysteresis) |
-| **Visual Silence Gate** | Closed/Still Mouth + Blendshape Smile/Chew Filter | `96.2%` rejection |
-| **Pre-Roll & Post-Roll Buffers** | Circular Pre-Roll (`500 ms`) + Trailing Post-Roll (`200 ms`) | `0.0%` clipped first or last words on 56-utterance corpus |
-| **Turn-Taking Robustness** | 56-Utterance Corpus (`cargo run --bin replay`) | `0.0%` false starts (down from `36.4%`), `0.0%` cut-offs (down from `52.9%`) |
-| **Developer CLI Cleanup** | 34 Target CLI/Agent Commands (`cleanup.rs`) | `34 / 34` (`100.0%` exact command match, up from `44.1%`) |
-| **Silero VAD v5 (ONNX)** | Frame Chunk Size | `32 ms` (`512` samples per step) |
-| **Whisper Metal (`tiny.en`)** | Warm GPU Inference on `1,500 ms` Audio | `87 ms to 473 ms` (`0.06x to 0.31x` Real-Time Factor) |
-| **Frontmost App Policy Check** | macOS `NSWorkspace.frontmostApplication` (20-call median) | `1 us to 2 us` (`0.001 ms`, down from `8.34 ms` with `lsappinfo`) |
+| **Just pause** (default) | Stop talking. A short countdown runs, then it sends. | Fast, hands-free work |
+| **Nod to send** | Nothing is sent until you nod your head. | People who want to be sure |
+| **Say "send it"** | End with "send it" to press Enter. Otherwise the text is only typed. | Mixing notes and commands |
+| **Type only** | Your words are typed, Enter is never pressed. | Trying saywhen for the first time |
+
+In every style you can always stop a send:
+
+- **Shake your head** (no) or press **Esc** to cancel.
+- **Nod** (yes) or press **Enter** to send right away.
+- **Start talking again** during the countdown to cancel it (you can turn this off in Settings).
+- Press **Option + Space** (Mac) or **Alt + Space** (Windows) to start or stop by hand, no camera needed.
+
+### Handy things to say
+
+| Say this | What happens |
+| --- | --- |
+| "...send it" | Sends and presses Enter |
+| "...paste only" | Types it without pressing Enter, just this once |
+| "scratch that" | Throws away what you said just before it |
+| "cancel that" / "never mind" | Throws away the whole thing |
+
+### Safety built in
+
+- Enter is only pressed in apps you trust (terminals and code editors by default). In chat apps, email and browsers, saywhen only types.
+- Risky commands such as `rm -rf`, `git reset --hard` or `git push --force` are **never** sent automatically. They are only typed, with a warning.
+- If you switch apps during the countdown, saywhen stops instead of typing into the wrong place.
 
 ---
 
-## Key Features Across All Stages
+## Install
 
-1. **Multimodal Intent Gate & Per-User Calibration (No Hotkey Needed):**
-   - Fuses 15 FPS MediaPipe facial geometry and blendshapes (head yaw/pitch with 1.5s per-monitor calibration, Mouth Aspect Ratio, lip variance, smile/chew/yawn filters) with continuous 16 kHz audio and Silero VAD v5.
-   - A 500 ms circular pre-roll ring buffer and 200 ms post-roll capture window ensure neither the first syllable nor a nodded final word is ever clipped.
-2. **Head Gestures, Spoken End-Phrases & Mid-Utterance Self-Correction:**
-   - **Head Nod:** Immediately stops listening and transcribes (or confirms the Preview HUD).
-   - **Head Shake / `Esc`:** Immediately cancels listening or aborts the Preview countdown.
-   - **End Phrases:** Saying `"send it"` or `"submit it"` at the end of an utterance strips the phrase and triggers auto-submit.
-   - **Voice Delivery Override (`"paste only"`):** Saying `"paste only"` or `"just paste it"` at the end of a command strips the phrase and pastes into the terminal without pressing `Enter`.
-   - **Self-Correction (`"scratch that"`):** Saying `"scratch that"` mid-utterance discards the misspoken clause before `"scratch that"` (or cancels the entire utterance if nothing follows `"scratch that"`, `"cancel that"`, or `"never mind"`).
-3. **Developer CLI & Code Cleanup + Custom Vocabulary (`src-tauri/src/cleanup.rs`):**
-   - Strips spoken filler words (`"um"`, `"uh"`) and stitches mid-sentence thinking-pause periods.
-   - Recovers Whisper CLI homophones (`"Cubectal"` -> `kubectl`, `"Get If Had"` -> `git diff head`, `"SRC Torrey"` -> `src-tauri`) and formats spoken flags (`"dash dash release"` -> `--release`).
-   - Supports user-configurable **Custom Developer Vocabulary** (`saywhen, MediaPipe, Silero, whisper-rs, TypeScript`) with automatic camelCase/hyphenated compound matching.
-4. **Safe Auto-Submit, Hot-Plug Recovery & Per-App Rules (`src-tauri/src/inject.rs`, `src-tauri/src/audio.rs`):**
-   - **Allowlisted Terminals & Agents** (`Terminal`, `iTerm2`, `Warp`, `Ghostty`, `Cursor`, `Code`, `Zed`, `Antigravity`, `Claude`): Pasted and auto-submitted with `Enter` after the cancelable `1.8s` preview countdown, with pre-paste and pre-Enter target verification.
-   - **Non-Allowlisted Apps** (Slack, Discord, browsers, mail): Automatically restricted to **Paste-Only** (never presses `Enter`).
-   - **Destructive Command Guard:** Commands containing `rm -rf`, `git reset --hard`, `git push --force`, `drop table`, or `mkfs` are forced to **Paste-Only** with a high-visibility warning badge.
-   - **Audio Hot-Plug & Sleep Safety:** Automatically falls back to the system default mic when Bluetooth/USB headsets disconnect, switches back when reconnected, and cancels in-flight previews across laptop sleep/screen lock.
-5. **100% Local Privacy Guarantee & 7-Day Auto-Pruned History (`src-tauri/src/history.rs`):**
-   - Camera frames are processed exclusively in volatile webview memory and dropped immediately. Only derived floats cross Tauri IPC.
-   - Local utterance history in `<app_data_dir>/utterance-history.jsonl` is automatically pruned after 7 days and can be searched or cleared with one click.
+### The easy way: let your AI assistant do it
 
----
+If you use **Claude Code**, **Cursor** or another coding assistant, open it in an empty folder and paste this:
 
-## Quickstart
-
-### Prerequisites
-- **Rust** (`1.85+` via `rustup`) and **CMake** (`brew install cmake` on macOS)
-- **Node.js** (`20+`)
-
-### 1. Install Dependencies
-```bash
-npm install
+```text
+Install saywhen for me by following the steps in
+https://github.com/kmsmohamedansar/saywhen/blob/main/INSTALL_WITH_AI.md
+Ask me before installing anything on my computer, and explain each step simply.
 ```
 
-### 2. Run in Development Mode
+It will check your computer, install what is missing (after asking you), download saywhen and start it. The full step list it follows is in **[INSTALL_WITH_AI.md](INSTALL_WITH_AI.md)**.
+
+### The manual way
+
+You need three free tools first:
+
+- **Node.js 20 or newer:** [nodejs.org](https://nodejs.org)
+- **Rust:** [rustup.rs](https://rustup.rs)
+- **CMake:** on a Mac run `brew install cmake`, on Windows install it from [cmake.org](https://cmake.org/download/)
+
+Then, in a terminal:
+
+```bash
+git clone https://github.com/kmsmohamedansar/saywhen.git
+```
+
+```bash
+cd saywhen && npm install
+```
+
 ```bash
 npx tauri dev
 ```
-*(Note: You can download `Whisper Tiny.en` or `Whisper Base.en` directly from the in-app **Pipeline & Safety Settings** panel, or place `ggml-tiny.en.bin` and `silero_vad.onnx` in `models/`.)*
 
-### 3. Run Unit & Integration Tests
+The first build takes a few minutes. After that it starts in seconds.
+
+### First launch checklist
+
+1. **Download a speech model.** Go to **Settings > Speech model** and click **Download** (Tiny is about 75 MB and the fastest).
+2. **Allow the microphone and camera** when your computer asks.
+3. **Allow Accessibility (Mac only).** This lets saywhen type into other apps. The Setup guide in the sidebar has a button that opens the right settings page.
+4. **Turn on the camera** on the Home screen and click **Calibrate** while looking at your screen with your mouth closed.
+5. Open your terminal, look at it, and say something like "git status".
+
+---
+
+## Is it private?
+
+Yes, by design.
+
+- **Camera:** pictures stay in memory for a split second and are thrown away. Only numbers (head angle, how open your mouth is) are used. Nothing is saved or sent.
+- **Microphone:** your voice is turned into text on your own computer. The audio is deleted right after.
+- **History:** the last 7 days of text are kept on your computer so you can search and copy them. Turn this off in Settings, or clear it with one click.
+- **Internet:** saywhen works fully offline once the speech model is downloaded. The optional "AI clean-up" setting is off by default, and if you turn it on you choose where the text goes (a local Ollama is the default).
+
+---
+
+## When something goes wrong
+
+| Problem | Try this |
+| --- | --- |
+| Nothing gets typed | On a Mac, check **System Settings > Privacy & Security > Accessibility** and allow saywhen. |
+| It never starts listening | Make sure the camera is on and click **Calibrate**. Or use the hotkey. |
+| It starts when I do not want it to | Turn up **Settings > Noise filter**, or pick **Nod to send**. |
+| My first or last word is cut off | Speak a little more slowly at the end. Report it so we can tune it. |
+| It typed but did not press Enter | The app may not be on the trusted list (Settings > Apps where Enter can be pressed), or the command looked risky. |
+| Something else | Look at **Problems** on the Home screen. You can copy the message and open an issue. |
+
+---
+
+## Learn more
+
+- **[How saywhen works](docs/HOW_IT_WORKS.md):** the simple explanation of the camera, the listening and the sending.
+- **[How we built it](docs/HOW_WE_BUILT_IT.md):** the story, stage by stage, with the measurements.
+- **[Vision](docs/VISION.md)**, **[Architecture](docs/ARCHITECTURE.md)**, **[Roadmap](docs/ROADMAP.md)**, **[Risks](docs/RISKS.md)**, **[Prior art](docs/PRIOR_ART.md)**: the deeper technical documents.
+
+---
+
+## For developers
+
+saywhen is a [Tauri v2](https://tauri.app) app. The backend is Rust, the window is TypeScript, HTML and CSS.
+
+### Commands
+
 ```bash
 npm run build
+```
+
+```bash
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-### 4. Regenerate Documentation Screenshots
+```bash
+cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- recordings
+```
+
 ```bash
 ./scripts/capture-screenshots.sh
 ```
 
----
+### Measured numbers (Apple Silicon)
 
-## Repo Map
+| Part | What we measured | Result |
+| --- | --- | --- |
+| Face tracking (MediaPipe) | Time per camera frame | 12 to 15 ms |
+| "Facing the screen" check | Telling facing from turned away | 100% on our test sessions |
+| "Mouth still" check | Ignoring a closed or still mouth | 96.2% rejected correctly |
+| Start and end of speech | 56 recorded sentences | 0% false starts (was 36.4%), 0% cut-offs (was 52.9%) |
+| Developer word clean-up | 34 spoken commands | 34 of 34 exact (was 44.1%) |
+| Speech to text (Whisper tiny.en, GPU) | 1.5 s of audio | 87 to 473 ms |
+| Finding the front app (macOS) | Median of 20 calls | 1 to 2 microseconds |
+
+### Repo map
 
 | Path | What it is |
 | --- | --- |
-| [src-tauri/src/audio.rs](src-tauri/src/audio.rs) | 16 kHz `cpal` capture, 500 ms pre-roll ring buffer, Silero VAD v5, 5-state multimodal machine, hot-plug recovery, sleep/lock safety, config persistence |
-| [src-tauri/src/turn_taking.rs](src-tauri/src/turn_taking.rs) | Pure turn-taking decisions, arming hysteresis, blendshape lip classifier, adaptive vision FPS, stream health watchdog, privacy-safe `session-metrics.jsonl` |
-| [src-tauri/src/bin/replay.rs](src-tauri/src/bin/replay.rs) | Offline 56-utterance replay and benchmark CLI (`cargo run --bin replay -- recordings`) |
-| [src-tauri/src/transcribe.rs](src-tauri/src/transcribe.rs) | `whisper-rs` Metal GPU engine, app-data model downloader, data-tuned hallucination filter, end-phrase stripping |
-| [src-tauri/src/cleanup.rs](src-tauri/src/cleanup.rs) | Deterministic developer CLI/code cleanup, `"scratch that"` / `"paste only"` voice overrides, custom vocabulary, destructive command guard |
-| [src-tauri/src/history.rs](src-tauri/src/history.rs) | Local 7-day auto-pruned utterance history (`<app_data_dir>/utterance-history.jsonl`) and one-click purge |
-| [src-tauri/src/inject.rs](src-tauri/src/inject.rs) | Main-thread `enigo` + `arboard` clipboard injection and macOS/Windows frontmost app policy engine |
-| [src-tauri/src/hud.rs](src-tauri/src/hud.rs) | Floating HUD pill placement, preview-only global `Esc` cancel, tray menu, close-to-background |
-| [src/main.ts](src/main.ts) | 15 FPS MediaPipe Face Landmarker gate (Worker-ticked, per-user calibrated), head gesture detector, VAD oscilloscope, Preview HUD |
-| [src/hud.ts](src/hud.ts) / [hud.html](hud.html) | Click-through, always-on-top HUD pill and preview card |
-| [spikes/stage1-mediapipe/](spikes/stage1-mediapipe/) | Standalone Stage 1 MediaPipe feasibility sensor bench |
-| [docs/VISION.md](docs/VISION.md) | Problem, trigger and stop logic, user flow, the demo |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Stack, pipeline, state machine, privacy design |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Stages 0 to 6 with empirical measurements and exit criteria |
-| [docs/RISKS.md](docs/RISKS.md) | Risks and mitigations |
-| [docs/PRIOR_ART.md](docs/PRIOR_ART.md) | Known tools in the space and the Stage 0 search checklist |
+| [src-tauri/src/audio.rs](src-tauri/src/audio.rs) | Microphone capture, 500 ms pre-roll, voice detection, the 5-state machine, send modes, settings |
+| [src-tauri/src/turn_taking.rs](src-tauri/src/turn_taking.rs) | Pure decision logic: when to start, when you are done, send mode rules, speech-cancel |
+| [src-tauri/src/bin/replay.rs](src-tauri/src/bin/replay.rs) | Offline replay benchmark over recorded sentences |
+| [src-tauri/src/transcribe.rs](src-tauri/src/transcribe.rs) | Whisper on the GPU, model downloader, "send it" detection |
+| [src-tauri/src/cleanup.rs](src-tauri/src/cleanup.rs) | Developer word clean-up, "scratch that", custom words, risky command guard |
+| [src-tauri/src/history.rs](src-tauri/src/history.rs) | 7-day local history |
+| [src-tauri/src/inject.rs](src-tauri/src/inject.rs) + [inject/](src-tauri/src/inject/) | Typing into other apps, per-app rules, macOS, Windows and Linux front-app detection |
+| [src-tauri/src/hud.rs](src-tauri/src/hud.rs) | Floating status pill, Esc to cancel, tray menu |
+| [src/main.ts](src/main.ts) | Camera face tracking, head gestures, the main window logic |
+| [src/ui.ts](src/ui.ts), [src/style.css](src/style.css), [index.html](index.html) | Main window look and navigation |
+| [src/hud.ts](src/hud.ts), [src/hud.css](src/hud.css), [hud.html](hud.html) | Floating status pill and check card |
+| [src/fonts.ts](src/fonts.ts) | Bundled fonts (Plus Jakarta Sans, Instrument Serif, JetBrains Mono, Outfit) |
+
+Contributions are welcome. Please keep the principles in [AGENTS.md](AGENTS.md): local-first, private, always cancelable, fail loudly, measure everything.
 
 ## License
 

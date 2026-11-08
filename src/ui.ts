@@ -4,18 +4,18 @@
 
 type TabId = 'home' | 'preferences' | 'lab';
 
-const TAB_META: Record<TabId, { title: string; subtitle: string }> = {
-  home: { title: 'Home', subtitle: 'Dictation and recent history' },
-  preferences: { title: 'Preferences', subtitle: 'Voice, delivery and privacy' },
-  lab: { title: 'Lab', subtitle: 'Live telemetry and tuning tools' },
+const TAB_META: Record<TabId, { num: string; title: string; subtitle: string }> = {
+  home: { num: '01', title: 'Home', subtitle: 'Talk, check, send' },
+  preferences: { num: '02', title: 'Settings', subtitle: 'Listening, sending and privacy' },
+  lab: { num: '03', title: 'Lab', subtitle: 'Live numbers and a practice box' },
 };
 
 const STATE_WORDS: Record<string, string> = {
-  IDLE: 'Idle',
-  ARMED: 'Armed',
+  IDLE: 'Waiting',
+  ARMED: 'Ready',
   LISTENING: 'Listening',
-  TRANSCRIBING: 'Transcribing',
-  PREVIEW: 'Preview',
+  TRANSCRIBING: 'Writing',
+  PREVIEW: 'Check',
 };
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -63,6 +63,8 @@ export function switchTab(tab: TabId) {
   const heading = document.querySelector('.page-heading');
   const title = document.getElementById('page-title');
   const subtitle = document.getElementById('page-subtitle');
+  const kicker = document.querySelector('.page-kicker .stage-tag');
+  if (kicker) kicker.textContent = `${TAB_META[tab].num} / saywhen`;
   if (title) title.textContent = TAB_META[tab].title;
   if (subtitle) subtitle.textContent = TAB_META[tab].subtitle;
   replay(heading, 'is-swapping');
@@ -117,6 +119,11 @@ export function setUiState(state: string) {
   if (state !== 'LISTENING' && state !== 'ARMED') setAudioLevel(0, 0, false);
 }
 
+/** Reflect the chosen send mode on <body> so CSS can adapt hints and accents. */
+export function setSendModeUi(mode: string) {
+  document.body.dataset.sendMode = mode;
+}
+
 function initNav() {
   if (isMac) document.documentElement.classList.add('is-mac');
   if (new URLSearchParams(window.location.search).has('demo')) {
@@ -149,6 +156,9 @@ function initNav() {
 
   window.addEventListener('resize', moveNavIndicator);
   requestAnimationFrame(moveNavIndicator);
+
+  const kicker = document.querySelector('.page-kicker .stage-tag');
+  if (kicker) kicker.textContent = `${TAB_META[activeTab].num} / saywhen`;
 
   const requested = new URLSearchParams(window.location.search).get('tab');
   if (requested === 'preferences' || requested === 'lab' || requested === 'home') {
