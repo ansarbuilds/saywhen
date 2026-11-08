@@ -22,7 +22,8 @@ use crate::turn_taking::{
     UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
     DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
     DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
-    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, NOD_WAIT_TIMEOUT_MS,
+    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
+    MAX_CALIBRATED_YAW_OFFSET_DEG, NOD_WAIT_TIMEOUT_MS,
     SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -176,6 +177,15 @@ pub struct DictationConfig {
     /// Per-user calibrated resting closed-mouth MAR baseline.
     #[serde(default = "default_calibrated_resting_mar")]
     pub calibrated_resting_mar: f32,
+    /// Colour palette for the main window and HUD (presentation only).
+    #[serde(default = "default_ui_palette")]
+    pub ui_palette: String,
+    /// Each busy pipeline state borrows its own palette (presentation only).
+    #[serde(default = "default_true")]
+    pub mood_colors: bool,
+    /// Webcam is off to the side of the screen the user talks to (widens the head-turn allowance).
+    #[serde(default)]
+    pub side_camera_mode: bool,
     /// Adaptive vision frame rate (low FPS in IDLE when away/no-face, 15 FPS when facing screen or armed).
     #[serde(default = "default_true")]
     pub adaptive_fps_enabled: bool,
@@ -205,6 +215,10 @@ fn default_llm_endpoint_url() -> String {
 
 fn default_llm_model() -> String {
     "qwen2.5-coder:1.5b".to_string()
+}
+
+fn default_ui_palette() -> String {
+    "lumen".to_string()
 }
 
 fn default_calibrated_resting_mar() -> f32 {
@@ -302,6 +316,9 @@ impl Default for DictationConfig {
             calibrated_yaw_offset_deg: 0.0,
             calibrated_pitch_offset_deg: 0.0,
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
+            ui_palette: default_ui_palette(),
+            mood_colors: true,
+            side_camera_mode: false,
             adaptive_fps_enabled: true,
             custom_vocab: String::new(),
             history_persistence_enabled: true,
@@ -344,6 +361,7 @@ impl DictationConfig {
             calibrated_pitch_offset_deg: self.calibrated_pitch_offset_deg,
             calibrated_resting_mar: self.calibrated_resting_mar,
             adaptive_fps_enabled: self.adaptive_fps_enabled,
+            side_camera_mode: self.side_camera_mode,
         }
     }
 
@@ -352,6 +370,9 @@ impl DictationConfig {
             .retain(|entry| !entry.trim().eq_ignore_ascii_case("saywhen"));
         // Saving utterance audio for tuning must always turn itself off when the app restarts.
         self.save_tuning_audio_enabled = false;
+        self.calibrated_yaw_offset_deg = self
+            .calibrated_yaw_offset_deg
+            .clamp(-MAX_CALIBRATED_YAW_OFFSET_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG);
     }
 
     pub fn config_file_path() -> std::path::PathBuf {
@@ -420,6 +441,11 @@ pub struct AudioTelemetryEvent {
     /// Active send mode, so the HUD can show the right hint while you talk.
     #[serde(default)]
     pub send_mode: String,
+    /// Chosen colour palette, so the HUD matches the main window from the first frame.
+    #[serde(default)]
+    pub ui_palette: String,
+    #[serde(default)]
+    pub mood_colors: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1598,6 +1624,8 @@ fn run_audio_worker(
                             partial_transcript: String::new(),
                             partial_ends_with_connective: false,
                             send_mode: cfg.send_mode.as_str().to_string(),
+                            ui_palette: cfg.ui_palette.clone(),
+                            mood_colors: cfg.mood_colors,
                         },
                     );
 
@@ -1754,7 +1782,11 @@ fn run_audio_worker(
                                         "Voice override ('paste only'): pasting into '{}' without pressing Enter",
                                         target_policy.app_name
                                     );
-                                } else if target_policy.will_press_enter && captured.vision_fresh {
+                                } else if target_policy.will_press_enter
+                                    && captured.vision_fresh
+                                    && !cfg_snapshot.side_camera_mode
+                                {
+                                    // Head yaw only maps to a display when the camera faces the user.
                                     let adjusted_yaw = captured.latest_yaw_deg
                                         - cfg_snapshot.calibrated_yaw_offset_deg;
                                     if let Some(gaze_reason) =
@@ -2085,6 +2117,8 @@ fn run_audio_worker(
                     partial_transcript: guard.partial_transcript.clone(),
                     partial_ends_with_connective: guard.partial_ends_with_connective,
                     send_mode: cfg.send_mode.as_str().to_string(),
+                    ui_palette: cfg.ui_palette.clone(),
+                    mood_colors: cfg.mood_colors,
                 }
             };
             let _ = app_handle.emit("audio-telemetry", payload);

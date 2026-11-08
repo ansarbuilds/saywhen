@@ -243,6 +243,19 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Editorial redesign:** warm ivory, soft black and burnt orange, with the whole window easing into a different palette for each pipeline state (registered `@property` colors, `0.9 s` ease). Plus Jakarta Sans, Instrument Serif, JetBrains Mono and Outfit are bundled through `@fontsource` so the UI still renders offline. HUD pill and check card restyled to match, with nod-aware hints.
   4. **Plain-language copy and docs:** UI states renamed (Waiting, Ready, Listening, Writing, Check), Settings rewritten for non-technical users, README rewritten, plus an assistant-driven installer guide and two explainer docs.
 
+## Improvement #13: Side-mounted camera support
+- **Status:** Implemented on 2026-11-08 (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `index.html`). All 40 Rust unit tests and the frontend build pass. Not yet verified: head-turn accuracy with a real side-mounted webcam (no recorded traces at 30 to 65 degrees yet), and the yaw-corrected MAR against the replay corpus, which stores MAR precomputed.
+- **Recommended model:** Gemini 4 (lip geometry under head rotation and gate thresholds interact).
+- **What changed:**
+  1. **Wider calibration:** the calibrated yaw center may sit up to `MAX_CALIBRATED_YAW_OFFSET_DEG = 65` degrees from the camera axis (was 45). Loaded settings are clamped to the same range.
+  2. **`side_camera_mode` (default off):** widens the yaw cone around the calibrated center to at least `35` degrees to enter and `48` to exit (`effective_yaw_cone`), in both the webview gaze pill and the Rust arming cone. Pitch limits are unchanged. Gaze-to-display Enter downgrade (`evaluate_gaze_window_alignment`) is skipped in this mode because head yaw no longer maps to a display.
+  3. **Yaw-corrected MAR (always on):** mouth width is divided by `cos(camera yaw)` (floored at `0.4`, about 66 degrees) so the resting baseline and speech thresholds keep their meaning when the head is turned. Under 20 degrees the change is below 6%.
+  4. **Limit:** past about 65 to 70 degrees MediaPipe stops tracking the face and the far lip corner is guessed, so a full profile still needs the hotkey.
+
+## Improvement #14: Palette picker
+- **Status:** Implemented on 2026-11-08 (`src/style.css`, `src/hud.css`, `src/main.ts`, `src/hud.ts`, `index.html`, `src-tauri/src/audio.rs`). Frontend build and all 40 Rust unit tests pass. Verified in the browser preview: picking a palette changes the resting tokens, mood colours still override in busy states, and turning mood colours off keeps the chosen palette. Not yet verified in the packaged desktop app.
+- **What changed:** all seven portfolio palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) are selectable in **Settings > Colours** (`ui_palette`, default `lumen`). A **Change colour with each mood** switch (`mood_colors`, default on) keeps the per-state palettes from Improvement #12. Both are presentation-only config fields, sent in `audio-telemetry` so the HUD matches from its first frame. The oscilloscope and lip overlay read the live palette tokens instead of fixed colours.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.

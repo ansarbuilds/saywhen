@@ -4,7 +4,7 @@
 
 saywhen is a Tauri v2 + Rust + TypeScript desktop app for hands-free, hotkey-free voice input aimed at developers using coding agents and terminals. It gates listening on webcam signals (face present, facing the screen, lips moving) plus audio speech detection, transcribes locally, runs an AI cleanup pass, shows a short cancelable preview, injects the text into the focused app and presses Enter.
 
-Status: Stages 1 through 5 and Improvements #2 to #12 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
+Status: Stages 1 through 5 and Improvements #2 to #14 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
 
 ## Architecture & Key Files
 
