@@ -22,6 +22,8 @@ It does this by finding a few hundred dots on your face (corners of your eyes, e
 
 **What if the camera is not in front of you?** Lots of people use a laptop camera next to a bigger monitor, so the camera sees the side of their face. Switch on **Camera is off to the side** in Settings, look at the screen you actually talk to, and click **Calibrate**. saywhen then treats that direction as "looking at the screen". It works until your head is turned about 65 degrees from the camera. Past that, the camera cannot see enough of your lips, so use the keyboard shortcut instead.
 
+**Talking without looking (wake word).** Switch on **Wake word when you look away** in Settings. Then, when the camera does not see you facing the screen, start your sentence with the wake word: "Eevee, run the tests". saywhen turns the first couple of seconds into text on your computer. If they do not start with "Eevee", it throws them away straight away and nothing happens. If they do, it removes "Eevee" and carries on as usual, with the check step and the countdown. You can pick your own wake word, but a short unusual name works best: everyday words like "alright" would start by mistake.
+
 The watcher also notices two head movements:
 
 - **A nod** means "yes, send it".

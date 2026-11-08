@@ -11,6 +11,10 @@ use crate::inject::{
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
+use crate::wake_word::{
+    effective_wake_word, strip_wake_word, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
+    WAKE_CHECK_MIN_SAMPLES, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
+};
 use crate::turn_taking::{
     append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
     ends_with_connective, evaluate_arming_hysteresis, evaluate_audio_stream_health,
@@ -177,6 +181,13 @@ pub struct DictationConfig {
     /// Per-user calibrated resting closed-mouth MAR baseline.
     #[serde(default = "default_calibrated_resting_mar")]
     pub calibrated_resting_mar: f32,
+    /// Voice-only fallback: when the camera does not see you facing the screen, speech that
+    /// starts with the wake word still goes through. Off by default.
+    #[serde(default)]
+    pub wake_word_enabled: bool,
+    /// The wake word (default "eevee"; common spellings are matched too).
+    #[serde(default = "default_wake_word")]
+    pub wake_word: String,
     /// Colour palette for the main window and HUD (presentation only).
     #[serde(default = "default_ui_palette")]
     pub ui_palette: String,
@@ -215,6 +226,10 @@ fn default_llm_endpoint_url() -> String {
 
 fn default_llm_model() -> String {
     "qwen2.5-coder:1.5b".to_string()
+}
+
+fn default_wake_word() -> String {
+    DEFAULT_WAKE_WORD.to_string()
 }
 
 fn default_ui_palette() -> String {
@@ -316,6 +331,8 @@ impl Default for DictationConfig {
             calibrated_yaw_offset_deg: 0.0,
             calibrated_pitch_offset_deg: 0.0,
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
+            wake_word_enabled: false,
+            wake_word: default_wake_word(),
             ui_palette: default_ui_palette(),
             mood_colors: true,
             side_camera_mode: false,
@@ -441,6 +458,9 @@ pub struct AudioTelemetryEvent {
     /// Active send mode, so the HUD can show the right hint while you talk.
     #[serde(default)]
     pub send_mode: String,
+    /// Listening was started by voice alone and the wake word is not confirmed yet.
+    #[serde(default)]
+    pub wake_pending: bool,
     /// Chosen colour palette, so the HUD matches the main window from the first frame.
     #[serde(default)]
     pub ui_palette: String,
@@ -542,6 +562,11 @@ struct SharedCaptureBuffer {
     partial_ends_with_connective: bool,
     partial_checked_speech_frames: usize,
     partial_check_in_flight: bool,
+    /// Wake word candidate: the early check found the wake word at the start.
+    wake_confirmed: bool,
+    wake_check_in_flight: bool,
+    /// After a dropped wake candidate, wait for a short quiet gap before starting another.
+    wake_needs_quiet: bool,
 }
 
 impl SharedCaptureBuffer {
@@ -579,6 +604,9 @@ impl SharedCaptureBuffer {
             partial_ends_with_connective: false,
             partial_checked_speech_frames: 0,
             partial_check_in_flight: false,
+            wake_confirmed: false,
+            wake_check_in_flight: false,
+            wake_needs_quiet: false,
         }
     }
 
@@ -628,6 +656,14 @@ impl SharedCaptureBuffer {
         self.partial_ends_with_connective = false;
         self.partial_checked_speech_frames = 0;
         self.partial_check_in_flight = false;
+        self.wake_confirmed = false;
+        self.wake_check_in_flight = false;
+    }
+
+    fn is_unconfirmed_wake_candidate(&self) -> bool {
+        self.state == PipelineState::LISTENING
+            && self.trigger_source == WAKE_WORD_TRIGGER
+            && !self.wake_confirmed
     }
 
     fn build_turn_state(&self, hands_free_enabled: bool) -> TurnState {
@@ -742,6 +778,9 @@ pub enum AudioCommand {
     SwitchDevice(Option<String>),
     UpdateVision(VisionTelemetryPayload),
     SetCameraGateEnabled(bool),
+    /// Silently drop a wake word candidate (identified by its listening start time) whose
+    /// first words were not the wake word.
+    DropWakeCandidate(u64),
 }
 
 pub struct AudioPipelineController {
@@ -1320,6 +1359,8 @@ fn run_audio_worker(
                     if guard.state == PipelineState::IDLE || guard.state == PipelineState::ARMED {
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
+                        } else if source == WAKE_WORD_TRIGGER {
+                            guard.consecutive_vad_frames.min(WAKE_START_MIN_VAD_FRAMES)
                         } else {
                             0
                         };
@@ -1333,6 +1374,19 @@ fn run_audio_worker(
                     let mut guard = shared.lock().unwrap();
                     guard.cancel_active_or_preview(&turn_cfg);
                     let _ = app_handle.emit("utterance-canceled", "Canceled");
+                }
+                AudioCommand::DropWakeCandidate(started_at_ms) => {
+                    let mut guard = shared.lock().unwrap();
+                    if guard.is_unconfirmed_wake_candidate()
+                        && guard.listening_started_at_ms == started_at_ms
+                    {
+                        if let Some(ref mut v) = vad {
+                            v.reset();
+                        }
+                        guard.cancel_active_or_preview(&turn_cfg);
+                        guard.wake_needs_quiet = true;
+                        guard.wake_check_in_flight = false;
+                    }
                 }
                 AudioCommand::CancelPreview(reason) => {
                     let canceled_item = {
@@ -1566,6 +1620,7 @@ fn run_audio_worker(
                             let mut guard = shared.lock().unwrap();
                             guard.state = guard.resting_state(&turn_cfg);
                         }
+                        let was_wake_candidate = captured.trigger_source == WAKE_WORD_TRIGGER;
                         let audio_duration_ms =
                             ((captured.samples.len() as f64 / 16000.0) * 1000.0) as u64;
                         let metrics_rec = UtteranceMetricsRecord {
@@ -1595,7 +1650,10 @@ fn run_audio_worker(
                             &metrics_rec,
                             tuning_capture,
                         );
-                        let _ = app_handle.emit("utterance-discarded", discard_msg);
+                        // A wake word candidate that was too short is room noise, not a mistake.
+                        if !was_wake_candidate {
+                            let _ = app_handle.emit("utterance-discarded", discard_msg);
+                        }
                         continue;
                     }
 
@@ -1624,6 +1682,7 @@ fn run_audio_worker(
                             partial_transcript: String::new(),
                             partial_ends_with_connective: false,
                             send_mode: cfg.send_mode.as_str().to_string(),
+                            wake_pending: false,
                             ui_palette: cfg.ui_palette.clone(),
                             mood_colors: cfg.mood_colors,
                         },
@@ -1640,7 +1699,31 @@ fn run_audio_worker(
                         let tx_res =
                             transcriber_ref.transcribe_pcm(&captured.samples, captured.peak_vad);
                         match tx_res {
-                            Ok(transcription) => {
+                            Ok(mut transcription) => {
+                                if captured.trigger_source == WAKE_WORD_TRIGGER {
+                                    let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
+                                    match strip_wake_word(&transcription.text, wake_word) {
+                                        Some(rest) if !rest.trim().is_empty() => {
+                                            transcription.text = rest;
+                                        }
+                                        stripped => {
+                                            {
+                                                let mut guard = shared_after.lock().unwrap();
+                                                guard.state =
+                                                    guard.resting_state(&turn_cfg_snapshot);
+                                            }
+                                            // Only the wake word on its own is worth telling
+                                            // the user about; anything else was not for us.
+                                            if stripped.is_some() {
+                                                let _ = app_for_tx.emit(
+                                                    "utterance-discarded",
+                                                    "Heard the wake word but nothing after it",
+                                                );
+                                            }
+                                            return;
+                                        }
+                                    }
+                                }
                                 let mut cleanup = run_local_developer_cleanup_with_vocab(
                                     &transcription.text,
                                     cfg_snapshot.cleanup_enabled,
@@ -1892,6 +1975,7 @@ fn run_audio_worker(
         // Process pending 512-sample chunks through Silero VAD
         let mut should_auto_stop: Option<EndReason> = None;
         let mut should_auto_start_listening = false;
+        let mut should_wake_start_listening = false;
 
         loop {
             let chunk: Option<[f32; VAD_CHUNK_SAMPLES]> = {
@@ -1969,9 +2053,70 @@ fn run_audio_worker(
                 should_auto_start_listening = true;
             }
 
+            // Wake word fallback: speech while not armed becomes a candidate that is checked
+            // for the wake word and dropped silently when it does not start with it.
+            if guard.wake_needs_quiet
+                && prob < cfg.vad_threshold
+                && guard
+                    .last_vad_voice_at_ms
+                    .map(|t| now_ms.saturating_sub(t) >= WAKE_REARM_QUIET_MS)
+                    .unwrap_or(true)
+            {
+                guard.wake_needs_quiet = false;
+            }
+            if cfg.wake_word_enabled
+                && !should_auto_start_listening
+                && guard.state == PipelineState::IDLE
+                && !guard.wake_needs_quiet
+                && transcriber.is_loaded()
+                && prob >= cfg.vad_threshold
+                && guard.consecutive_vad_frames >= WAKE_START_MIN_VAD_FRAMES
+            {
+                should_wake_start_listening = true;
+            }
+
             if guard.state == PipelineState::LISTENING {
                 if prob > guard.peak_vad_prob {
                     guard.peak_vad_prob = prob;
+                }
+
+                // Early wake word check on the first ~2 s so room chatter is dropped quickly.
+                let paused = now_ms.saturating_sub(guard.last_speech_at_ms) >= 240
+                    && guard.utterance_pcm.len() >= (TARGET_SAMPLE_RATE as usize);
+                if guard.is_unconfirmed_wake_candidate()
+                    && !guard.wake_check_in_flight
+                    && (guard.utterance_pcm.len() >= WAKE_CHECK_MIN_SAMPLES || paused)
+                {
+                    guard.wake_check_in_flight = true;
+                    let head_len = guard.utterance_pcm.len().min(WAKE_CHECK_MAX_SAMPLES);
+                    let head = guard.utterance_pcm[..head_len].to_vec();
+                    let token = guard.listening_started_at_ms;
+                    let peak_vad = guard.peak_vad_prob;
+                    let wake_word = effective_wake_word(&cfg.wake_word).to_string();
+                    let tx_clone = Arc::clone(&transcriber);
+                    let shared_wake = Arc::clone(&shared);
+                    let cmd_wake = cmd_tx_self.clone();
+                    thread::spawn(move || {
+                        let heard = tx_clone
+                            .transcribe_pcm(&head, peak_vad)
+                            .map(|t| t.text)
+                            .unwrap_or_default();
+                        // The head may end mid-word, so also accept a cut-off sentence that
+                        // already shows the wake word as its first word.
+                        let matched = strip_wake_word(&heard, &wake_word).is_some();
+                        let mut g = shared_wake.lock().unwrap();
+                        if g.listening_started_at_ms != token || !g.is_unconfirmed_wake_candidate()
+                        {
+                            return;
+                        }
+                        g.wake_check_in_flight = false;
+                        if matched {
+                            g.wake_confirmed = true;
+                        } else {
+                            drop(g);
+                            let _ = cmd_wake.send(AudioCommand::DropWakeCandidate(token));
+                        }
+                    });
                 }
                 if guard.vision.lips_moving && guard.is_vision_fresh() {
                     guard.last_lip_motion_in_turn_ms = Some(now_ms);
@@ -2059,6 +2204,8 @@ fn run_audio_worker(
             let _ = cmd_tx_self.send(AudioCommand::StartListening(
                 "hands_free_multimodal".to_string(),
             ));
+        } else if should_wake_start_listening {
+            let _ = cmd_tx_self.send(AudioCommand::StartListening(WAKE_WORD_TRIGGER.to_string()));
         }
 
         if let Some(reason) = should_auto_stop {
@@ -2117,6 +2264,7 @@ fn run_audio_worker(
                     partial_transcript: guard.partial_transcript.clone(),
                     partial_ends_with_connective: guard.partial_ends_with_connective,
                     send_mode: cfg.send_mode.as_str().to_string(),
+                    wake_pending: guard.is_unconfirmed_wake_candidate(),
                     ui_palette: cfg.ui_palette.clone(),
                     mood_colors: cfg.mood_colors,
                 }

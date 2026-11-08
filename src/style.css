@@ -960,6 +960,8 @@ body[data-state='ARMED'] .rec-live-dot { background: var(--accent); }
 .issue-meta { margin-top: 4px; font: 500 10px/1.4 var(--font-mono); color: var(--muted); }
 .issue-actions { margin-top: 8px; display: flex; gap: 6px; }
 
+.card-actions { display: flex; gap: 6px; align-items: center; }
+
 /* ------------------------------------------------------------- palette picker */
 .palette-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 18px 0 6px; }
 .palette-card {
