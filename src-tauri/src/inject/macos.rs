@@ -43,11 +43,10 @@ pub fn accessibility_denied_message() -> String {
         .unwrap_or_else(|_| "saywhen".to_string());
     format!(
         "macOS Accessibility permission is required to type into terminals. \
-         If saywhen is already enabled in System Settings but this still appears, a recent \
-         dev rebuild changed the binary signature: turn saywhen off, remove it from the list, \
-         quit the app, run again (cargo signs with Apple Development when available), then add \
-         and enable saywhen once more. Dev binary: {exe}. \
-         Transcript was copied to your clipboard."
+         If saywhen is already listed but this still appears, remove every saywhen entry \
+         (including a blank/black icon from an older raw binary), quit the app, run tauri dev \
+         again, then enable the saywhen app with the ribbon icon. Grant applies to dev.saywhen.app. \
+         Running: {exe}. Transcript was copied to your clipboard."
     )
 }
 
