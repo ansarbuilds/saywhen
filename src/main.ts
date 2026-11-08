@@ -45,6 +45,8 @@ interface DictationConfig {
   calibratedRestingMar: number;
   adaptiveFpsEnabled: boolean;
   sideCameraMode: boolean;
+  uiPalette: string;
+  moodColors: boolean;
   customVocab: string;
   historyPersistenceEnabled: boolean;
   llmCleanupEnabled: boolean;
@@ -215,6 +217,8 @@ let currentConfig: DictationConfig = {
   calibratedRestingMar: 0.016,
   adaptiveFpsEnabled: true,
   sideCameraMode: false,
+  uiPalette: 'lumen',
+  moodColors: true,
   customVocab: '',
   historyPersistenceEnabled: true,
   llmCleanupEnabled: false,
@@ -688,6 +692,56 @@ function listeningHint(): string {
   }
 }
 
+const PALETTE_IDS = ['lumen', 'bloom', 'lumora', 'neon', 'choreo', 'field', 'blue-bloom'];
+const paletteButtons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>('.palette-card[data-palette]')
+);
+const toggleMoodColors = document.getElementById('toggle-mood-colors') as HTMLInputElement;
+
+function renderPalette() {
+  const palette = PALETTE_IDS.includes(currentConfig.uiPalette) ? currentConfig.uiPalette : 'lumen';
+  document.body.dataset.palette = palette;
+  document.body.dataset.moodColors = currentConfig.moodColors === false ? 'off' : 'on';
+  for (const btn of paletteButtons) {
+    const on = btn.dataset.palette === palette;
+    btn.classList.toggle('is-selected', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  themeColorCache.at = 0;
+}
+
+for (const btn of paletteButtons) {
+  btn.addEventListener('click', () => {
+    const palette = btn.dataset.palette;
+    if (!palette || palette === currentConfig.uiPalette) return;
+    currentConfig = { ...currentConfig, uiPalette: palette };
+    renderPalette();
+    void syncConfigToBackend();
+  });
+}
+
+// Canvas cannot read CSS variables, so resolve the live palette tokens (they animate
+// between moods) a few times a second.
+const themeColorCache: { at: number; values: Record<string, [number, number, number]> } = {
+  at: 0,
+  values: {},
+};
+function themeRgba(token: '--paper' | '--on-dark' | '--accent', alpha = 1): string {
+  const now = performance.now();
+  if (now - themeColorCache.at > 120) {
+    const style = getComputedStyle(document.documentElement);
+    for (const t of ['--paper', '--on-dark', '--accent']) {
+      const m = style.getPropertyValue(t).match(/[\d.]+/g);
+      if (m && m.length >= 3) {
+        themeColorCache.values[t] = [Number(m[0]), Number(m[1]), Number(m[2])];
+      }
+    }
+    themeColorCache.at = now;
+  }
+  const [r, g, b] = themeColorCache.values[token] ?? [230, 213, 189];
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function renderSendMode() {
   for (const btn of sendModeButtons) {
     const on = btn.dataset.sendMode === currentConfig.sendMode;
@@ -935,7 +989,7 @@ function drawLipLandmarks(landmarks: NormalizedLandmark[], facing: boolean, lips
   overlayCtx.clearRect(0, 0, w, h);
 
   const lipIndices = [78, 308, 13, 14, 82, 87, 312, 317];
-  overlayCtx.fillStyle = lipsMoving ? '#ff8a5f' : facing ? '#00aebb' : '#e6d5bd';
+  overlayCtx.fillStyle = lipsMoving ? themeRgba('--on-dark') : facing ? '#00aebb' : themeRgba('--paper');
   for (const idx of lipIndices) {
     const pt = landmarks[idx];
     if (!pt) continue;
@@ -1256,7 +1310,7 @@ function drawVadChart() {
   const h = vadCanvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  ctx.strokeStyle = 'rgba(230, 213, 189, 0.08)';
+  ctx.strokeStyle = themeRgba('--paper', 0.08);
   ctx.lineWidth = 1;
   for (const frac of [0.25, 0.5, 0.75]) {
     const y = h * frac;
@@ -1268,7 +1322,7 @@ function drawVadChart() {
 
   const threshY = h - currentConfig.vadThreshold * (h - 16) - 8;
   ctx.save();
-  ctx.strokeStyle = 'rgba(255, 138, 95, 0.75)';
+  ctx.strokeStyle = themeRgba('--on-dark', 0.75);
   ctx.setLineDash([5 * dpr, 5 * dpr]);
   ctx.lineWidth = 1.5 * dpr;
   ctx.beginPath();
@@ -1301,7 +1355,7 @@ function drawVadChart() {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#e6d5bd';
+  ctx.strokeStyle = themeRgba('--paper');
   ctx.lineWidth = 2 * dpr;
   ctx.lineJoin = 'round';
   ctx.stroke();
@@ -1311,8 +1365,8 @@ function drawVadChart() {
   ctx.lineTo(0, h);
   ctx.closePath();
   const fill = ctx.createLinearGradient(0, 0, 0, h);
-  fill.addColorStop(0, 'rgba(230, 213, 189, 0.22)');
-  fill.addColorStop(1, 'rgba(230, 213, 189, 0)');
+  fill.addColorStop(0, themeRgba('--paper', 0.22));
+  fill.addColorStop(1, themeRgba('--paper', 0));
   ctx.fillStyle = fill;
   ctx.fill();
 }
@@ -1488,6 +1542,8 @@ async function syncConfigToBackend() {
     sendMode: currentConfig.sendMode,
     cancelOnSpeech: toggleCancelOnSpeech.checked,
     sideCameraMode: toggleSideCamera.checked,
+    uiPalette: currentConfig.uiPalette,
+    moodColors: toggleMoodColors.checked,
     hudEnabled: toggleHud.checked,
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
     historyPersistenceEnabled: toggleHistoryPersistence.checked,
@@ -1565,6 +1621,8 @@ async function initApp() {
     }
     toggleCancelOnSpeech.checked = currentConfig.cancelOnSpeech !== false;
     toggleSideCamera.checked = Boolean(currentConfig.sideCameraMode);
+    toggleMoodColors.checked = currentConfig.moodColors !== false;
+    renderPalette();
     renderSendMode();
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
@@ -1869,6 +1927,11 @@ togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
 toggleSideCamera.addEventListener('change', syncConfigToBackend);
+toggleMoodColors.addEventListener('change', () => {
+  currentConfig = { ...currentConfig, moodColors: toggleMoodColors.checked };
+  renderPalette();
+  void syncConfigToBackend();
+});
 obAxBadge?.addEventListener('click', () => {
   if (accessibilityPermissionTrusted) return;
   void invoke('request_accessibility_settings').catch((err) => showError(String(err)));

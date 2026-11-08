@@ -66,7 +66,7 @@ And you can always stop it: shake your head, press Esc, or (in the countdown) ju
 
 ## The five moods of saywhen
 
-You can see which mood saywhen is in by the colour of the window and the small floating pill.
+You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults. In **Settings > Colours** you can pick one of seven palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) and choose whether the colour changes with each mood.
 
 | Mood | What it means | Colour |
 | --- | --- | --- |
