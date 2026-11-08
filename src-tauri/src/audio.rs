@@ -2100,15 +2100,33 @@ fn run_audio_worker(
             {
                 guard.wake_needs_quiet = false;
             }
+            // ARMED counts too: from a side angle the camera often says "facing" while lip
+            // motion is not detected, and then the normal camera path never starts.
+            let wake_can_start_here =
+                matches!(guard.state, PipelineState::IDLE | PipelineState::ARMED);
             if cfg.wake_word_enabled
                 && !should_auto_start_listening
-                && guard.state == PipelineState::IDLE
+                && wake_can_start_here
                 && !guard.wake_needs_quiet
                 && wake_model_available
                 && prob >= cfg.vad_threshold
                 && guard.consecutive_vad_frames >= WAKE_START_MIN_VAD_FRAMES
             {
                 should_wake_start_listening = true;
+            } else if cfg.wake_word_enabled
+                && !should_auto_start_listening
+                && wake_can_start_here
+                && guard.consecutive_vad_frames == WAKE_START_MIN_VAD_FRAMES
+            {
+                // Once per burst of speech: say why the wake word did not start.
+                let why = if guard.wake_needs_quiet {
+                    "still waiting for a short quiet gap after the last dropped attempt"
+                } else if !wake_model_available {
+                    "the speech model is not downloaded"
+                } else {
+                    "voice too quiet for the noise filter"
+                };
+                eprintln!("[saywhen wake] voice heard but not started: {why}");
             }
 
             if guard.state == PipelineState::LISTENING {
