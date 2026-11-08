@@ -24,6 +24,7 @@ interface AudioTelemetryEvent {
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
   sendMode?: string;
+  wakePending?: boolean;
 }
 
 interface PreviewStartedEvent {
@@ -60,6 +61,13 @@ const FLASH_MS = 2600;
 
 const root = document.getElementById('hud-root') as HTMLElement;
 const label = document.getElementById('hud-label') as HTMLElement;
+const HUD_STATE_WORDS: Record<string, string> = {
+  IDLE: 'Waiting',
+  ARMED: 'Ready',
+  LISTENING: 'Listening',
+  TRANSCRIBING: 'Writing',
+  PREVIEW: 'Check',
+};
 const recBadge = document.getElementById('hud-rec') as HTMLElement | null;
 const detail = document.getElementById('hud-detail') as HTMLElement;
 const meterBars = Array.from(document.querySelectorAll<HTMLElement>('#hud-meter i'));
@@ -128,7 +136,7 @@ function render(t: AudioTelemetryEvent) {
   if (t.state !== lastRenderedState) {
     lastRenderedState = t.state;
     root.dataset.state = t.state;
-    label.textContent = t.state;
+    label.textContent = HUD_STATE_WORDS[t.state] ?? t.state;
     replaySwap();
   }
   if (recBadge) {
@@ -148,7 +156,9 @@ function render(t: AudioTelemetryEvent) {
       const partial = (t.partialTranscript ?? '').trim();
       const snippet =
         partial.length > 34 ? `...${partial.slice(-31)}` : partial;
-      if (t.postRollActive) {
+      if (t.wakePending) {
+        text = `${formatSeconds(t.listeningDurationMs)}  checking for the wake word...`;
+      } else if (t.postRollActive) {
         text = `${formatSeconds(t.listeningDurationMs)}  finishing...`;
       } else if (tot > 0 && rem < tot && rem <= tot - 120) {
         const holdTag = t.partialEndsWithConnective ? ' (connective hold)' : '';

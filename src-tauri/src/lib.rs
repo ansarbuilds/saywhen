@@ -5,6 +5,7 @@ pub mod hud;
 pub mod inject;
 pub mod transcribe;
 pub mod turn_taking;
+pub mod wake_word;
 
 use audio::{
     list_input_devices, unix_timestamp_ms, AudioCommand, AudioPipelineController, DictationConfig,

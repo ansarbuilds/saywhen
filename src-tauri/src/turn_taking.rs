@@ -97,9 +97,25 @@ impl Default for TurnTakingConfig {
 /// Head pose from a side angle is noisier, and people glance across a wide monitor.
 pub const SIDE_CAMERA_YAW_ENTER_DEG: f32 = 35.0;
 pub const SIDE_CAMERA_YAW_EXIT_DEG: f32 = 48.0;
+/// Head pitch read from a side angle mixes with roll, so pitch gets a little more room too.
+pub const SIDE_CAMERA_PITCH_ENTER_DEG: f32 = 24.0;
+pub const SIDE_CAMERA_PITCH_EXIT_DEG: f32 = 32.0;
 /// Calibration may move the "looking at the screen" center this far from the camera axis.
-/// MediaPipe keeps tracking a face up to roughly 65 to 70 degrees of yaw.
-pub const MAX_CALIBRATED_YAW_OFFSET_DEG: f32 = 65.0;
+/// MediaPipe keeps tracking a face up to roughly 70 degrees of real head turn, and its
+/// yaw estimate tends to read low near that limit, so allow some headroom.
+pub const MAX_CALIBRATED_YAW_OFFSET_DEG: f32 = 75.0;
+
+/// Effective (enter, exit) pitch cone half-widths in degrees.
+pub fn effective_pitch_cone(cfg: &TurnTakingConfig) -> (f32, f32) {
+    if cfg.side_camera_mode {
+        (
+            cfg.arm_pitch_enter_deg.max(SIDE_CAMERA_PITCH_ENTER_DEG),
+            cfg.arm_pitch_exit_deg.max(SIDE_CAMERA_PITCH_EXIT_DEG),
+        )
+    } else {
+        (cfg.arm_pitch_enter_deg, cfg.arm_pitch_exit_deg)
+    }
+}
 
 /// Effective (enter, exit) yaw cone half-widths in degrees.
 pub fn effective_yaw_cone(cfg: &TurnTakingConfig) -> (f32, f32) {
@@ -172,7 +188,8 @@ pub fn is_within_arm_enter_cone(
     let rel_yaw = vision.yaw - cfg.calibrated_yaw_offset_deg;
     let rel_pitch = vision.pitch - cfg.calibrated_pitch_offset_deg;
     let (yaw_enter, _) = effective_yaw_cone(cfg);
-    rel_yaw.abs() <= yaw_enter && rel_pitch.abs() <= cfg.arm_pitch_enter_deg
+    let (pitch_enter, _) = effective_pitch_cone(cfg);
+    rel_yaw.abs() <= yaw_enter && rel_pitch.abs() <= pitch_enter
 }
 
 /// Pure check whether a head pose (adjusted by the user's calibrated monitor center offset)
@@ -195,7 +212,8 @@ pub fn is_within_arm_exit_cone(
     let rel_yaw = vision.yaw - cfg.calibrated_yaw_offset_deg;
     let rel_pitch = vision.pitch - cfg.calibrated_pitch_offset_deg;
     let (_, yaw_exit) = effective_yaw_cone(cfg);
-    rel_yaw.abs() <= yaw_exit && rel_pitch.abs() <= cfg.arm_pitch_exit_deg
+    let (_, pitch_exit) = effective_pitch_cone(cfg);
+    rel_yaw.abs() <= yaw_exit && rel_pitch.abs() <= pitch_exit
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1106,6 +1124,12 @@ mod tests {
         assert!(is_within_arm_exit_cone(&vision(90.0), &cfg));
         // Turning fully away (to talk to someone) still disarms.
         assert!(!is_within_arm_exit_cone(&vision(-10.0), &cfg));
+        // Pitch gets more room from the side as well.
+        let tilted = VisionTelemetryPayload {
+            pitch: 22.0,
+            ..vision(50.0)
+        };
+        assert!(is_within_arm_enter_cone(&tilted, &cfg));
         // User-set cones wider than the side-camera minimum are kept.
         cfg.arm_yaw_enter_deg = 40.0;
         assert_eq!(effective_yaw_cone(&cfg), (40.0, SIDE_CAMERA_YAW_EXIT_DEG));

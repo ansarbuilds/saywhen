@@ -2,6 +2,7 @@ import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
+import { playWakeChime, unlockChimeOnFirstInteraction } from './chime';
 import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
 
 type SendMode = 'pause' | 'nod' | 'phrase' | 'paste_only';
@@ -45,6 +46,9 @@ interface DictationConfig {
   calibratedRestingMar: number;
   adaptiveFpsEnabled: boolean;
   sideCameraMode: boolean;
+  wakeWordEnabled: boolean;
+  wakeWord: string;
+  wakeChimeEnabled: boolean;
   uiPalette: string;
   moodColors: boolean;
   customVocab: string;
@@ -99,6 +103,8 @@ interface AudioTelemetryEvent {
   silenceRemainingMs?: number;
   silenceTotalMs?: number;
   postRollActive?: boolean;
+  wakePending?: boolean;
+  wakeWordActive?: boolean;
   deviceName: string;
   speechDetectedInUtterance: boolean;
   visionActive: boolean;
@@ -217,7 +223,10 @@ let currentConfig: DictationConfig = {
   calibratedRestingMar: 0.016,
   adaptiveFpsEnabled: true,
   sideCameraMode: false,
-  uiPalette: 'lumen',
+  wakeWordEnabled: false,
+  wakeWord: 'eevee',
+  wakeChimeEnabled: true,
+  uiPalette: 'saywhen',
   moodColors: true,
   customVocab: '',
   historyPersistenceEnabled: true,
@@ -417,6 +426,10 @@ const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputEleme
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleCancelOnSpeech = document.getElementById('toggle-cancel-on-speech') as HTMLInputElement;
 const toggleSideCamera = document.getElementById('toggle-side-camera') as HTMLInputElement;
+const toggleWakeWord = document.getElementById('toggle-wake-word') as HTMLInputElement;
+const wakeWordInput = document.getElementById('wake-word-input') as HTMLInputElement;
+const toggleWakeChime = document.getElementById('toggle-wake-chime') as HTMLInputElement;
+const calibrateCardBtn = document.getElementById('calibrate-card-btn') as HTMLButtonElement;
 const sendModeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-send-mode]'));
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
@@ -692,14 +705,14 @@ function listeningHint(): string {
   }
 }
 
-const PALETTE_IDS = ['lumen', 'bloom', 'lumora', 'neon', 'choreo', 'field', 'blue-bloom'];
+const PALETTE_IDS = ['saywhen', 'lumen', 'bloom', 'lumora', 'neon', 'choreo', 'field', 'blue-bloom'];
 const paletteButtons = Array.from(
   document.querySelectorAll<HTMLButtonElement>('.palette-card[data-palette]')
 );
 const toggleMoodColors = document.getElementById('toggle-mood-colors') as HTMLInputElement;
 
 function renderPalette() {
-  const palette = PALETTE_IDS.includes(currentConfig.uiPalette) ? currentConfig.uiPalette : 'lumen';
+  const palette = PALETTE_IDS.includes(currentConfig.uiPalette) ? currentConfig.uiPalette : 'saywhen';
   document.body.dataset.palette = palette;
   document.body.dataset.moodColors = currentConfig.moodColors === false ? 'off' : 'on';
   for (const btn of paletteButtons) {
@@ -770,11 +783,20 @@ function hidePreviewBanner() {
   previewHud.classList.add('hidden');
 }
 
+// What the audio engine reports, so the hints show whether the setting really took effect.
+let engineWakeWordActive = false;
+
+function wakeWordLabel(): string {
+  const w = (currentConfig.wakeWord || 'eevee').trim() || 'eevee';
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+
 function updatePipelineUiState(
   state: string,
   listeningDurationMs: number,
   previewRemainingMs: number,
-  postRollActive = false
+  postRollActive = false,
+  wakePending = false
 ) {
   currentPipelineState = state;
   pipelineStateLabel.textContent = STATE_LABELS[state] ?? state;
@@ -821,6 +843,8 @@ function updatePipelineUiState(
     deckStatus.textContent = 'Listening';
     deckSubtitle.textContent = postRollActive
       ? 'Got your nod. Capturing a short tail, then transcribing...'
+      : wakePending
+      ? `Heard a voice. Checking that it starts with "${wakeWordLabel()}". If not, it is dropped.`
       : listeningHint();
     utteranceTimer.textContent = formatDurationMs(listeningDurationMs);
     startListenBtn.disabled = true;
@@ -835,7 +859,16 @@ function updatePipelineUiState(
     cancelListenBtn.disabled = true;
   } else {
     deckStatus.textContent = cameraRunning ? 'Look at the screen to start' : 'Ready when you are';
-    const idleSubtitle = cameraRunning
+    const seenButAway =
+      cameraRunning && faceAwaySince > 0 && performance.now() - faceAwaySince > AWAY_HINT_AFTER_MS;
+    if (seenButAway) deckStatus.textContent = 'I can see you, but you look away';
+    const idleSubtitle = seenButAway
+      ? engineWakeWordActive
+        ? `Start with "${wakeWordLabel()}" to talk anyway, or look at the screen you talk to and click <strong>Calibrate</strong>.`
+        : 'Is your camera off to the side? Look at the screen you talk to and click <strong>Calibrate</strong>. saywhen will learn that direction.'
+      : cameraRunning && engineWakeWordActive
+      ? `Look at your screen and start talking, or start with "${wakeWordLabel()}" from anywhere.`
+      : cameraRunning
       ? 'Look at your screen and start talking. Look away and it stops listening.'
       : `Turn on the camera to talk hands-free, or press <kbd>${isMac ? 'Option' : 'Alt'}</kbd> <kbd>Space</kbd>`;
     if (deckSubtitle.innerHTML !== idleSubtitle) {
@@ -874,7 +907,14 @@ function computeMAR(landmarks: NormalizedLandmark[], cameraYawDeg = 0): number {
 // Must match turn_taking.rs (SIDE_CAMERA_YAW_*_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG).
 const SIDE_CAMERA_YAW_ENTER_DEG = 35.0;
 const SIDE_CAMERA_YAW_EXIT_DEG = 48.0;
-const MAX_CALIBRATED_YAW_OFFSET_DEG = 65.0;
+const SIDE_CAMERA_PITCH_ENTER_DEG = 24.0;
+const SIDE_CAMERA_PITCH_EXIT_DEG = 32.0;
+const MAX_CALIBRATED_YAW_OFFSET_DEG = 75.0;
+// Calibrating while turned this far from the camera switches side-camera mode on by itself.
+const AUTO_SIDE_CAMERA_YAW_DEG = 25.0;
+// Face seen but "away" this long while waiting: suggest calibrating.
+const AWAY_HINT_AFTER_MS = 5000;
+let faceAwaySince = 0;
 
 // MediaPipe Face Landmarker outputs a 4x4 column-major facial transform.
 // Use the rotation row (r20, r21, r22) so pitch moves on nods; the old third-column
@@ -976,7 +1016,14 @@ async function toggleCameraGate() {
     toggleCameraLabel.textContent = 'Turn off camera';
     startVisionTicker();
   } catch (err) {
-    showError(`Camera initialization error: ${String(err)}`);
+    const denied = err instanceof DOMException && err.name === 'NotAllowedError';
+    showError(
+      denied
+        ? isMac
+          ? 'The camera was blocked. macOS asks the app that started saywhen, so if you launched it from an AI assistant, an editor or a terminal, that app needs camera access: System Settings > Privacy & Security > Camera. Or start saywhen from your own Terminal. Then quit and reopen saywhen.'
+          : 'The camera was blocked. Allow camera access for desktop apps in Settings > Privacy & security > Camera, then reopen saywhen.'
+        : `Camera initialization error: ${String(err)}`
+    );
     toggleCameraLabel.textContent = 'Turn on camera';
   } finally {
     toggleCameraBtn.disabled = false;
@@ -999,6 +1046,12 @@ function drawLipLandmarks(landmarks: NormalizedLandmark[], facing: boolean, lips
   }
 }
 
+function setCalibrateLabel(text: string) {
+  const label = calibrateVisionBtn.querySelector('span');
+  if (label) label.textContent = text;
+  else calibrateVisionBtn.textContent = text;
+}
+
 function medianValue(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -1008,7 +1061,7 @@ function medianValue(values: number[]): number {
 function finalizeVisionCalibration() {
   calibratingUntilTimestamp = 0;
   calibrateVisionBtn.disabled = false;
-  calibrateVisionBtn.textContent = 'Calibrate Gaze (1.5s)';
+  setCalibrateLabel('Calibrate (1.5s)');
   if (calibrationSamples.length < 5) {
     showError(
       'Calibration failed: face was not continuously detected. Look at your coding monitor with your face visible and try again.'
@@ -1023,13 +1076,21 @@ function finalizeVisionCalibration() {
     -35,
     Math.min(35, medianValue(calibrationSamples.map((s) => s.pitch)))
   );
+  // Low percentile, not the median: a word or a smile during the 1.5 s would otherwise
+  // set the "closed mouth" level so high that real speech never registers.
+  const sortedMar = calibrationSamples.map((s) => s.mar).sort((a, b) => a - b);
   const mar0 = Math.max(
     0.006,
-    Math.min(0.045, medianValue(calibrationSamples.map((s) => s.mar)))
+    Math.min(0.03, sortedMar[Math.floor(sortedMar.length * 0.2)] ?? 0.016)
   );
+  if (Math.abs(yaw0) >= AUTO_SIDE_CAMERA_YAW_DEG && !currentConfig.sideCameraMode) {
+    currentConfig.sideCameraMode = true;
+    toggleSideCamera.checked = true;
+  }
   currentConfig.calibratedYawOffsetDeg = Number(yaw0.toFixed(2));
   currentConfig.calibratedPitchOffsetDeg = Number(pitch0.toFixed(2));
   currentConfig.calibratedRestingMar = Number(mar0.toFixed(4));
+  faceAwaySince = 0;
   updateCalibrationDisplay();
   void syncConfigToBackend();
 }
@@ -1129,12 +1190,14 @@ function processVisionFrame(now: number) {
       const relPitch = pitch - pitchOffset;
 
       const sideCamera = Boolean(currentConfig.sideCameraMode);
+      const basePitchEnter = currentConfig.armPitchEnterDeg || 18.0;
+      const basePitchExit = currentConfig.armPitchExitDeg || 25.0;
       const baseEnterYaw = currentConfig.armYawEnterDeg || 20.0;
       const baseExitYaw = currentConfig.armYawExitDeg || 28.0;
       const enterYaw = sideCamera ? Math.max(baseEnterYaw, SIDE_CAMERA_YAW_ENTER_DEG) : baseEnterYaw;
       const exitYaw = sideCamera ? Math.max(baseExitYaw, SIDE_CAMERA_YAW_EXIT_DEG) : baseExitYaw;
-      const enterPitch = currentConfig.armPitchEnterDeg || 18.0;
-      const exitPitch = currentConfig.armPitchExitDeg || 25.0;
+      const enterPitch = sideCamera ? Math.max(basePitchEnter, SIDE_CAMERA_PITCH_ENTER_DEG) : basePitchEnter;
+      const exitPitch = sideCamera ? Math.max(basePitchExit, SIDE_CAMERA_PITCH_EXIT_DEG) : basePitchExit;
 
       if (!facingScreenLatched) {
         if (Math.abs(relYaw) <= enterYaw && Math.abs(relPitch) <= enterPitch) {
@@ -1147,6 +1210,9 @@ function processVisionFrame(now: number) {
       const facingScreen = facingScreenLatched;
       if (facingScreen) {
         lastFaceOnScreenTimestamp = now;
+        faceAwaySince = 0;
+      } else if (faceAwaySince === 0) {
+        faceAwaySince = now;
       }
 
       const restingMar = Math.max(
@@ -1271,6 +1337,7 @@ function processVisionFrame(now: number) {
             : `${nominalFps} FPS ECO`;
         fpsPill.className = 'gauge-tag';
         gazePill.textContent = 'NO FACE';
+        faceAwaySince = 0;
         gazePill.className = 'gauge-tag tag-warn';
         lipPill.textContent = 'LIPS: --';
         lipPill.className = 'gauge-tag';
@@ -1542,6 +1609,9 @@ async function syncConfigToBackend() {
     sendMode: currentConfig.sendMode,
     cancelOnSpeech: toggleCancelOnSpeech.checked,
     sideCameraMode: toggleSideCamera.checked,
+    wakeWordEnabled: toggleWakeWord.checked,
+    wakeWord: wakeWordInput.value.trim().toLowerCase() || 'eevee',
+    wakeChimeEnabled: toggleWakeChime.checked,
     uiPalette: currentConfig.uiPalette,
     moodColors: toggleMoodColors.checked,
     hudEnabled: toggleHud.checked,
@@ -1621,7 +1691,20 @@ async function initApp() {
     }
     toggleCancelOnSpeech.checked = currentConfig.cancelOnSpeech !== false;
     toggleSideCamera.checked = Boolean(currentConfig.sideCameraMode);
+    toggleWakeWord.checked = Boolean(currentConfig.wakeWordEnabled);
+    wakeWordInput.value = currentConfig.wakeWord || 'eevee';
+    toggleWakeChime.checked = currentConfig.wakeChimeEnabled !== false;
     toggleMoodColors.checked = currentConfig.moodColors !== false;
+    // Lumen was the old default. Move people to the logo palette once; a later pick sticks.
+    try {
+      if (currentConfig.uiPalette === 'lumen' && !localStorage.getItem('saywhen-palette-v2')) {
+        currentConfig.uiPalette = 'saywhen';
+        void invoke('update_dictation_config', { config: currentConfig }).catch(() => undefined);
+      }
+      localStorage.setItem('saywhen-palette-v2', '1');
+    } catch {
+      // Storage can be unavailable; keeping the saved palette is fine.
+    }
     renderPalette();
     renderSendMode();
     toggleHud.checked = currentConfig.hudEnabled;
@@ -1651,11 +1734,13 @@ async function initApp() {
 
   await listen<AudioTelemetryEvent>('audio-telemetry', (event) => {
     const t = event.payload;
+    engineWakeWordActive = Boolean(t.wakeWordActive);
     updatePipelineUiState(
       t.state,
       t.listeningDurationMs,
       t.previewRemainingMs,
-      Boolean(t.postRollActive)
+      Boolean(t.postRollActive),
+      Boolean(t.wakePending)
     );
 
     valVadProb.textContent = t.vadProb.toFixed(2);
@@ -1683,6 +1768,19 @@ async function initApp() {
 
   await listen<PreviewStartedEvent>('preview-started', (event) => {
     showPreviewBanner(event.payload);
+  });
+
+  let chimeLockWarned = false;
+  await listen<boolean>('wake-word-heard', (event) => {
+    if (currentConfig.wakeChimeEnabled === false) return;
+    void playWakeChime(Boolean(event.payload)).then((played) => {
+      if (!played && !chimeLockWarned) {
+        chimeLockWarned = true;
+        showError(
+          'The wake word chime could not play because sound is still locked in this window. Click anywhere in saywhen once to allow it.'
+        );
+      }
+    });
   });
 
   await listen<string>('preview-canceled', () => {
@@ -1736,14 +1834,14 @@ toggleCameraBtn.addEventListener('click', toggleCameraGate);
 calibrateVisionBtn.addEventListener('click', () => {
   if (!cameraRunning) {
     showError(
-      'Enable Camera Gate first, then look naturally at your target coding screen with a relaxed closed mouth and click Calibrate Gaze.'
+      'Turn on the camera first. Then look at the screen you talk to, keep your mouth closed and click Calibrate.'
     );
     return;
   }
   calibrationSamples.length = 0;
   calibratingUntilTimestamp = performance.now() + 1500;
   calibrateVisionBtn.disabled = true;
-  calibrateVisionBtn.textContent = 'Calibrating (Look at Screen)...';
+  setCalibrateLabel('Look at your screen...');
   setVisionTickerInterval(VISION_TICK_ACTIVE_MS);
 });
 
@@ -1751,7 +1849,7 @@ resetCalibrationBtn.addEventListener('click', () => {
   calibratingUntilTimestamp = 0;
   calibrationSamples.length = 0;
   calibrateVisionBtn.disabled = false;
-  calibrateVisionBtn.textContent = 'Calibrate Gaze (1.5s)';
+  setCalibrateLabel('Calibrate (1.5s)');
   currentConfig.calibratedYawOffsetDeg = 0.0;
   currentConfig.calibratedPitchOffsetDeg = 0.0;
   currentConfig.calibratedRestingMar = 0.016;
@@ -1927,6 +2025,15 @@ togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
 toggleSideCamera.addEventListener('change', syncConfigToBackend);
+toggleWakeWord.addEventListener('change', syncConfigToBackend);
+wakeWordInput.addEventListener('change', syncConfigToBackend);
+toggleWakeChime.addEventListener('change', () => {
+  void syncConfigToBackend();
+  // Clicking the switch counts as an interaction, so this also unlocks audio and previews it.
+  if (toggleWakeChime.checked) void playWakeChime(false);
+});
+unlockChimeOnFirstInteraction();
+calibrateCardBtn.addEventListener('click', () => calibrateVisionBtn.click());
 toggleMoodColors.addEventListener('change', () => {
   currentConfig = { ...currentConfig, moodColors: toggleMoodColors.checked };
   renderPalette();
@@ -2106,9 +2213,9 @@ function applyDocumentationDemoState(demoMode: string) {
     // Draw synthetic privacy-safe face & lip landmark mesh on webcam overlay
     webcamOverlay.width = 640;
     webcamOverlay.height = 360;
-    overlayCtx.fillStyle = '#0b101b';
+    overlayCtx.fillStyle = '#22061c';
     overlayCtx.fillRect(0, 0, 640, 360);
-    overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.28)';
+    overlayCtx.strokeStyle = 'rgba(223, 229, 236, 0.22)';
     overlayCtx.lineWidth = 1.5;
     overlayCtx.beginPath();
     overlayCtx.ellipse(320, 175, 92, 122, 0, 0, Math.PI * 2);
@@ -2125,12 +2232,12 @@ function applyDocumentationDemoState(demoMode: string) {
       [342, 218],
       [342, 240],
     ];
-    overlayCtx.strokeStyle = 'rgba(244, 63, 94, 0.75)';
+    overlayCtx.strokeStyle = 'rgba(251, 179, 3, 0.8)';
     overlayCtx.lineWidth = 2;
     overlayCtx.beginPath();
     overlayCtx.ellipse(320, 229, 38, 15, 0, 0, Math.PI * 2);
     overlayCtx.stroke();
-    overlayCtx.fillStyle = '#f43f5e';
+    overlayCtx.fillStyle = '#fbb303';
     for (const [lx, ly] of synthLips) {
       overlayCtx.beginPath();
       overlayCtx.arc(lx, ly, 4, 0, Math.PI * 2);
@@ -2161,15 +2268,15 @@ function applyDocumentationDemoState(demoMode: string) {
 
     webcamOverlay.width = 640;
     webcamOverlay.height = 360;
-    overlayCtx.fillStyle = '#0b101b';
+    overlayCtx.fillStyle = '#22061c';
     overlayCtx.fillRect(0, 0, 640, 360);
-    overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+    overlayCtx.strokeStyle = 'rgba(223, 229, 236, 0.3)';
     overlayCtx.lineWidth = 1.5;
     overlayCtx.beginPath();
     overlayCtx.ellipse(320, 175, 92, 122, 0, 0, Math.PI * 2);
     overlayCtx.stroke();
 
-    overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
+    overlayCtx.strokeStyle = 'rgba(223, 229, 236, 0.8)';
     overlayCtx.lineWidth = 2;
     overlayCtx.beginPath();
     overlayCtx.moveTo(284, 228);

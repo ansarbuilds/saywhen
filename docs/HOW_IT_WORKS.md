@@ -22,6 +22,8 @@ It does this by finding a few hundred dots on your face (corners of your eyes, e
 
 **What if the camera is not in front of you?** Lots of people use a laptop camera next to a bigger monitor, so the camera sees the side of their face. Switch on **Camera is off to the side** in Settings, look at the screen you actually talk to, and click **Calibrate**. saywhen then treats that direction as "looking at the screen". It works until your head is turned about 65 degrees from the camera. Past that, the camera cannot see enough of your lips, so use the keyboard shortcut instead.
 
+**Talking without looking (wake word).** Switch on **Wake word when you look away** in Settings. Then, when the camera does not see you facing the screen, start your sentence with the wake word: "Eevee, run the tests". saywhen turns the first couple of seconds into text on your computer. If they do not start with "Eevee", it throws them away straight away and nothing happens. If they do, it removes "Eevee" and carries on as usual, with the check step and the countdown. A soft chime tells you it caught the wake word (one note means "go on, I am listening for the rest"). You can pick your own wake word, but a short unusual name works best: everyday words like "alright" would start by mistake.
+
 The watcher also notices two head movements:
 
 - **A nod** means "yes, send it".
@@ -66,15 +68,15 @@ And you can always stop it: shake your head, press Esc, or (in the countdown) ju
 
 ## The five moods of saywhen
 
-You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults. In **Settings > Colours** you can pick one of seven palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) and choose whether the colour changes with each mood.
+You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults, taken from the saywhen logo (plum, silver and amber). In **Settings > Colours** you can pick another palette and choose whether the glow changes with each mood. There is also a **Guide** page inside the app with the do's and don'ts.
 
 | Mood | What it means | Colour |
 | --- | --- | --- |
-| **Waiting** | Nobody is looking at the screen | Warm ivory and orange |
-| **Ready** | You are looking. Start talking any time. | Teal |
-| **Listening** | You are talking and it is recording | Pink |
-| **Writing** | It is turning your voice into text | Sand |
-| **Check** | It is showing you the text before sending | Blue and coral |
+| **Waiting** | Nobody is looking at the screen | Calm plum |
+| **Ready** | You are looking. Start talking any time. | A soft silver glow |
+| **Listening** | You are talking and it is recording | Amber, the bars move with your voice |
+| **Writing** | It is turning your voice into text | Lilac, with a spinning ring |
+| **Check** | It is showing you the text before sending | Amber countdown bar |
 
 ## The safety rules
 
