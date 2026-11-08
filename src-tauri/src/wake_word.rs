@@ -33,6 +33,36 @@ pub const WAKE_UNCONFIRMED_HOLD_MS: u64 = 4_000;
 /// After only the wake word was heard, wait this long in silence for the command.
 pub const WAKE_COMMAND_WAIT_MS: u64 = 2_500;
 
+/// The wake word path uses a lower voice-detector cut-off than the noise filter. Its own
+/// "starts with the wake word" check drops anything else, and a voice aimed away from the
+/// microphone (side-mounted laptop) often scores below the normal 0.45.
+pub const WAKE_VAD_THRESHOLD_CAP: f32 = 0.3;
+
+pub fn wake_vad_threshold(noise_filter: f32) -> f32 {
+    noise_filter.min(WAKE_VAD_THRESHOLD_CAP)
+}
+
+/// A "something was heard" level for diagnostics: well below any speech threshold.
+pub const WAKE_DIAG_SOUND_LEVEL: f32 = 0.12;
+
+/// Wake word decision log: terminal always; development builds also append to
+/// `<temp dir>/saywhen-wake.log` so the log survives however the app was started.
+/// Lines never contain recognized text (except the dev-only first word).
+pub fn wake_log_line(line: &str) {
+    eprintln!("{line}");
+    if cfg!(debug_assertions) {
+        use std::io::Write;
+        let path = std::env::temp_dir().join("saywhen-wake.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = writeln!(f, "{secs} {line}");
+        }
+    }
+}
+
 /// Words people say before the wake word ("hmm, alright, Eevee, ...").
 const FILLERS: &[&str] = &[
     "hey", "hi", "hello", "ok", "okay", "alright", "all", "right", "so", "um", "uh", "hmm", "hm",
@@ -272,6 +302,12 @@ mod tests {
         assert!(!wake_holds_turn(true, true, 5_000, 2_600));
         // Command under way: normal end of turn.
         assert!(!wake_holds_turn(true, false, 3_000, 900));
+    }
+
+    #[test]
+    fn wake_threshold_is_lower_but_never_above_the_noise_filter() {
+        assert_eq!(wake_vad_threshold(0.45), WAKE_VAD_THRESHOLD_CAP);
+        assert_eq!(wake_vad_threshold(0.25), 0.25);
     }
 
     #[test]
