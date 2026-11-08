@@ -252,6 +252,10 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Yaw-corrected MAR (always on):** mouth width is divided by `cos(camera yaw)` (floored at `0.4`, about 66 degrees) so the resting baseline and speech thresholds keep their meaning when the head is turned. Under 20 degrees the change is below 6%.
   4. **Limit:** past about 65 to 70 degrees MediaPipe stops tracking the face and the far lip corner is guessed, so a full profile still needs the hotkey.
 
+## Improvement #14: Palette picker
+- **Status:** Implemented on 2026-11-08 (`src/style.css`, `src/hud.css`, `src/main.ts`, `src/hud.ts`, `index.html`, `src-tauri/src/audio.rs`). Frontend build and all 40 Rust unit tests pass. Verified in the browser preview: picking a palette changes the resting tokens, mood colours still override in busy states, and turning mood colours off keeps the chosen palette. Not yet verified in the packaged desktop app.
+- **What changed:** all seven portfolio palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) are selectable in **Settings > Colours** (`ui_palette`, default `lumen`). A **Change colour with each mood** switch (`mood_colors`, default on) keeps the per-state palettes from Improvement #12. Both are presentation-only config fields, sent in `audio-telemetry` so the HUD matches from its first frame. The oscilloscope and lip overlay read the live palette tokens instead of fixed colours.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.

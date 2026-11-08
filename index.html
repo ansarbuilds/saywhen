@@ -7,7 +7,7 @@
     <title>saywhen</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body data-state="IDLE" data-send-mode="pause">
+  <body data-state="IDLE" data-send-mode="pause" data-palette="lumen" data-mood-colors="on">
     <div class="grain" aria-hidden="true"></div>
 
     <div class="app-shell">
@@ -527,6 +527,62 @@
                       <div class="toggle-desc">Keeps what you said on this computer, then deletes it after a week. Turn off to forget everything when you quit.</div>
                     </div>
                     <input type="checkbox" id="toggle-history-persistence" checked />
+                  </label>
+                </div>
+              </section>
+
+              <section class="pref-section">
+                <header class="pref-section-head">
+                  <span class="pref-num" aria-hidden="true">04</span>
+                  <div>
+                    <h3>Colours</h3>
+                    <p>Pick the look you like. It also colours the floating pill.</p>
+                  </div>
+                </header>
+                <div class="pref-group">
+                  <div class="palette-grid" role="group" aria-label="Colour palette">
+                    <button type="button" class="palette-card" data-palette="lumen" style="--sw-paper: #e6d5bd; --sw-ink: #101010; --sw-accent: #d5360c; --sw-on-dark: #ff8a5f;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Lumen</span>
+                      <span class="palette-desc">Ivory, soft black, burnt orange</span>
+                    </button>
+                    <button type="button" class="palette-card" data-palette="bloom" style="--sw-paper: #eae6de; --sw-ink: #1b4e76; --sw-accent: #ef8557; --sw-on-dark: #ffc2a6;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Bloom</span>
+                      <span class="palette-desc">Ivory, editorial blue, coral</span>
+                    </button>
+                    <button type="button" class="palette-card" data-palette="lumora" style="--sw-paper: #e8e4d3; --sw-ink: #031211; --sw-accent: #00aebb; --sw-on-dark: #00c9d6;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Lumora</span>
+                      <span class="palette-desc">Ivory, ink black, electric teal</span>
+                    </button>
+                    <button type="button" class="palette-card" data-palette="neon" style="--sw-paper: #e9e7ee; --sw-ink: #0a0a0a; --sw-accent: #ff2d95; --sw-on-dark: #ff5aad;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Human Next</span>
+                      <span class="palette-desc">Cool white, jet black, neon rose</span>
+                    </button>
+                    <button type="button" class="palette-card" data-palette="choreo" style="--sw-paper: #e6e0f0; --sw-ink: #2e1f16; --sw-accent: #6f4e37; --sw-on-dark: #cdb8e8;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Choreo</span>
+                      <span class="palette-desc">Lavender, deep mocha, mocha brown</span>
+                    </button>
+                    <button type="button" class="palette-card" data-palette="field" style="--sw-paper: #e9dfcf; --sw-ink: #090907; --sw-accent: #b99d73; --sw-on-dark: #d4b98d;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Field / Form</span>
+                      <span class="palette-desc">Bone, charcoal, burnt amber</span>
+                    </button>
+                    <button type="button" class="palette-card" data-palette="blue-bloom" style="--sw-paper: #e8ecf8; --sw-ink: #021861; --sw-accent: #de1110; --sw-on-dark: #ff6b5e;" aria-pressed="false">
+                      <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
+                      <span class="palette-name">Blue Bloom</span>
+                      <span class="palette-desc">Ice white, midnight navy, bright red</span>
+                    </button>
+                  </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Change colour with each mood</div>
+                      <div class="toggle-desc">Ready turns teal, Listening pink, Writing sand and Check blue, so you can tell what saywhen is doing from across the room. Turn off to keep your palette all the time.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-mood-colors" checked />
                   </label>
                 </div>
                 <p class="pref-footnote">Changes save by themselves.</p>

@@ -177,6 +177,12 @@ pub struct DictationConfig {
     /// Per-user calibrated resting closed-mouth MAR baseline.
     #[serde(default = "default_calibrated_resting_mar")]
     pub calibrated_resting_mar: f32,
+    /// Colour palette for the main window and HUD (presentation only).
+    #[serde(default = "default_ui_palette")]
+    pub ui_palette: String,
+    /// Each busy pipeline state borrows its own palette (presentation only).
+    #[serde(default = "default_true")]
+    pub mood_colors: bool,
     /// Webcam is off to the side of the screen the user talks to (widens the head-turn allowance).
     #[serde(default)]
     pub side_camera_mode: bool,
@@ -209,6 +215,10 @@ fn default_llm_endpoint_url() -> String {
 
 fn default_llm_model() -> String {
     "qwen2.5-coder:1.5b".to_string()
+}
+
+fn default_ui_palette() -> String {
+    "lumen".to_string()
 }
 
 fn default_calibrated_resting_mar() -> f32 {
@@ -306,6 +316,8 @@ impl Default for DictationConfig {
             calibrated_yaw_offset_deg: 0.0,
             calibrated_pitch_offset_deg: 0.0,
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
+            ui_palette: default_ui_palette(),
+            mood_colors: true,
             side_camera_mode: false,
             adaptive_fps_enabled: true,
             custom_vocab: String::new(),
@@ -429,6 +441,11 @@ pub struct AudioTelemetryEvent {
     /// Active send mode, so the HUD can show the right hint while you talk.
     #[serde(default)]
     pub send_mode: String,
+    /// Chosen colour palette, so the HUD matches the main window from the first frame.
+    #[serde(default)]
+    pub ui_palette: String,
+    #[serde(default)]
+    pub mood_colors: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1607,6 +1624,8 @@ fn run_audio_worker(
                             partial_transcript: String::new(),
                             partial_ends_with_connective: false,
                             send_mode: cfg.send_mode.as_str().to_string(),
+                            ui_palette: cfg.ui_palette.clone(),
+                            mood_colors: cfg.mood_colors,
                         },
                     );
 
@@ -2098,6 +2117,8 @@ fn run_audio_worker(
                     partial_transcript: guard.partial_transcript.clone(),
                     partial_ends_with_connective: guard.partial_ends_with_connective,
                     send_mode: cfg.send_mode.as_str().to_string(),
+                    ui_palette: cfg.ui_palette.clone(),
+                    mood_colors: cfg.mood_colors,
                 }
             };
             let _ = app_handle.emit("audio-telemetry", payload);

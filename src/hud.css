@@ -68,10 +68,21 @@ body {
   transform: translateY(6px) scale(0.98);
 }
 
+/* Chosen palette (Settings > Colours) sets the resting and check accents. */
+.hud-root { --hud-palette: #ff8a5f; --hud-preview: var(--hud-palette); }
+.hud-root[data-palette='bloom'] { --hud-palette: #ffc2a6; }
+.hud-root[data-palette='lumora'] { --hud-palette: #00c9d6; }
+.hud-root[data-palette='neon'] { --hud-palette: #ff5aad; }
+.hud-root[data-palette='choreo'] { --hud-palette: #cdb8e8; }
+.hud-root[data-palette='field'] { --hud-palette: #d4b98d; }
+.hud-root[data-palette='blue-bloom'] { --hud-palette: #ff6b5e; }
+
 .hud-root[data-state='ARMED'] { --accent: var(--hud-armed); }
 .hud-root[data-state='LISTENING'] { --accent: var(--hud-listening); }
 .hud-root[data-state='TRANSCRIBING'] { --accent: var(--hud-transcribing); }
 .hud-root[data-state='PREVIEW'] { --accent: var(--hud-preview); }
+.hud-root[data-mood-colors='off'][data-state] { --accent: var(--hud-palette); }
+.hud-root[data-mood-colors='off'][data-state='IDLE'] { --accent: var(--hud-idle); }
 .hud-root.is-stalled,
 .hud-root.is-error { --accent: var(--hud-warn); }
 
