@@ -558,7 +558,8 @@ function hidePreviewBanner() {
 function updatePipelineUiState(
   state: string,
   listeningDurationMs: number,
-  previewRemainingMs: number
+  previewRemainingMs: number,
+  postRollActive = false
 ) {
   currentPipelineState = state;
   pipelineStateLabel.textContent = state;
@@ -596,8 +597,9 @@ function updatePipelineUiState(
     pipelineBadge.classList.add('state-listening');
     commandDeck.classList.add('is-listening');
     deckStatus.textContent = 'Listening';
-    deckSubtitle.textContent =
-      'Pause and close your mouth, say "send it", or nod to finish.';
+    deckSubtitle.textContent = postRollActive
+      ? 'Got your nod. Capturing a short tail, then transcribing...'
+      : 'Pause and close your mouth, say "send it", or nod to finish.';
     utteranceTimer.textContent = formatDurationMs(listeningDurationMs);
     startListenBtn.disabled = true;
     stopListenBtn.disabled = false;
@@ -640,12 +642,18 @@ function computeMAR(landmarks: NormalizedLandmark[]): number {
   return (vCenter + vLeft + vRight) / (3.0 * horiz);
 }
 
+// MediaPipe Face Landmarker outputs a 4x4 column-major facial transform.
+// Use the rotation row (r20, r21, r22) so pitch moves on nods; the old third-column
+// asin() pitch barely changed during vertical head motion in practice.
 function extractHeadPose(matrixData: number[]): { yaw: number; pitch: number } {
-  const r02 = matrixData[8];
-  const r12 = matrixData[9];
+  if (matrixData.length < 12) {
+    return { yaw: 0, pitch: 0 };
+  }
+  const r20 = matrixData[2];
+  const r21 = matrixData[6];
   const r22 = matrixData[10];
-  const yawRad = Math.atan2(r02, r22);
-  const pitchRad = Math.asin(-Math.max(-1, Math.min(1, r12)));
+  const yawRad = Math.atan2(-r20, Math.hypot(r21, r22));
+  const pitchRad = Math.atan2(r21, r22);
   return {
     yaw: yawRad * (180 / Math.PI),
     pitch: pitchRad * (180 / Math.PI),
@@ -665,7 +673,7 @@ function detectHeadGesture(now: number): string {
     lastGestureTime = now;
     return 'shake';
   }
-  if (pitchSpan >= 11.0 && pitchSpan > yawSpan * 1.3) {
+  if (pitchSpan >= 9.0 && pitchSpan > yawSpan * 1.15) {
     lastGestureTime = now;
     return 'nod';
   }
@@ -961,9 +969,7 @@ function processVisionFrame(now: number) {
 
         valPose.textContent = `${relYaw.toFixed(1)}° / ${relPitch.toFixed(1)}°`;
         valMar.textContent = `${mar.toFixed(3)} / ${(marVariance * 1000).toFixed(2)}`;
-        if (gesture !== 'none') {
-          valGesture.textContent = gesture.toUpperCase();
-        }
+        valGesture.textContent = gesture === 'none' ? 'None' : gesture.toUpperCase();
 
         const nominalFps = Math.round(1000 / currentVisionTickMs);
         fpsPill.textContent =
@@ -1389,7 +1395,12 @@ async function initApp() {
 
   await listen<AudioTelemetryEvent>('audio-telemetry', (event) => {
     const t = event.payload;
-    updatePipelineUiState(t.state, t.listeningDurationMs, t.previewRemainingMs);
+    updatePipelineUiState(
+      t.state,
+      t.listeningDurationMs,
+      t.previewRemainingMs,
+      Boolean(t.postRollActive)
+    );
 
     valVadProb.textContent = t.vadProb.toFixed(2);
     if (t.isSpeech) {
