@@ -18,6 +18,8 @@ interface AudioTelemetryEvent {
   visionArmed: boolean;
   cameraEnabled: boolean;
   hudEnabled: boolean;
+  uiPalette?: string;
+  moodColors?: boolean;
   saveTuningAudioEnabled?: boolean;
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
@@ -45,6 +47,8 @@ interface UtteranceCompleteEvent {
 
 interface DictationConfigLite {
   hudEnabled: boolean;
+  uiPalette?: string;
+  moodColors?: boolean;
   sendMode?: string;
   cancelOnSpeech?: boolean;
   saveTuningAudioEnabled?: boolean;
@@ -117,6 +121,9 @@ function replaySwap() {
 function render(t: AudioTelemetryEvent) {
   hudEnabled = t.hudEnabled;
   if (t.sendMode) sendMode = t.sendMode;
+  if (t.uiPalette && root.dataset.palette !== t.uiPalette) root.dataset.palette = t.uiPalette;
+  const mood = t.moodColors === false ? 'off' : 'on';
+  if (root.dataset.moodColors !== mood) root.dataset.moodColors = mood;
   root.classList.toggle('hud-off', !hudEnabled);
   if (t.state !== lastRenderedState) {
     lastRenderedState = t.state;
@@ -275,6 +282,8 @@ async function initHud() {
     root.classList.toggle('hud-off', !hudEnabled);
     if (e.payload.sendMode) sendMode = e.payload.sendMode;
     if (typeof e.payload.cancelOnSpeech === 'boolean') cancelOnSpeech = e.payload.cancelOnSpeech;
+    if (e.payload.uiPalette) root.dataset.palette = e.payload.uiPalette;
+    root.dataset.moodColors = e.payload.moodColors === false ? 'off' : 'on';
     if (recBadge && typeof e.payload.saveTuningAudioEnabled === 'boolean') {
       recBadge.classList.toggle('hidden', !e.payload.saveTuningAudioEnabled);
     }

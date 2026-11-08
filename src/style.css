@@ -55,11 +55,22 @@
 
 html.is-mac { --titlebar-h: 28px; }
 
-/* State palettes. :root carries the transition, so set the tokens there via :has(). */
-:root:has(body[data-state='ARMED']) { --paper: #e8e4d3; --ink: #031211; --accent: #00aebb; --accent-ink: #00616a; --on-dark: #00c9d6; }
-:root:has(body[data-state='LISTENING']) { --paper: #e9e7ee; --ink: #0a0a0a; --accent: #ff2d95; --accent-ink: #b8005f; --on-dark: #ff5aad; }
-:root:has(body[data-state='TRANSCRIBING']) { --paper: #e9dfcf; --ink: #090907; --accent: #b99d73; --accent-ink: #6c5636; --on-dark: #d4b98d; }
-:root:has(body[data-state='PREVIEW']) { --paper: #eae6de; --ink: #1b4e76; --accent: #ef8557; --accent-ink: #953812; --on-dark: #ffc2a6; }
+/* Palettes from the portfolio. Lumen is the default (above). The chosen palette is the
+   resting look; body[data-palette] picks it. :root carries the transition, so tokens are
+   set there via :has(). */
+:root:has(body[data-palette='bloom']) { --paper: #eae6de; --ink: #1b4e76; --accent: #ef8557; --accent-ink: #953812; --on-dark: #ffc2a6; }
+:root:has(body[data-palette='lumora']) { --paper: #e8e4d3; --ink: #031211; --accent: #00aebb; --accent-ink: #00616a; --on-dark: #00c9d6; }
+:root:has(body[data-palette='neon']) { --paper: #e9e7ee; --ink: #0a0a0a; --accent: #ff2d95; --accent-ink: #b8005f; --on-dark: #ff5aad; }
+:root:has(body[data-palette='choreo']) { --paper: #e6e0f0; --ink: #2e1f16; --accent: #6f4e37; --accent-ink: #6f4e37; --on-dark: #cdb8e8; }
+:root:has(body[data-palette='field']) { --paper: #e9dfcf; --ink: #090907; --accent: #b99d73; --accent-ink: #6c5636; --on-dark: #d4b98d; }
+:root:has(body[data-palette='blue-bloom']) { --paper: #e8ecf8; --ink: #021861; --accent: #de1110; --accent-ink: #255dce; --on-dark: #ff6b5e; }
+
+/* Mood colours (on by default): each busy state borrows its own palette. The extra
+   [data-mood-colors] attribute makes these win over the chosen resting palette. */
+:root:has(body[data-mood-colors='on'][data-state='ARMED']) { --paper: #e8e4d3; --ink: #031211; --accent: #00aebb; --accent-ink: #00616a; --on-dark: #00c9d6; }
+:root:has(body[data-mood-colors='on'][data-state='LISTENING']) { --paper: #e9e7ee; --ink: #0a0a0a; --accent: #ff2d95; --accent-ink: #b8005f; --on-dark: #ff5aad; }
+:root:has(body[data-mood-colors='on'][data-state='TRANSCRIBING']) { --paper: #e9dfcf; --ink: #090907; --accent: #b99d73; --accent-ink: #6c5636; --on-dark: #d4b98d; }
+:root:has(body[data-mood-colors='on'][data-state='PREVIEW']) { --paper: #eae6de; --ink: #1b4e76; --accent: #ef8557; --accent-ink: #953812; --on-dark: #ffc2a6; }
 
 :root {
   --rule: color-mix(in srgb, var(--ink) 18%, transparent);
@@ -948,6 +959,24 @@ body[data-state='ARMED'] .rec-live-dot { background: var(--accent); }
 .issue-text { font: 500 12px/1.5 var(--font-mono); color: var(--danger); word-break: break-word; user-select: text; -webkit-user-select: text; }
 .issue-meta { margin-top: 4px; font: 500 10px/1.4 var(--font-mono); color: var(--muted); }
 .issue-actions { margin-top: 8px; display: flex; gap: 6px; }
+
+/* ------------------------------------------------------------- palette picker */
+.palette-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 18px 0 6px; }
+.palette-card {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px; text-align: left;
+  background: var(--sw-paper); color: var(--sw-ink); border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  cursor: pointer; font: inherit; transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+}
+.palette-card:hover { transform: translateY(-2px); }
+.palette-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.palette-card.is-selected { box-shadow: 0 0 0 2px var(--ink), inset 0 -4px 0 var(--sw-accent); }
+.palette-swatches { display: flex; height: 34px; }
+.palette-swatches i { flex: 1; }
+.palette-swatches i:nth-child(1) { background: var(--sw-ink); }
+.palette-swatches i:nth-child(2) { background: var(--sw-accent); }
+.palette-swatches i:nth-child(3) { background: var(--sw-on-dark); }
+.palette-name { font: 400 22px/1 var(--font-serif); letter-spacing: -0.02em; }
+.palette-desc { font: 500 10px/1.4 var(--font-mono); letter-spacing: 0.02em; opacity: 0.72; }
 
 /* ------------------------------------------------------------- settings */
 .prefs { display: flex; flex-direction: column; gap: 44px; max-width: 880px; }

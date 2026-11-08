@@ -60,6 +60,11 @@ pub struct TurnTakingConfig {
     pub calibrated_resting_mar: f32,
     #[serde(default = "default_true")]
     pub adaptive_fps_enabled: bool,
+    /// The webcam sits off to the side of the screen the user talks to, so the head is
+    /// often turned 30 to 65 degrees from the camera. Widens the yaw cone around the
+    /// calibrated center.
+    #[serde(default)]
+    pub side_camera_mode: bool,
 }
 
 impl Default for TurnTakingConfig {
@@ -83,7 +88,28 @@ impl Default for TurnTakingConfig {
             calibrated_pitch_offset_deg: 0.0,
             calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
             adaptive_fps_enabled: true,
+            side_camera_mode: false,
         }
+    }
+}
+
+/// Minimum yaw cone (enter, exit) in degrees when the camera is off to the side.
+/// Head pose from a side angle is noisier, and people glance across a wide monitor.
+pub const SIDE_CAMERA_YAW_ENTER_DEG: f32 = 35.0;
+pub const SIDE_CAMERA_YAW_EXIT_DEG: f32 = 48.0;
+/// Calibration may move the "looking at the screen" center this far from the camera axis.
+/// MediaPipe keeps tracking a face up to roughly 65 to 70 degrees of yaw.
+pub const MAX_CALIBRATED_YAW_OFFSET_DEG: f32 = 65.0;
+
+/// Effective (enter, exit) yaw cone half-widths in degrees.
+pub fn effective_yaw_cone(cfg: &TurnTakingConfig) -> (f32, f32) {
+    if cfg.side_camera_mode {
+        (
+            cfg.arm_yaw_enter_deg.max(SIDE_CAMERA_YAW_ENTER_DEG),
+            cfg.arm_yaw_exit_deg.max(SIDE_CAMERA_YAW_EXIT_DEG),
+        )
+    } else {
+        (cfg.arm_yaw_enter_deg, cfg.arm_yaw_exit_deg)
     }
 }
 
@@ -145,7 +171,8 @@ pub fn is_within_arm_enter_cone(
     }
     let rel_yaw = vision.yaw - cfg.calibrated_yaw_offset_deg;
     let rel_pitch = vision.pitch - cfg.calibrated_pitch_offset_deg;
-    rel_yaw.abs() <= cfg.arm_yaw_enter_deg && rel_pitch.abs() <= cfg.arm_pitch_enter_deg
+    let (yaw_enter, _) = effective_yaw_cone(cfg);
+    rel_yaw.abs() <= yaw_enter && rel_pitch.abs() <= cfg.arm_pitch_enter_deg
 }
 
 /// Pure check whether a head pose (adjusted by the user's calibrated monitor center offset)
@@ -167,7 +194,8 @@ pub fn is_within_arm_exit_cone(
     }
     let rel_yaw = vision.yaw - cfg.calibrated_yaw_offset_deg;
     let rel_pitch = vision.pitch - cfg.calibrated_pitch_offset_deg;
-    rel_yaw.abs() <= cfg.arm_yaw_exit_deg && rel_pitch.abs() <= cfg.arm_pitch_exit_deg
+    let (_, yaw_exit) = effective_yaw_cone(cfg);
+    rel_yaw.abs() <= yaw_exit && rel_pitch.abs() <= cfg.arm_pitch_exit_deg
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1055,6 +1083,33 @@ pub fn detect_system_sleep_or_stall_jump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_side_camera_widens_yaw_cone() {
+        let mut cfg = TurnTakingConfig {
+            calibrated_yaw_offset_deg: 50.0,
+            ..TurnTakingConfig::default()
+        };
+        let vision = |yaw: f32| VisionTelemetryPayload {
+            face_present: true,
+            facing_screen: false,
+            yaw,
+            ..VisionTelemetryPayload::default()
+        };
+        // Looking straight at the calibrated screen counts in both modes.
+        assert!(is_within_arm_enter_cone(&vision(50.0), &cfg));
+        // A 30 degree glance across a wide monitor only counts with the side camera switch.
+        assert!(!is_within_arm_enter_cone(&vision(80.0), &cfg));
+        assert!(!is_within_arm_exit_cone(&vision(90.0), &cfg));
+        cfg.side_camera_mode = true;
+        assert!(is_within_arm_enter_cone(&vision(80.0), &cfg));
+        assert!(is_within_arm_exit_cone(&vision(90.0), &cfg));
+        // Turning fully away (to talk to someone) still disarms.
+        assert!(!is_within_arm_exit_cone(&vision(-10.0), &cfg));
+        // User-set cones wider than the side-camera minimum are kept.
+        cfg.arm_yaw_enter_deg = 40.0;
+        assert_eq!(effective_yaw_cone(&cfg), (40.0, SIDE_CAMERA_YAW_EXIT_DEG));
+    }
 
     #[test]
     fn test_send_mode_enter_rules() {
