@@ -1288,6 +1288,91 @@ body[data-state='LISTENING'] .timer-value {
   animation-delay: 60ms;
 }
 
+.issues-panel {
+  margin-top: 14px;
+  animation: rise-in 560ms var(--ease-out) both;
+  animation-delay: 80ms;
+}
+
+.issues-panel-hint {
+  margin: 0 12px 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.issues-panel-hint-muted {
+  margin-top: -4px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.mono-inline {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  word-break: break-all;
+}
+
+.issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px 8px;
+  max-height: min(280px, 32vh);
+  overflow-y: auto;
+}
+
+.issues-empty {
+  min-height: 120px;
+}
+
+.issue-row {
+  position: relative;
+  padding: 10px 12px 9px;
+  border-radius: var(--r-md);
+  transition: background var(--t-fast) ease;
+  animation: card-in 520ms var(--ease-out) both;
+}
+
+.issue-row:hover {
+  background: var(--surface-hover);
+}
+
+.issue-row + .issue-row::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: -1px;
+  height: 1px;
+  background: var(--border);
+}
+
+.issue-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+  padding-right: 4px;
+}
+
+.issue-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.issue-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
 /* Camera */
 .webcam-stage {
   position: relative;
@@ -2213,10 +2298,22 @@ body[data-state='LISTENING'] .webcam-vignette {
 
 .error-banner-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-width: 0;
   font-size: 12.5px;
+}
+
+.error-banner-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.error-banner-hint {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .error-badge {
@@ -2236,7 +2333,7 @@ body[data-state='LISTENING'] .webcam-vignette {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 

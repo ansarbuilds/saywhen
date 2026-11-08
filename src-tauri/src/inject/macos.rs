@@ -7,6 +7,7 @@ use std::time::Instant;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> bool;
 }
 
 #[link(name = "Carbon", kind = "framework")]
@@ -22,7 +23,36 @@ pub fn is_secure_event_input_enabled() -> bool {
     unsafe { IsSecureEventInputEnabled() != 0 }
 }
 
+pub fn prompt_accessibility_permission() -> bool {
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::CFMutableDictionary;
+    use core_foundation::string::CFString;
+
+    unsafe {
+        let key = CFString::new("AXTrustedCheckOptionPrompt");
+        let mut options = CFMutableDictionary::new();
+        options.set(key, CFBoolean::true_value());
+        AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const std::ffi::c_void)
+    }
+}
+
+pub fn accessibility_denied_message() -> String {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "saywhen".to_string());
+    format!(
+        "macOS Accessibility permission is required to type into terminals. \
+         If saywhen is already enabled in System Settings but this still appears, a recent \
+         dev rebuild changed the binary signature: turn saywhen off, remove it from the list, \
+         quit the app, run again (cargo signs with Apple Development when available), then add \
+         and enable saywhen once more. Dev binary: {exe}. \
+         Transcript was copied to your clipboard."
+    )
+}
+
 pub fn open_accessibility_settings() -> Result<(), String> {
+    let _trusted = prompt_accessibility_permission();
     std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         .spawn()
@@ -90,9 +120,7 @@ pub fn detect_frontmost_app() -> FrontmostApp {
 
 pub fn check_pre_injection_guard(_target: &FrontmostApp) -> Result<(), String> {
     if !check_accessibility_permission() {
-        return Err(
-            "macOS Accessibility permission is required to type into terminals. Transcript was copied to your clipboard; grant Accessibility permission and try again.".to_string(),
-        );
+        return Err(accessibility_denied_message());
     }
     if is_secure_event_input_enabled() {
         return Err(
