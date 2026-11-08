@@ -2,6 +2,7 @@
 // window. It only listens to backend events; it never invokes commands and never
 // takes focus, so the frontmost app stays the injection target.
 import { listen } from '@tauri-apps/api/event';
+import './fonts';
 
 interface AudioTelemetryEvent {
   state: string;
@@ -20,12 +21,14 @@ interface AudioTelemetryEvent {
   saveTuningAudioEnabled?: boolean;
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
+  sendMode?: string;
 }
 
 interface PreviewStartedEvent {
   cleanup: { cleanedText: string; isDestructiveCommand: boolean };
   targetPolicy: { appName: string; policy: string; willPressEnter: boolean };
   countdownMs: number;
+  waitsForNod?: boolean;
 }
 
 interface UtteranceCompleteEvent {
@@ -42,6 +45,8 @@ interface UtteranceCompleteEvent {
 
 interface DictationConfigLite {
   hudEnabled: boolean;
+  sendMode?: string;
+  cancelOnSpeech?: boolean;
   saveTuningAudioEnabled?: boolean;
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
@@ -65,6 +70,9 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const hotkeyLabel = isMac ? 'Option+Space' : 'Alt+Space';
 
 let previewTotalMs = 1800;
+let previewWaitsForNod = false;
+let sendMode = 'pause';
+let cancelOnSpeech = true;
 let flash: { text: string; kind: 'ok' | 'error'; until: number } | null = null;
 let hudEnabled = true;
 
@@ -108,6 +116,7 @@ function replaySwap() {
 
 function render(t: AudioTelemetryEvent) {
   hudEnabled = t.hudEnabled;
+  if (t.sendMode) sendMode = t.sendMode;
   root.classList.toggle('hud-off', !hudEnabled);
   if (t.state !== lastRenderedState) {
     lastRenderedState = t.state;
@@ -140,32 +149,34 @@ function render(t: AudioTelemetryEvent) {
       } else if (snippet) {
         text = `${formatSeconds(t.listeningDurationMs)}  "${snippet}"`;
       } else {
-        text = `${formatSeconds(t.listeningDurationMs)}  pause, say "send it" or nod`;
+        text = `${formatSeconds(t.listeningDurationMs)}  ${listeningHint()}`;
       }
       break;
     }
     case 'TRANSCRIBING':
-      text = 'Transcribing...';
+      text = 'Writing it down...';
       break;
     case 'PREVIEW': {
       const remaining = Math.max(0, t.previewRemainingMs);
-      text = `Sending in ${(remaining / 1000).toFixed(1)}s`;
+      text = previewWaitsForNod
+        ? `Nod to send (${(remaining / 1000).toFixed(0)}s)`
+        : `Sending in ${(remaining / 1000).toFixed(1)}s`;
       previewCountdown.textContent = `${(remaining / 1000).toFixed(1)}s`;
       const pct = Math.max(0, Math.min(100, (remaining / previewTotalMs) * 100));
       previewFill.style.width = `${pct}%`;
       break;
     }
     case 'ARMED':
-      text = 'Armed. Start speaking';
+      text = 'Ready. Start talking';
       break;
     default:
       if (stalled) {
         text = 'Camera gate stalled: no vision frames. Open saywhen to check.';
         warn = true;
       } else if (t.cameraEnabled) {
-        text = `Look at the screen to arm, or ${hotkeyLabel}`;
+        text = `Look at the screen and talk, or ${hotkeyLabel}`;
       } else {
-        text = `${hotkeyLabel} to talk. Camera gate off`;
+        text = `${hotkeyLabel} to talk. Camera is off`;
       }
   }
 
@@ -184,8 +195,30 @@ function render(t: AudioTelemetryEvent) {
   renderMeter(t);
 }
 
+function listeningHint(): string {
+  switch (sendMode) {
+    case 'nod':
+      return 'nod when done';
+    case 'phrase':
+      return 'say "send it" to send';
+    case 'paste_only':
+      return 'stop talking to type it';
+    default:
+      return 'stop talking or nod';
+  }
+}
+
+function previewHintText(): string {
+  if (previewWaitsForNod) return 'Nod or Enter to send. Shake or Esc to cancel.';
+  return cancelOnSpeech
+    ? 'Say "cancel", shake or Esc to stop. Nod to send now.'
+    : 'Shake or Esc to stop. Nod to send now.';
+}
+
 function showPreview(ev: PreviewStartedEvent) {
   previewTotalMs = ev.countdownMs || 1800;
+  previewWaitsForNod = Boolean(ev.waitsForNod);
+  previewCard.classList.toggle('waits-for-nod', previewWaitsForNod);
   previewText.textContent = ev.cleanup.cleanedText;
   previewTarget.className = 'preview-target';
   const app = ev.targetPolicy.appName || 'focused app';
@@ -201,7 +234,7 @@ function showPreview(ev: PreviewStartedEvent) {
   } else {
     previewTarget.textContent = `Paste + Enter into ${app}`;
   }
-  previewHint.textContent = 'Esc or shake head to cancel. Nod to send now.';
+  previewHint.textContent = previewHintText();
   previewCountdown.textContent = `${(previewTotalMs / 1000).toFixed(1)}s`;
   previewFill.style.width = '100%';
   previewCard.classList.add('is-open');
@@ -240,6 +273,8 @@ async function initHud() {
   await listen<DictationConfigLite>('dictation-config-updated', (e) => {
     hudEnabled = e.payload.hudEnabled;
     root.classList.toggle('hud-off', !hudEnabled);
+    if (e.payload.sendMode) sendMode = e.payload.sendMode;
+    if (typeof e.payload.cancelOnSpeech === 'boolean') cancelOnSpeech = e.payload.cancelOnSpeech;
     if (recBadge && typeof e.payload.saveTuningAudioEnabled === 'boolean') {
       recBadge.classList.toggle('hidden', !e.payload.saveTuningAudioEnabled);
     }
@@ -260,7 +295,7 @@ function applyDemo(state: string) {
     cameraEnabled: true,
     hudEnabled: true,
   };
-  document.body.style.background = '#1f2430';
+  document.body.style.background = '#e6d5bd';
   if (state === 'preview') {
     showPreview({
       cleanup: { cleanedText: 'cargo test --release src/main.rs', isDestructiveCommand: false },

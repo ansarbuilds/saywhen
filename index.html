@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light" />
     <title>saywhen</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
-  <body data-state="IDLE">
-    <div class="ambient" aria-hidden="true"></div>
+  <body data-state="IDLE" data-send-mode="pause">
+    <div class="grain" aria-hidden="true"></div>
 
     <div class="app-shell">
       <!-- Sidebar -->
@@ -20,7 +20,7 @@
             <span class="brand-mark-core"></span>
           </div>
           <div class="brand-text">
-            <h1>saywhen</h1>
+            <h1>say<em>when</em></h1>
             <span class="brand-sub">Look. Talk. Sent.</span>
           </div>
         </div>
@@ -28,17 +28,17 @@
         <nav class="nav" id="app-nav" aria-label="Sections">
           <span class="nav-indicator" id="nav-indicator" aria-hidden="true"></span>
           <button class="nav-item is-active" data-tab="home" aria-current="page">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 8.6 10 3.5l6.5 5.1V16a.9.9 0 0 1-.9.9h-3.3v-4.6H7.7v4.6H4.4a.9.9 0 0 1-.9-.9z" /></svg>
+            <span class="nav-num">01</span>
             <span>Home</span>
             <kbd class="nav-kbd" data-mod>1</kbd>
           </button>
           <button class="nav-item" data-tab="preferences">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h7M15 5.5h1M4 10h2M10 10h6M4 14.5h8M16 14.5h0" /><circle cx="13" cy="5.5" r="1.8" /><circle cx="8" cy="10" r="1.8" /><circle cx="14" cy="14.5" r="1.8" /></svg>
-            <span>Preferences</span>
+            <span class="nav-num">02</span>
+            <span>Settings</span>
             <kbd class="nav-kbd" data-mod>2</kbd>
           </button>
           <button class="nav-item" data-tab="lab">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 3.5h4M8.6 3.5v4.4L4.3 15a1.1 1.1 0 0 0 .95 1.6h9.5a1.1 1.1 0 0 0 .95-1.6L11.4 7.9V3.5M6.2 12.2h7.6" /></svg>
+            <span class="nav-num">03</span>
             <span>Lab</span>
             <kbd class="nav-kbd" data-mod>3</kbd>
           </button>
@@ -50,7 +50,7 @@
             <span class="dot" id="ax-dot"></span>
             <span id="ax-text">Checking Accessibility...</span>
           </button>
-          <div class="status-row status-static" id="preroll-pill" title="Audio captured before speech was detected">
+          <div class="status-row status-static" id="preroll-pill" title="Audio kept from just before you started talking, so your first word is never cut off">
             <span class="dot dot-emerald"></span>
             <span>Pre-roll <strong id="preroll-val">500 ms</strong></span>
           </div>
@@ -60,7 +60,7 @@
           </button>
           <div class="privacy-note">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8 4.5 5v4.4c0 3.6 2.4 6.4 5.5 7.8 3.1-1.4 5.5-4.2 5.5-7.8V5z" /></svg>
-            <span>Everything runs on this device</span>
+            <span>Everything stays on this computer</span>
           </div>
         </div>
       </aside>
@@ -69,8 +69,9 @@
       <div class="content">
         <header class="content-header" data-tauri-drag-region>
           <div class="page-heading" data-tauri-drag-region>
+            <span class="page-kicker" data-tauri-drag-region><span class="stage-tag">saywhen</span></span>
             <h2 id="page-title" data-tauri-drag-region>Home</h2>
-            <span id="page-subtitle" data-tauri-drag-region>Dictation and recent history</span>
+            <span id="page-subtitle" data-tauri-drag-region>Talk, check, send</span>
           </div>
           <div class="gate-status-badge" id="pipeline-badge" aria-live="polite">
             <span class="gate-pulse"></span>
@@ -99,11 +100,11 @@
                     <span class="hero-state-word" id="hero-state-word">Idle</span>
                     <span class="hero-sep" aria-hidden="true"></span>
                     <span class="timer-value" id="utterance-timer">00:00.0</span>
-                    <span class="active-tag-pill" id="active-model-pill" title="Active Whisper model">whisper-tiny.en</span>
+                    <span class="active-tag-pill" id="active-model-pill" title="Speech model in use">whisper-tiny.en</span>
                   </div>
                   <h3 class="deck-title" id="deck-status">Ready when you are</h3>
                   <p class="deck-subtitle" id="deck-subtitle">
-                    Turn on the camera gate for hands-free dictation, or press <kbd>Option</kbd> <kbd>Space</kbd>
+                    Turn on the camera to talk hands-free, or press <kbd>Option</kbd> <kbd>Space</kbd>
                   </p>
                 </div>
 
@@ -115,62 +116,62 @@
                   <button
                     id="calibrate-vision-btn"
                     class="btn btn-secondary"
-                    title="Look at your coding screen with a relaxed, closed mouth for 1.5s to calibrate neutral yaw, pitch and resting lip opening"
+                    title="Look at your screen with your mouth closed for 1.5 seconds. saywhen learns where 'looking at the screen' is for you."
                   >
                     <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.2" /><path d="M10 2.8v2.4M10 14.8v2.4M2.8 10h2.4M14.8 10h2.4" /></svg>
-                    <span>Calibrate Gaze (1.5s)</span>
+                    <span>Calibrate (1.5s)</span>
                   </button>
                 </div>
               </div>
 
               <div class="hero-footer">
-                <ol class="state-stepper-bar" aria-label="Pipeline">
+                <ol class="state-stepper-bar" aria-label="What saywhen is doing">
                   <li class="state-step active" id="step-idle">
-                    <span class="step-num">1</span>
+                    <span class="step-num">01</span>
                     <div>
-                      <div class="step-name">Idle</div>
-                      <div class="step-desc">Waiting for you</div>
+                      <div class="step-name">Waiting</div>
+                      <div class="step-desc">Nobody facing the screen</div>
                     </div>
                   </li>
                   <li class="state-step" id="step-armed">
-                    <span class="step-num">2</span>
+                    <span class="step-num">02</span>
                     <div>
-                      <div class="step-name">Armed</div>
-                      <div class="step-desc">Facing the screen</div>
+                      <div class="step-name">Ready</div>
+                      <div class="step-desc">You are looking</div>
                     </div>
                   </li>
                   <li class="state-step" id="step-listening">
-                    <span class="step-num">3</span>
+                    <span class="step-num">03</span>
                     <div>
                       <div class="step-name">Listening</div>
-                      <div class="step-desc">Lips and voice</div>
+                      <div class="step-desc">You are talking</div>
                     </div>
                   </li>
                   <li class="state-step" id="step-transcribing">
-                    <span class="step-num">4</span>
+                    <span class="step-num">04</span>
                     <div>
-                      <div class="step-name">Transcribing</div>
-                      <div class="step-desc">Whisper and cleanup</div>
+                      <div class="step-name">Writing</div>
+                      <div class="step-desc">Turning speech into text</div>
                     </div>
                   </li>
                   <li class="state-step" id="step-preview">
-                    <span class="step-num">5</span>
+                    <span class="step-num">05</span>
                     <div>
-                      <div class="step-name">Preview</div>
-                      <div class="step-desc">Cancel or send</div>
+                      <div class="step-name">Check</div>
+                      <div class="step-desc">Send or cancel</div>
                     </div>
                   </li>
                 </ol>
 
                 <div class="manual-controls">
                   <div class="segmented">
-                    <button id="start-listen-btn" class="seg-btn" title="Start recording manually">
+                    <button id="start-listen-btn" class="seg-btn" title="Start recording by hand">
                       <span class="seg-dot"></span><span>Record</span>
                     </button>
-                    <button id="stop-listen-btn" class="seg-btn" title="Stop and transcribe" disabled>
+                    <button id="stop-listen-btn" class="seg-btn" title="Stop and turn into text" disabled>
                       <span class="btn-icon-square"></span><span>Stop</span>
                     </button>
-                    <button id="cancel-listen-btn" class="seg-btn" title="Discard this utterance" disabled>
+                    <button id="cancel-listen-btn" class="seg-btn" title="Throw this one away" disabled>
                       Cancel
                     </button>
                   </div>
@@ -181,7 +182,7 @@
             <section class="preview-hud hidden" id="preview-hud" aria-live="polite">
               <div class="preview-hud-top">
                 <div class="preview-title-cluster">
-                  <span class="preview-live-pill">Preview</span>
+                  <span class="preview-live-pill">Check</span>
                   <span class="preview-policy-badge" id="preview-policy-badge">Target: Terminal (Paste + Enter)</span>
                 </div>
                 <span class="preview-countdown-text" id="preview-countdown-text">Sending in 1.8s...</span>
@@ -217,17 +218,51 @@
               </div>
             </section>
 
+            <section class="mode-section" aria-labelledby="mode-title">
+              <div class="section-label"><span>A</span><span id="mode-title">How do you want to send?</span></div>
+              <div class="mode-picker" role="radiogroup" aria-labelledby="mode-title">
+                <button class="mode-card" data-send-mode="pause" role="radio" aria-checked="true">
+                  <span class="mode-glyph" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M8 6v12M16 6v12" /></svg>
+                  </span>
+                  <span class="mode-name">Just pause</span>
+                  <span class="mode-desc">Stop talking and it sends after a short countdown. Keep talking, shake your head or press Esc to stop it.</span>
+                </button>
+                <button class="mode-card" data-send-mode="nod" role="radio" aria-checked="false">
+                  <span class="mode-glyph" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="4" /><path d="M12 15v5M9 18l3 3 3-3" /></svg>
+                  </span>
+                  <span class="mode-name">Nod to send</span>
+                  <span class="mode-desc">Nothing is sent until you nod. Shake your head to throw it away.</span>
+                </button>
+                <button class="mode-card" data-send-mode="phrase" role="radio" aria-checked="false">
+                  <span class="mode-glyph" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M4 6h16v9H9l-5 4z" /></svg>
+                  </span>
+                  <span class="mode-name">Say &ldquo;send it&rdquo;</span>
+                  <span class="mode-desc">End with &ldquo;send it&rdquo; to press Enter. Without it, your words are only typed.</span>
+                </button>
+                <button class="mode-card" data-send-mode="paste_only" role="radio" aria-checked="false">
+                  <span class="mode-glyph" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1" /><path d="M9 9h6M9 13h6M9 17h3" /></svg>
+                  </span>
+                  <span class="mode-name">Type only</span>
+                  <span class="mode-desc">Your words are typed but Enter is never pressed. The safest way to start.</span>
+                </button>
+              </div>
+            </section>
+
             <div class="home-grid">
               <section class="card vision-panel">
                 <div class="card-header">
                   <div class="card-title">
                     <h4>Camera</h4>
-                    <span class="card-hint">In memory only</span>
+                    <span class="card-hint">Never saved, never sent</span>
                   </div>
                   <button
                     id="reset-calibration-btn"
                     class="btn-xs btn-quiet"
-                    title="Reset calibrated head pose and resting lip offsets to defaults"
+                    title="Forget your calibration and go back to the defaults"
                   >
                     Reset calibration
                   </button>
@@ -240,8 +275,8 @@
                     <div class="placeholder-icon" aria-hidden="true">
                       <svg viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h9a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 14 18H5a1.5 1.5 0 0 1-1.5-1.5zM15.5 10.5 20.5 7.5v9l-5-3" /></svg>
                     </div>
-                    <p>Camera gate is off</p>
-                    <span>Turn it on to dictate just by looking at the screen and talking.</span>
+                    <p>The camera is off</p>
+                    <span>Turn it on and saywhen starts listening when you look at the screen and talk.</span>
                   </div>
                   <div class="vision-pills">
                     <span class="gauge-tag" id="gaze-pill">GAZE: OFF</span>
@@ -252,7 +287,7 @@
                 <div class="card-footer-row">
                   <span class="v-label">Head gesture</span>
                   <span class="v-val" id="val-gesture">None</span>
-                  <span class="card-footer-hint">Nod to send, shake to cancel</span>
+                  <span class="card-footer-hint">Nod = yes, shake = no</span>
                 </div>
               </section>
 
@@ -260,7 +295,7 @@
                 <div class="card-header">
                   <div class="card-title">
                     <h4>Recent</h4>
-                    <span class="gauge-tag tag-ok" id="history-ttl-badge" title="Utterances older than 7 days are deleted automatically">7d Local</span>
+                    <span class="gauge-tag tag-ok" id="history-ttl-badge" title="Anything older than 7 days is deleted automatically">7d Local</span>
                   </div>
                   <div class="feed-tools">
                     <label class="search-field">
@@ -274,15 +309,15 @@
                         spellcheck="false"
                       />
                     </label>
-                    <button id="clear-feed-btn" class="btn-xs btn-quiet" title="Clear the feed and delete local history">Clear</button>
+                    <button id="clear-feed-btn" class="btn-xs btn-quiet" title="Clear the list and delete saved history">Clear</button>
                   </div>
                 </div>
 
                 <div class="transcript-list" id="transcript-list">
                   <div class="empty-feed" id="empty-feed">
                     <div class="empty-glyph" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-                    <strong>Nothing dictated yet</strong>
-                    <span>Your last 7 days of dictation will appear here, searchable and one click to copy.</span>
+                    <strong>Nothing said yet</strong>
+                    <span>What you say shows up here for 7 days. Click any line to copy it.</span>
                   </div>
                 </div>
               </section>
@@ -291,42 +326,38 @@
             <section class="card issues-panel" id="issues-panel" aria-labelledby="issues-title">
               <div class="card-header">
                 <div class="card-title">
-                  <h4 id="issues-title">Issues</h4>
-                  <span class="card-hint">This session only</span>
+                  <h4 id="issues-title">Problems</h4>
+                  <span class="card-hint">Since you opened the app</span>
                   <span class="gauge-tag" id="issues-count-badge" title="Errors and warnings since launch">0</span>
                 </div>
-                <button id="clear-issues-btn" class="btn-xs btn-quiet" title="Clear the issues list for this session" disabled>
+                <button id="clear-issues-btn" class="btn-xs btn-quiet" title="Clear this list" disabled>
                   Clear
                 </button>
               </div>
               <p class="issues-panel-hint">
-                Dev runs as <strong>saywhen-dev.app</strong> (ribbon Dock icon). In Privacy and Security, remove any old blank <strong>saywhen</strong> entries, quit the app, start <code class="mono-inline">npx tauri dev</code> again, then enable the saywhen entry that shows the purple ribbon icon. Cursor is separate.
+                Building from source on a Mac? The dev build runs as <strong>saywhen-dev.app</strong>. In System Settings, Privacy and Security, remove old <strong>saywhen</strong> entries, quit, run <code class="mono-inline">npx tauri dev</code> again and allow the new entry.
               </p>
               <p class="issues-panel-hint issues-panel-hint-muted">
-                Alerts also appear in the bottom banner. Dismissing the banner does not remove entries here.
+                Alerts also show in the banner at the bottom. Dismissing the banner keeps them here.
               </p>
               <div class="issues-list" id="issues-list">
                 <div class="empty-feed issues-empty" id="issues-empty">
-                  <strong>No issues yet</strong>
-                  <span>
-                    macOS setup prompts (for example Accessibility) and injection failures are saved here so you can copy the text later.
-                  </span>
+                  <strong>No problems so far</strong>
+                  <span>If a permission is missing or typing into an app fails, it is listed here so you can copy the details.</span>
                 </div>
               </div>
             </section>
           </section>
 
-          <!-- PREFERENCES -->
+          <!-- SETTINGS -->
           <section class="view" data-view="preferences" id="view-preferences">
             <div class="prefs">
               <section class="pref-section">
                 <header class="pref-section-head">
-                  <span class="pref-icon pref-icon-voice" aria-hidden="true">
-                    <svg viewBox="0 0 20 20"><rect x="7.5" y="3" width="5" height="9" rx="2.5" /><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5V17" /></svg>
-                  </span>
+                  <span class="pref-num" aria-hidden="true">01</span>
                   <div>
-                    <h3>Voice &amp; Turn-Taking</h3>
-                    <p>How saywhen hears you and decides you are done talking.</p>
+                    <h3>Listening</h3>
+                    <p>How saywhen hears you and knows you are done.</p>
                   </div>
                 </header>
                 <div class="pref-group">
@@ -340,8 +371,8 @@
                   </div>
                   <div class="pref-row">
                     <div class="pref-text">
-                      <label class="field-label" for="model-select">Whisper model</label>
-                      <span class="pref-desc">Runs locally on the GPU</span>
+                      <label class="field-label" for="model-select">Speech model</label>
+                      <span class="pref-desc">Bigger models are more accurate but a little slower. All run on this computer.</span>
                     </div>
                     <div class="pref-control pref-control-inline">
                       <button id="download-model-btn" class="btn-xs btn-accent hidden">Download</button>
@@ -350,35 +381,25 @@
                   </div>
                   <div class="pref-row pref-row-slider">
                     <div class="pref-text">
-                      <label class="field-label" for="vad-thresh-slider">Speech sensitivity</label>
-                      <span class="pref-desc">Voice activity threshold. Higher ignores more background noise.</span>
+                      <label class="field-label" for="vad-thresh-slider">Noise filter</label>
+                      <span class="pref-desc">Turn it up if background noise starts recordings by mistake.</span>
                     </div>
                     <div class="pref-control slider-control">
                       <input type="range" id="vad-thresh-slider" min="0.20" max="0.80" step="0.05" value="0.45" class="range-slider" />
                       <span class="mono-val" id="vad-thresh-display">0.45</span>
                     </div>
                   </div>
-                  <div class="pref-row pref-row-slider">
-                    <div class="pref-text">
-                      <label class="field-label" for="preview-countdown-slider">Preview countdown</label>
-                      <span class="pref-desc">How long you get to cancel before text is sent.</span>
-                    </div>
-                    <div class="pref-control slider-control">
-                      <input type="range" id="preview-countdown-slider" min="800" max="3500" step="100" value="1800" class="range-slider" />
-                      <span class="mono-val" id="preview-countdown-display">1800 ms</span>
-                    </div>
-                  </div>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Hands-free camera gate</div>
-                      <div class="toggle-desc">Start listening when you face the screen, your lips move and speech is detected.</div>
+                      <div class="toggle-title">Hands-free with the camera</div>
+                      <div class="toggle-desc">Start listening when you face the screen, your lips move and you talk.</div>
                     </div>
                     <input type="checkbox" id="toggle-hands-free" checked />
                   </label>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Battery saver frame rate</div>
-                      <div class="toggle-desc">15 FPS while active, dropping to 8 or 5 FPS when you look away.</div>
+                      <div class="toggle-title">Battery saver</div>
+                      <div class="toggle-desc">Check the camera less often while you look away.</div>
                     </div>
                     <input type="checkbox" id="toggle-adaptive-fps" checked />
                   </label>
@@ -387,47 +408,55 @@
 
               <section class="pref-section">
                 <header class="pref-section-head">
-                  <span class="pref-icon pref-icon-delivery" aria-hidden="true">
-                    <svg viewBox="0 0 20 20"><path d="M3.5 10 16.5 4l-4.5 12.5-2.6-5.1z" /><path d="m9.4 11.4 7.1-7.4" /></svg>
-                  </span>
+                  <span class="pref-num" aria-hidden="true">02</span>
                   <div>
-                    <h3>Delivery &amp; App Rules</h3>
-                    <p>Where your words go, and when Enter gets pressed.</p>
+                    <h3>Sending</h3>
+                    <p>Where your words go and when Enter is pressed. Pick a send style on Home.</p>
                   </div>
                 </header>
                 <div class="pref-group">
+                  <div class="pref-row pref-row-slider">
+                    <div class="pref-text">
+                      <label class="field-label" for="preview-countdown-slider">Countdown</label>
+                      <span class="pref-desc">How long you get to read and cancel before it sends.</span>
+                    </div>
+                    <div class="pref-control slider-control">
+                      <input type="range" id="preview-countdown-slider" min="800" max="3500" step="100" value="1800" class="range-slider" />
+                      <span class="mono-val" id="preview-countdown-display">1800 ms</span>
+                    </div>
+                  </div>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Auto-press Enter</div>
-                      <div class="toggle-desc">Press Return after pasting into allowed terminals and agents.</div>
+                      <div class="toggle-title">Talking cancels the countdown</div>
+                      <div class="toggle-desc">Say &ldquo;cancel&rdquo; or &ldquo;wait&rdquo; while it counts down and nothing is sent.</div>
                     </div>
-                    <input type="checkbox" id="toggle-auto-enter" checked />
+                    <input type="checkbox" id="toggle-cancel-on-speech" checked />
                   </label>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Cancelable preview</div>
-                      <div class="toggle-desc">Show a countdown before sending. Cancel with Esc, a head shake or the button.</div>
+                      <div class="toggle-title">Show the check step</div>
+                      <div class="toggle-desc">Shows your text before sending. Turning this off sends straight away (not in Nod mode).</div>
                     </div>
                     <input type="checkbox" id="toggle-preview" checked />
                   </label>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Per-app rules and destructive guard</div>
-                      <div class="toggle-desc">Enter only in allowlisted apps. Chat, email and commands like rm -rf stay paste only.</div>
+                      <div class="toggle-title">Safe apps only</div>
+                      <div class="toggle-desc">Enter is only pressed in the apps listed below. Chat, email and risky commands like rm -rf are only typed.</div>
                     </div>
                     <input type="checkbox" id="toggle-per-app" checked />
                   </label>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Floating HUD</div>
-                      <div class="toggle-desc">Always-on-top status pill. Closing this window keeps saywhen running.</div>
+                      <div class="toggle-title">Floating status pill</div>
+                      <div class="toggle-desc">A small pill that stays on top of other windows. Closing this window keeps saywhen running.</div>
                     </div>
                     <input type="checkbox" id="toggle-hud" checked />
                   </label>
                   <div class="pref-row pref-row-stack">
                     <div class="pref-text">
-                      <label class="field-label" for="allowlist-input">Auto-Enter allowlist</label>
-                      <span class="pref-desc">Comma separated app names. Everything else is paste only.</span>
+                      <label class="field-label" for="allowlist-input">Apps where Enter can be pressed</label>
+                      <span class="pref-desc">Separate names with commas. Every other app only gets typed text.</span>
                     </div>
                     <input
                       type="text"
@@ -438,8 +467,8 @@
                   </div>
                   <div class="pref-row pref-row-stack">
                     <div class="pref-text">
-                      <label class="field-label" for="custom-vocab-input">Custom vocabulary</label>
-                      <span class="pref-desc">Project names and identifiers, spelled exactly how you want them.</span>
+                      <label class="field-label" for="custom-vocab-input">Words to always spell right</label>
+                      <span class="pref-desc">Project names and tools, written exactly how you want them.</span>
                     </div>
                     <input
                       type="text"
@@ -454,26 +483,24 @@
 
               <section class="pref-section">
                 <header class="pref-section-head">
-                  <span class="pref-icon pref-icon-privacy" aria-hidden="true">
-                    <svg viewBox="0 0 20 20"><path d="M10 2.8 4.5 5v4.4c0 3.6 2.4 6.4 5.5 7.8 3.1-1.4 5.5-4.2 5.5-7.8V5z" /><path d="m7.6 10 1.7 1.7 3.2-3.4" /></svg>
-                  </span>
+                  <span class="pref-num" aria-hidden="true">03</span>
                   <div>
-                    <h3>AI &amp; Privacy</h3>
-                    <p>Cleanup passes and what is kept on disk.</p>
+                    <h3>Clean-up &amp; privacy</h3>
+                    <p>How your words get tidied and what is kept.</p>
                   </div>
                 </header>
                 <div class="pref-group">
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Developer code cleanup</div>
-                      <div class="toggle-desc">Fixes CLI homophones like kubectl and npm, turns "dash dash" into --, and applies your vocabulary.</div>
+                      <div class="toggle-title">Fix developer words</div>
+                      <div class="toggle-desc">Turns &ldquo;dash dash release&rdquo; into --release, fixes tool names like kubectl and npm, and uses your word list.</div>
                     </div>
                     <input type="checkbox" id="toggle-cleanup" checked />
                   </label>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">LLM cleanup <span class="badge-optin">Opt-in</span></div>
-                      <div class="toggle-desc">Send the cleaned transcript to local Ollama or your own OpenAI-compatible endpoint. 1.2s timeout.</div>
+                      <div class="toggle-title">AI clean-up <span class="badge-optin">Opt-in</span></div>
+                      <div class="toggle-desc">Sends the text (never audio or video) to a local Ollama or your own AI endpoint for extra polish.</div>
                     </div>
                     <input type="checkbox" id="toggle-llm-cleanup" />
                   </label>
@@ -489,13 +516,13 @@
                   </div>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Keep 7 days of history</div>
-                      <div class="toggle-desc">Save recent transcripts in the app data folder. Older entries are deleted automatically. Turn off to keep history in memory only.</div>
+                      <div class="toggle-title">Remember 7 days of history</div>
+                      <div class="toggle-desc">Keeps what you said on this computer, then deletes it after a week. Turn off to forget everything when you quit.</div>
                     </div>
                     <input type="checkbox" id="toggle-history-persistence" checked />
                   </label>
                 </div>
-                <p class="pref-footnote">Settings save automatically.</p>
+                <p class="pref-footnote">Changes save by themselves.</p>
               </section>
             </div>
           </section>
@@ -506,13 +533,13 @@
               <section class="card chart-panel lab-span">
                 <div class="card-header">
                   <div class="card-title">
-                    <h4>Multimodal Fusion Timeline</h4>
-                    <span class="card-hint">Silero VAD, mic RMS and speech gate</span>
+                    <h4>Live sound</h4>
+                    <span class="card-hint">Voice detector, loudness and the start line</span>
                   </div>
                   <div class="chart-legend">
-                    <span class="legend-item"><i class="swatch swatch-vad"></i>VAD</span>
-                    <span class="legend-item"><i class="swatch swatch-rms"></i>RMS</span>
-                    <span class="legend-item"><i class="swatch swatch-thresh"></i>Gate</span>
+                    <span class="legend-item"><i class="swatch swatch-vad"></i>Voice</span>
+                    <span class="legend-item"><i class="swatch swatch-rms"></i>Loudness</span>
+                    <span class="legend-item"><i class="swatch swatch-thresh"></i>Start line</span>
                   </div>
                 </div>
                 <div class="chart-container">
@@ -520,17 +547,17 @@
                 </div>
                 <div class="mini-gauges-row">
                   <div class="mini-gauge">
-                    <span class="v-label">Silero VAD</span>
+                    <span class="v-label">Voice (Silero VAD)</span>
                     <strong id="val-vad-prob">0.00</strong>
                     <span class="gauge-tag" id="vad-state-tag">SILENCE</span>
                   </div>
                   <div class="mini-gauge">
-                    <span class="v-label">Mic RMS</span>
+                    <span class="v-label">Mic loudness</span>
                     <strong id="val-rms">0.000</strong>
                     <span class="gauge-tag" id="mic-device-tag">Default Mic</span>
                   </div>
                   <div class="mini-gauge">
-                    <span class="v-label">Whisper latency</span>
+                    <span class="v-label">Speech to text time</span>
                     <strong id="val-latency">-- ms</strong>
                     <span class="gauge-tag" id="rtf-tag">RTF --</span>
                   </div>
@@ -540,49 +567,49 @@
               <section class="card">
                 <div class="card-header">
                   <div class="card-title">
-                    <h4>Vision telemetry</h4>
-                    <span class="card-hint">Derived numbers only</span>
+                    <h4>Camera numbers</h4>
+                    <span class="card-hint">Only numbers, never pictures</span>
                   </div>
                 </div>
                 <dl class="stat-list">
-                  <div><dt>Yaw / Pitch</dt><dd class="v-val" id="val-pose">0.0&deg; / 0.0&deg;</dd></div>
-                  <div><dt>MAR / Variance</dt><dd class="v-val" id="val-mar">0.000 / 0.00</dd></div>
-                  <div><dt>Calibrated center</dt><dd class="v-val" id="val-calibration">0.0&deg; / 0.0&deg; | 0.016</dd></div>
+                  <div><dt>Head turn / tilt</dt><dd class="v-val" id="val-pose">0.0&deg; / 0.0&deg;</dd></div>
+                  <div><dt>Mouth open / movement</dt><dd class="v-val" id="val-mar">0.000 / 0.00</dd></div>
+                  <div><dt>Your calibrated center</dt><dd class="v-val" id="val-calibration">0.0&deg; / 0.0&deg; | 0.016</dd></div>
                 </dl>
               </section>
 
               <section class="card">
                 <div class="card-header">
                   <div class="card-title">
-                    <h4>Session</h4>
-                    <span class="card-hint">Since launch</span>
+                    <h4>This session</h4>
+                    <span class="card-hint">Since you opened the app</span>
                   </div>
                 </div>
                 <dl class="stat-list">
-                  <div><dt>Canceled sends</dt><dd class="sample-counter-value" id="canceled-sends-stat">0 saved</dd></div>
-                  <div><dt>False triggers</dt><dd class="sample-counter-value" id="false-trigger-stat">0 (0.0%)</dd></div>
+                  <div><dt>Sends you canceled</dt><dd class="sample-counter-value" id="canceled-sends-stat">0 saved</dd></div>
+                  <div><dt>Started by mistake</dt><dd class="sample-counter-value" id="false-trigger-stat">0 (0.0%)</dd></div>
                 </dl>
               </section>
 
               <section class="card lab-span">
                 <div class="card-header">
                   <div class="card-title">
-                    <h4>Tuning data</h4>
-                    <span class="card-hint">Opt-in, stored locally, for improving turn-taking</span>
+                    <h4>Help improve saywhen</h4>
+                    <span class="card-hint">Off by default, stays on this computer</span>
                   </div>
                 </div>
                 <div class="pref-group pref-group-flat">
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Session metrics log</div>
-                      <div class="toggle-desc">Per-utterance timing and VAD stats as JSONL. No transcript text, no audio.</div>
+                      <div class="toggle-title">Timing log</div>
+                      <div class="toggle-desc">Saves timing numbers for each recording. No words, no audio.</div>
                     </div>
                     <input type="checkbox" id="toggle-session-metrics" />
                   </label>
                   <label class="toggle-row">
                     <div>
-                      <div class="toggle-title">Save utterance audio</div>
-                      <div class="toggle-desc">16 kHz WAV plus vision sidecar in recordings/. Resets on restart and shows a REC badge in the HUD.</div>
+                      <div class="toggle-title">Save recordings</div>
+                      <div class="toggle-desc">Saves each recording as a WAV file in recordings/. Turns itself off when you restart and shows REC in the pill.</div>
                     </div>
                     <input type="checkbox" id="toggle-save-audio" />
                   </label>
@@ -592,19 +619,19 @@
               <section class="card terminal-panel lab-span">
                 <div class="card-header">
                   <div class="card-title">
-                    <h4>Cleanup sandbox</h4>
-                    <span class="card-hint">Try: "um, cargo test dash dash release"</span>
+                    <h4>Practice box</h4>
+                    <span class="card-hint">Try: &ldquo;um, cargo test dash dash release&rdquo;</span>
                   </div>
                   <div class="terminal-header-actions">
                     <button id="clear-terminal-btn" class="btn-xs btn-quiet">Clear</button>
-                    <button id="demo-cleanup-btn" class="btn-xs btn-accent" title="Run a sample spoken command through cleanup and preview">
-                      Simulate preview
+                    <button id="demo-cleanup-btn" class="btn-xs btn-accent" title="Run a sample sentence through clean-up and the check step">
+                      Try a sample
                     </button>
                   </div>
                 </div>
                 <div class="terminal-box">
                   <div class="terminal-history" id="terminal-history">
-                    <div class="term-line term-muted"># Focus the input below and speak, or click Simulate preview</div>
+                    <div class="term-line term-muted"># Click the line below, look at the screen and talk, or press Try a sample</div>
                   </div>
                   <div class="terminal-input-row">
                     <span class="term-prompt">saywhen ~ %</span>
@@ -612,7 +639,7 @@
                       type="text"
                       id="terminal-input"
                       class="terminal-input"
-                      placeholder="Click here, look at the screen, and speak"
+                      placeholder="Click here, look at the screen, and talk"
                       autocomplete="off"
                       spellcheck="false"
                     />
@@ -628,7 +655,7 @@
             <span class="error-badge" aria-hidden="true">!</span>
             <div class="error-banner-copy">
               <span id="error-banner-text"></span>
-              <span class="error-banner-hint" id="error-banner-hint">Saved below in Issues on Home.</span>
+              <span class="error-banner-hint" id="error-banner-hint">Also saved under Problems on Home.</span>
             </div>
           </div>
           <button id="error-dismiss-btn" class="btn-xs btn-quiet">Dismiss</button>
@@ -639,11 +666,37 @@
     <div class="modal-backdrop hidden" id="onboarding-modal">
       <div class="modal-card" role="dialog" aria-labelledby="onboarding-title">
         <div class="modal-header">
-          <div class="modal-mark" aria-hidden="true"><span class="brand-mark-core"></span></div>
-          <h2 class="modal-title" id="onboarding-title">Welcome to saywhen</h2>
-          <p class="modal-sub">Hands-free voice input for terminals and coding agents. Look at the screen, talk, and it is sent.</p>
+          <span class="modal-kicker">Welcome</span>
+          <h2 class="modal-title" id="onboarding-title">Look. Talk. <em>Sent.</em></h2>
+          <p class="modal-sub">saywhen types what you say into your terminal or coding assistant. No buttons, no hotkeys. It only listens while you are looking at the screen and talking.</p>
           <button id="onboarding-close-btn" class="modal-close" aria-label="Close">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8" /></svg>
+          </button>
+        </div>
+
+        <ol class="ob-how">
+          <li><span>01</span><strong>Look</strong> at the screen.</li>
+          <li><span>02</span><strong>Talk</strong> like you would to a person.</li>
+          <li><span>03</span><strong>Stop.</strong> Check the text, and it is sent.</li>
+        </ol>
+
+        <div class="ob-section-label">Pick how you want to send. You can change it any time on Home.</div>
+        <div class="mode-picker mode-picker-compact" role="radiogroup" aria-label="How do you want to send?">
+          <button class="mode-card" data-send-mode="pause" role="radio" aria-checked="true">
+            <span class="mode-name">Just pause</span>
+            <span class="mode-desc">Sends after a short countdown.</span>
+          </button>
+          <button class="mode-card" data-send-mode="nod" role="radio" aria-checked="false">
+            <span class="mode-name">Nod to send</span>
+            <span class="mode-desc">Waits for your nod.</span>
+          </button>
+          <button class="mode-card" data-send-mode="phrase" role="radio" aria-checked="false">
+            <span class="mode-name">Say &ldquo;send it&rdquo;</span>
+            <span class="mode-desc">Enter only when you say so.</span>
+          </button>
+          <button class="mode-card" data-send-mode="paste_only" role="radio" aria-checked="false">
+            <span class="mode-name">Type only</span>
+            <span class="mode-desc">Never presses Enter.</span>
           </button>
         </div>
 
@@ -651,32 +704,32 @@
           <div class="ob-step">
             <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="7.5" y="3" width="5" height="9" rx="2.5" /><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5V17" /></svg></div>
             <div>
-              <div class="ob-title">On-device speech</div>
-              <div class="ob-desc">Silero VAD and Whisper run locally. A 500 ms pre-roll keeps your first syllable.</div>
+              <div class="ob-title">Microphone</div>
+              <div class="ob-desc">Speech is turned into text on this computer. Audio is thrown away right after.</div>
             </div>
             <div class="ob-badge ob-ok">Ready</div>
           </div>
           <div class="ob-step">
             <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z" /><circle cx="10" cy="10" r="2.2" /></svg></div>
             <div>
-              <div class="ob-title">Private camera gate</div>
-              <div class="ob-desc">Frames stay in memory and are dropped instantly. Only head pose and lip numbers are used.</div>
+              <div class="ob-title">Camera</div>
+              <div class="ob-desc">Only checks if you are facing the screen and your lips are moving. Pictures are never saved or sent.</div>
             </div>
-            <div class="ob-badge ob-ok">In memory</div>
+            <div class="ob-badge ob-ok">Private</div>
           </div>
           <div class="ob-step">
             <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="11" rx="2" /><path d="m6.5 8.5 2 1.5-2 1.5M10.5 12h3" /></svg></div>
             <div>
-              <div class="ob-title">Accessibility permission</div>
-              <div class="ob-desc">Needed to paste into your terminal. Chat apps and destructive commands stay paste only.</div>
+              <div class="ob-title">Accessibility</div>
+              <div class="ob-desc">Lets saywhen type into other apps. Click the badge to open the setting if it is not allowed yet.</div>
             </div>
             <div class="ob-badge ob-ok" id="ob-ax-badge">TRUSTED</div>
           </div>
         </div>
 
         <div class="modal-footer">
-          <span class="card-hint">You can reopen this from Setup guide in the sidebar.</span>
-          <button id="onboarding-done-btn" class="btn btn-primary">Start dictating</button>
+          <span class="card-hint">Open this again from Setup guide in the sidebar.</span>
+          <button id="onboarding-done-btn" class="btn btn-primary">Start talking</button>
         </div>
       </div>
     </div>
