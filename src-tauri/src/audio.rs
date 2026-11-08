@@ -14,14 +14,15 @@ use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 use crate::turn_taking::{
     append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
     ends_with_connective, evaluate_arming_hysteresis, evaluate_audio_stream_health,
-    has_minimum_speech_evidence, is_within_arm_exit_cone, resolve_recordings_dir,
+    has_minimum_speech_evidence, is_within_arm_exit_cone, preview_deadline, resolve_recordings_dir,
     sanitize_discarded_reason_for_metrics, save_tuning_utterance_wav_and_sidecar,
-    should_auto_start, silence_countdown_ms, ArmingHysteresisState, AudioStreamRecoveryAction,
-    EndReason, GateInputs, RecordedVisionSample, TuningRecordingSidecar, TurnState,
-    TurnTakingConfig, UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
+    should_auto_start, should_cancel_preview_on_speech, silence_countdown_ms,
+    ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs, PreviewDeadline,
+    RecordedVisionSample, SendMode, TuningRecordingSidecar, TurnState, TurnTakingConfig,
+    UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
     DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
     DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
-    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
+    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, NOD_WAIT_TIMEOUT_MS,
     SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -104,6 +105,12 @@ pub struct DictationConfig {
     pub cleanup_enabled: bool,
     pub preview_enabled: bool,
     pub preview_countdown_ms: u64,
+    /// How a finished utterance gets sent: "pause" | "nod" | "phrase" | "paste_only".
+    #[serde(default)]
+    pub send_mode: SendMode,
+    /// Talking during the preview countdown cancels it.
+    #[serde(default = "default_true")]
+    pub cancel_on_speech: bool,
     pub cancel_on_look_away: bool,
     pub per_app_rules_enabled: bool,
     pub auto_send_allowlist: Vec<String>,
@@ -267,6 +274,8 @@ impl Default for DictationConfig {
             cleanup_enabled: true,
             preview_enabled: true,
             preview_countdown_ms: 1800,
+            send_mode: SendMode::Pause,
+            cancel_on_speech: true,
             cancel_on_look_away: false,
             per_app_rules_enabled: true,
             auto_send_allowlist: default_auto_send_allowlist(),
@@ -408,6 +417,9 @@ pub struct AudioTelemetryEvent {
     pub partial_transcript: String,
     #[serde(default)]
     pub partial_ends_with_connective: bool,
+    /// Active send mode, so the HUD can show the right hint while you talk.
+    #[serde(default)]
+    pub send_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +430,10 @@ pub struct PreviewStartedEvent {
     pub target_policy: AppTargetPolicy,
     pub countdown_ms: u64,
     pub trigger_source: String,
+    /// The send mode that was active when this preview started.
+    pub send_mode: String,
+    /// True when this preview waits for a nod (or Enter) instead of counting down.
+    pub waits_for_nod: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -440,6 +456,8 @@ pub struct PendingPreviewItem {
     pub utterance_id: u64,
     pub started_at: Instant,
     pub countdown_ms: u64,
+    pub send_mode: SendMode,
+    pub waits_for_nod: bool,
     pub transcription: TranscriptionResult,
     pub cleanup: CleanupResult,
     pub target_policy: AppTargetPolicy,
@@ -1349,10 +1367,14 @@ fn run_audio_worker(
                         target_policy: item.target_policy.clone(),
                         countdown_ms: item.countdown_ms,
                         trigger_source: item.trigger_source.clone(),
+                        send_mode: item.send_mode.as_str().to_string(),
+                        waits_for_nod: item.waits_for_nod,
                     };
                     {
                         let mut guard = shared.lock().unwrap();
                         guard.state = PipelineState::PREVIEW;
+                        // Fresh count so speech that ended the turn is not read as "cancel".
+                        guard.consecutive_vad_frames = 0;
                         guard.pending_preview = Some(item);
                     }
                     let _ = app_handle.emit("preview-started", evt);
@@ -1575,6 +1597,7 @@ fn run_audio_worker(
                             session_metrics_enabled: cfg.session_metrics_enabled,
                             partial_transcript: String::new(),
                             partial_ends_with_connective: false,
+                            send_mode: cfg.send_mode.as_str().to_string(),
                         },
                     );
 
@@ -1713,9 +1736,10 @@ fn run_audio_worker(
                                 }
 
                                 let front_app = detect_frontmost_app();
-                                let wants_enter = (cfg_snapshot.auto_press_enter
-                                    || transcription.end_phrase_triggered)
-                                    && !cleanup.force_paste_only;
+                                let wants_enter = cfg_snapshot.send_mode.wants_enter(
+                                    cfg_snapshot.auto_press_enter,
+                                    transcription.end_phrase_triggered,
+                                ) && !cleanup.force_paste_only;
                                 let mut target_policy = evaluate_app_injection_policy(
                                     &front_app,
                                     wants_enter,
@@ -1748,10 +1772,19 @@ fn run_audio_worker(
                                     None
                                 };
 
+                                let waits_for_nod = cfg_snapshot
+                                    .send_mode
+                                    .preview_waits_for_nod(captured.end_reason);
                                 let item = PendingPreviewItem {
                                     utterance_id: captured.utterance_id,
                                     started_at: Instant::now(),
-                                    countdown_ms: cfg_snapshot.preview_countdown_ms,
+                                    countdown_ms: if waits_for_nod {
+                                        NOD_WAIT_TIMEOUT_MS
+                                    } else {
+                                        cfg_snapshot.preview_countdown_ms
+                                    },
+                                    send_mode: cfg_snapshot.send_mode,
+                                    waits_for_nod,
                                     transcription,
                                     cleanup,
                                     target_policy,
@@ -1763,7 +1796,10 @@ fn run_audio_worker(
                                     tuning_capture,
                                 };
 
-                                if cfg_snapshot.preview_enabled && cfg_snapshot.auto_inject {
+                                // Nod mode always needs the preview: it is where the nod is read.
+                                if (cfg_snapshot.preview_enabled || waits_for_nod)
+                                    && cfg_snapshot.auto_inject
+                                {
                                     let _ = tx_for_preview.send(AudioCommand::BeginPreview(item));
                                 } else {
                                     {
@@ -1795,19 +1831,31 @@ fn run_audio_worker(
         let preview_expired = {
             let guard = shared.lock().unwrap();
             if guard.state == PipelineState::PREVIEW {
-                if let Some(ref item) = guard.pending_preview {
-                    item.started_at.elapsed().as_millis() as u64 >= item.countdown_ms
-                } else {
-                    false
-                }
+                guard.pending_preview.as_ref().and_then(|item| {
+                    preview_deadline(
+                        item.waits_for_nod,
+                        item.started_at.elapsed().as_millis() as u64,
+                        item.countdown_ms,
+                    )
+                })
             } else {
-                false
+                None
             }
         };
 
-        if preview_expired {
-            let _ = cmd_tx_self.send(AudioCommand::ConfirmPreviewNow(None));
+        match preview_expired {
+            Some(PreviewDeadline::Send) => {
+                let _ = cmd_tx_self.send(AudioCommand::ConfirmPreviewNow(None));
+            }
+            Some(PreviewDeadline::GiveUp) => {
+                let _ = cmd_tx_self.send(AudioCommand::CancelPreview(format!(
+                    "No nod within {} seconds, so nothing was sent",
+                    NOD_WAIT_TIMEOUT_MS / 1000
+                )));
+            }
+            None => {}
         }
+        let mut cancel_preview_for_speech = false;
 
         // Process pending 512-sample chunks through Silero VAD
         let mut should_auto_stop: Option<EndReason> = None;
@@ -1847,6 +1895,23 @@ fn run_audio_worker(
                 guard.last_vad_voice_at_ms = Some(now_ms);
             } else {
                 guard.consecutive_vad_frames = 0;
+            }
+
+            if guard.state == PipelineState::PREVIEW && !cancel_preview_for_speech {
+                let elapsed = guard
+                    .pending_preview
+                    .as_ref()
+                    .map(|p| p.started_at.elapsed().as_millis() as u64)
+                    .unwrap_or(0);
+                if should_cancel_preview_on_speech(
+                    cfg.cancel_on_speech,
+                    elapsed,
+                    guard.consecutive_vad_frames,
+                    guard.is_vision_fresh(),
+                    guard.vision.lips_moving,
+                ) {
+                    cancel_preview_for_speech = true;
+                }
             }
 
             if guard.state == PipelineState::ARMED
@@ -1952,6 +2017,12 @@ fn run_audio_worker(
             }
         }
 
+        if cancel_preview_for_speech {
+            let _ = cmd_tx_self.send(AudioCommand::CancelPreview(
+                "You started talking, so the send was canceled".to_string(),
+            ));
+        }
+
         if should_auto_start_listening {
             let _ = cmd_tx_self.send(AudioCommand::StartListening(
                 "hands_free_multimodal".to_string(),
@@ -2013,6 +2084,7 @@ fn run_audio_worker(
                     session_metrics_enabled: cfg.session_metrics_enabled,
                     partial_transcript: guard.partial_transcript.clone(),
                     partial_ends_with_connective: guard.partial_ends_with_connective,
+                    send_mode: cfg.send_mode.as_str().to_string(),
                 }
             };
             let _ = app_handle.emit("audio-telemetry", payload);

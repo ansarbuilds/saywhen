@@ -1,7 +1,10 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { isMac, refreshRangeFills, setAudioLevel, setUiState } from './ui';
+import './fonts';
+import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
+
+type SendMode = 'pause' | 'nod' | 'phrase' | 'paste_only';
 
 interface DictationConfig {
   handsFreeEnabled: boolean;
@@ -12,6 +15,8 @@ interface DictationConfig {
   cleanupEnabled: boolean;
   previewEnabled: boolean;
   previewCountdownMs: number;
+  sendMode: SendMode;
+  cancelOnSpeech: boolean;
   cancelOnLookAway: boolean;
   perAppRulesEnabled: boolean;
   autoSendAllowlist: string[];
@@ -133,6 +138,8 @@ interface PreviewStartedEvent {
   targetPolicy: AppTargetPolicy;
   countdownMs: number;
   triggerSource: string;
+  sendMode?: SendMode;
+  waitsForNod?: boolean;
 }
 
 interface InjectionOutcome {
@@ -167,6 +174,8 @@ let currentConfig: DictationConfig = {
   cleanupEnabled: true,
   previewEnabled: true,
   previewCountdownMs: 1800,
+  sendMode: 'pause',
+  cancelOnSpeech: true,
   cancelOnLookAway: false,
   perAppRulesEnabled: true,
   autoSendAllowlist: [
@@ -214,6 +223,7 @@ let currentConfig: DictationConfig = {
 let modelsCatalog: ModelInfo[] = [];
 let selectedModelId = 'tiny.en';
 let activePreviewTotalMs = 1800;
+let activePreviewWaitsForNod = false;
 let simulatedPreviewTimer: number | null = null;
 
 // Stage 3 & 4 Telemetry
@@ -243,6 +253,13 @@ const VISION_TICK_IDLE_NO_FACE_MS = 200; // 5.0 FPS when no face in frame > 3s (
 let currentVisionTickMs = VISION_TICK_ACTIVE_MS;
 let lastFaceOnScreenTimestamp = 0;
 let currentPipelineState = 'IDLE';
+const STATE_LABELS: Record<string, string> = {
+  IDLE: 'Waiting',
+  ARMED: 'Ready',
+  LISTENING: 'Listening',
+  TRANSCRIBING: 'Writing',
+  PREVIEW: 'Check',
+};
 let calibratingUntilTimestamp = 0;
 const calibrationSamples: { yaw: number; pitch: number; mar: number }[] = [];
 
@@ -392,7 +409,8 @@ const toggleCleanup = document.getElementById('toggle-cleanup') as HTMLInputElem
 const togglePreview = document.getElementById('toggle-preview') as HTMLInputElement;
 const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputElement;
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
-const toggleAutoEnter = document.getElementById('toggle-auto-enter') as HTMLInputElement;
+const toggleCancelOnSpeech = document.getElementById('toggle-cancel-on-speech') as HTMLInputElement;
+const sendModeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-send-mode]'));
 const toggleHud = document.getElementById('toggle-hud') as HTMLInputElement;
 const toggleAdaptiveFps = document.getElementById('toggle-adaptive-fps') as HTMLInputElement;
 const toggleHistoryPersistence = document.getElementById('toggle-history-persistence') as HTMLInputElement;
@@ -619,6 +637,7 @@ function updateModelDownloadButtonState() {
 
 function showPreviewBanner(ev: PreviewStartedEvent) {
   activePreviewTotalMs = ev.countdownMs || 1800;
+  activePreviewWaitsForNod = Boolean(ev.waitsForNod);
   previewHud.classList.remove('hidden');
   previewTextInput.value = ev.cleanup.cleanedText;
 
@@ -643,9 +662,48 @@ function showPreviewBanner(ev: PreviewStartedEvent) {
     previewPolicyBadge.textContent = `Target: ${ev.targetPolicy.appName} (Paste + Auto-Enter)`;
   }
 
-  previewCountdownText.textContent = `Sending in ${(activePreviewTotalMs / 1000).toFixed(1)}s...`;
+  previewCountdownText.textContent = previewCountdownLabel(activePreviewTotalMs);
   previewProgressFill.style.width = '100%';
 }
+
+function previewCountdownLabel(remainingMs: number): string {
+  const secs = `${(Math.max(0, remainingMs) / 1000).toFixed(1)}s`;
+  if (activePreviewWaitsForNod) return `Waiting for your nod (${secs})`;
+  return `Sending in ${secs}...`;
+}
+
+function listeningHint(): string {
+  switch (currentConfig.sendMode) {
+    case 'nod':
+      return 'Nod when you are done. Shake your head to cancel.';
+    case 'phrase':
+      return 'End with "send it" to press Enter, or just stop talking to only type it.';
+    case 'paste_only':
+      return 'Stop talking when you are done. Your words are typed without pressing Enter.';
+    default:
+      return 'Stop talking when you are done, or nod to finish now.';
+  }
+}
+
+function renderSendMode() {
+  for (const btn of sendModeButtons) {
+    const on = btn.dataset.sendMode === currentConfig.sendMode;
+    btn.classList.toggle('is-selected', on);
+    btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  setSendModeUi(currentConfig.sendMode);
+}
+
+for (const btn of sendModeButtons) {
+  btn.addEventListener('click', () => {
+    const mode = btn.dataset.sendMode as SendMode;
+    if (mode === currentConfig.sendMode) return;
+    currentConfig = { ...currentConfig, sendMode: mode };
+    renderSendMode();
+    void syncConfigToBackend();
+  });
+}
+renderSendMode();
 
 function hidePreviewBanner() {
   if (simulatedPreviewTimer !== null) {
@@ -662,7 +720,7 @@ function updatePipelineUiState(
   postRollActive = false
 ) {
   currentPipelineState = state;
-  pipelineStateLabel.textContent = state;
+  pipelineStateLabel.textContent = STATE_LABELS[state] ?? state;
   pipelineBadge.className = 'gate-status-badge';
   commandDeck.classList.remove('is-armed', 'is-listening');
 
@@ -677,18 +735,25 @@ function updatePipelineUiState(
   if (state === 'PREVIEW') {
     const pct = Math.max(0, Math.min(100, (previewRemainingMs / activePreviewTotalMs) * 100));
     previewProgressFill.style.width = `${pct}%`;
-    previewCountdownText.textContent = `Sending in ${(previewRemainingMs / 1000).toFixed(1)}s...`;
-    deckStatus.textContent = 'Review before it sends';
-    deckSubtitle.textContent = 'Press Esc or shake your head to cancel. Press Enter or nod to send now.';
+    previewCountdownText.textContent = previewCountdownLabel(previewRemainingMs);
+    if (activePreviewWaitsForNod) {
+      deckStatus.textContent = 'Nod to send';
+      deckSubtitle.textContent = 'Nod or press Enter to send it. Shake your head or press Esc to throw it away.';
+    } else {
+      deckStatus.textContent = 'Check it, then it sends';
+      deckSubtitle.textContent = currentConfig.cancelOnSpeech
+        ? 'To stop it, say "cancel", shake your head or press Esc. Nod or press Enter to send now.'
+        : 'To stop it, shake your head or press Esc. Nod or press Enter to send now.';
+    }
     startListenBtn.disabled = true;
     stopListenBtn.disabled = true;
     cancelListenBtn.disabled = false;
   } else if (state === 'ARMED') {
     pipelineBadge.classList.add('state-armed');
     commandDeck.classList.add('is-armed');
-    deckStatus.textContent = 'Armed. Start talking';
+    deckStatus.textContent = 'Ready. Start talking';
     deckSubtitle.textContent =
-      'You are facing the screen. A 500 ms pre-roll catches your very first syllable.';
+      'You are looking at the screen. Just start talking, your first word will not be cut off.';
     utteranceTimer.textContent = '00:00.0';
     startListenBtn.disabled = false;
     stopListenBtn.disabled = true;
@@ -699,23 +764,23 @@ function updatePipelineUiState(
     deckStatus.textContent = 'Listening';
     deckSubtitle.textContent = postRollActive
       ? 'Got your nod. Capturing a short tail, then transcribing...'
-      : 'Pause and close your mouth, say "send it", or nod to finish.';
+      : listeningHint();
     utteranceTimer.textContent = formatDurationMs(listeningDurationMs);
     startListenBtn.disabled = true;
     stopListenBtn.disabled = false;
     cancelListenBtn.disabled = false;
   } else if (state === 'TRANSCRIBING') {
     pipelineBadge.classList.add('state-transcribing');
-    deckStatus.textContent = 'Transcribing';
-    deckSubtitle.textContent = 'Whisper on the GPU, then a developer cleanup pass.';
+    deckStatus.textContent = 'Writing it down';
+    deckSubtitle.textContent = 'Turning your speech into text, right here on this computer.';
     startListenBtn.disabled = true;
     stopListenBtn.disabled = true;
     cancelListenBtn.disabled = true;
   } else {
-    deckStatus.textContent = cameraRunning ? 'Look at the screen to arm' : 'Ready when you are';
+    deckStatus.textContent = cameraRunning ? 'Look at the screen to start' : 'Ready when you are';
     const idleSubtitle = cameraRunning
-      ? 'Face your monitor and saywhen arms itself. Look away to pause.'
-      : `Turn on the camera gate for hands-free dictation, or press <kbd>${isMac ? 'Option' : 'Alt'}</kbd> <kbd>Space</kbd>`;
+      ? 'Look at your screen and start talking. Look away and it stops listening.'
+      : `Turn on the camera to talk hands-free, or press <kbd>${isMac ? 'Option' : 'Alt'}</kbd> <kbd>Space</kbd>`;
     if (deckSubtitle.innerHTML !== idleSubtitle) {
       deckSubtitle.innerHTML = idleSubtitle;
     }
@@ -807,7 +872,7 @@ async function toggleCameraGate() {
     webcamVideo.srcObject = null;
     webcamPlaceholder.classList.remove('hidden');
     toggleCameraBtn.classList.remove('camera-active');
-    toggleCameraLabel.textContent = 'Enable Camera Gate';
+    toggleCameraLabel.textContent = 'Turn on camera';
     fpsPill.textContent = 'FPS: OFF';
     fpsPill.className = 'gauge-tag';
     gazePill.textContent = 'GAZE: OFF';
@@ -825,7 +890,7 @@ async function toggleCameraGate() {
 
   try {
     toggleCameraBtn.disabled = true;
-    toggleCameraLabel.textContent = 'Loading MediaPipe...';
+    toggleCameraLabel.textContent = 'Starting camera...';
     await ensureFaceLandmarker();
 
     mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -839,11 +904,11 @@ async function toggleCameraGate() {
     cameraRunning = true;
     webcamPlaceholder.classList.add('hidden');
     toggleCameraBtn.classList.add('camera-active');
-    toggleCameraLabel.textContent = 'Pause Camera Gate';
+    toggleCameraLabel.textContent = 'Turn off camera';
     startVisionTicker();
   } catch (err) {
     showError(`Camera initialization error: ${String(err)}`);
-    toggleCameraLabel.textContent = 'Enable Camera Gate';
+    toggleCameraLabel.textContent = 'Turn on camera';
   } finally {
     toggleCameraBtn.disabled = false;
   }
@@ -855,7 +920,7 @@ function drawLipLandmarks(landmarks: NormalizedLandmark[], facing: boolean, lips
   overlayCtx.clearRect(0, 0, w, h);
 
   const lipIndices = [78, 308, 13, 14, 82, 87, 312, 317];
-  overlayCtx.fillStyle = lipsMoving ? '#f43f5e' : facing ? '#10b981' : '#f59e0b';
+  overlayCtx.fillStyle = lipsMoving ? '#ff8a5f' : facing ? '#00aebb' : '#e6d5bd';
   for (const idx of lipIndices) {
     const pt = landmarks[idx];
     if (!pt) continue;
@@ -1172,7 +1237,7 @@ function drawVadChart() {
   const h = vadCanvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.045)';
+  ctx.strokeStyle = 'rgba(230, 213, 189, 0.08)';
   ctx.lineWidth = 1;
   for (const frac of [0.25, 0.5, 0.75]) {
     const y = h * frac;
@@ -1184,7 +1249,7 @@ function drawVadChart() {
 
   const threshY = h - currentConfig.vadThreshold * (h - 16) - 8;
   ctx.save();
-  ctx.strokeStyle = 'rgba(255, 95, 126, 0.6)';
+  ctx.strokeStyle = 'rgba(255, 138, 95, 0.75)';
   ctx.setLineDash([5 * dpr, 5 * dpr]);
   ctx.lineWidth = 1.5 * dpr;
   ctx.beginPath();
@@ -1205,7 +1270,7 @@ function drawVadChart() {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = 'rgba(52, 211, 153, 0.85)';
+  ctx.strokeStyle = 'rgba(0, 174, 187, 0.9)';
   ctx.lineWidth = 1.5 * dpr;
   ctx.stroke();
 
@@ -1217,7 +1282,7 @@ function drawVadChart() {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#8b7cff';
+  ctx.strokeStyle = '#e6d5bd';
   ctx.lineWidth = 2 * dpr;
   ctx.lineJoin = 'round';
   ctx.stroke();
@@ -1227,8 +1292,8 @@ function drawVadChart() {
   ctx.lineTo(0, h);
   ctx.closePath();
   const fill = ctx.createLinearGradient(0, 0, 0, h);
-  fill.addColorStop(0, 'rgba(139, 124, 255, 0.28)');
-  fill.addColorStop(1, 'rgba(139, 124, 255, 0)');
+  fill.addColorStop(0, 'rgba(230, 213, 189, 0.22)');
+  fill.addColorStop(1, 'rgba(230, 213, 189, 0)');
   ctx.fillStyle = fill;
   ctx.fill();
 }
@@ -1399,7 +1464,10 @@ async function syncConfigToBackend() {
     perAppRulesEnabled: togglePerApp.checked,
     autoSendAllowlist: allowlist,
     customVocab: customVocabInput.value.trim(),
-    autoPressEnter: toggleAutoEnter.checked,
+    // Enter is decided by the send mode now; app rules and the destructive guard still apply.
+    autoPressEnter: true,
+    sendMode: currentConfig.sendMode,
+    cancelOnSpeech: toggleCancelOnSpeech.checked,
     hudEnabled: toggleHud.checked,
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
     historyPersistenceEnabled: toggleHistoryPersistence.checked,
@@ -1468,7 +1536,15 @@ async function initApp() {
     togglePreview.checked = currentConfig.previewEnabled;
     togglePerApp.checked = currentConfig.perAppRulesEnabled;
     toggleHandsFree.checked = currentConfig.handsFreeEnabled;
-    toggleAutoEnter.checked = currentConfig.autoPressEnter;
+    // Older settings files: "Auto-press Enter" off meant type only.
+    if (!currentConfig.sendMode) currentConfig.sendMode = 'pause';
+    if (currentConfig.autoPressEnter === false && currentConfig.sendMode === 'pause') {
+      currentConfig.sendMode = 'paste_only';
+      currentConfig.autoPressEnter = true;
+      void invoke('update_dictation_config', { config: currentConfig }).catch(() => undefined);
+    }
+    toggleCancelOnSpeech.checked = currentConfig.cancelOnSpeech !== false;
+    renderSendMode();
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
@@ -1770,7 +1846,11 @@ toggleCleanup.addEventListener('change', syncConfigToBackend);
 togglePreview.addEventListener('change', syncConfigToBackend);
 togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
-toggleAutoEnter.addEventListener('change', syncConfigToBackend);
+toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
+obAxBadge?.addEventListener('click', () => {
+  if (accessibilityPermissionTrusted) return;
+  void invoke('request_accessibility_settings').catch((err) => showError(String(err)));
+});
 toggleHud.addEventListener('change', syncConfigToBackend);
 toggleAdaptiveFps.addEventListener('change', syncConfigToBackend);
 toggleHistoryPersistence.addEventListener('change', syncConfigToBackend);
@@ -1935,7 +2015,7 @@ function applyDocumentationDemoState(demoMode: string) {
     if (stageTagEl) stageTagEl.textContent = 'STAGE 3: GATED AUTO START/STOP';
     cameraRunning = true;
     toggleCameraBtn.classList.add('camera-active');
-    toggleCameraLabel.textContent = 'Pause Camera Gate';
+    toggleCameraLabel.textContent = 'Turn off camera';
     webcamPlaceholder.classList.add('hidden');
 
     // Draw synthetic privacy-safe face & lip landmark mesh on webcam overlay
@@ -1991,7 +2071,7 @@ function applyDocumentationDemoState(demoMode: string) {
   } else if (demoMode === 'stage4') {
     cameraRunning = true;
     toggleCameraBtn.classList.add('camera-active');
-    toggleCameraLabel.textContent = 'Pause Camera Gate';
+    toggleCameraLabel.textContent = 'Turn off camera';
     webcamPlaceholder.classList.add('hidden');
 
     webcamOverlay.width = 640;

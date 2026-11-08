@@ -234,6 +234,15 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Cross-platform release packaging workflow (`.github/workflows/release.yml`):**
      - Builds macOS Apple Silicon (`aarch64-apple-darwin`) and Windows x64 Tauri desktop bundles via `tauri-apps/tauri-action@v0` on `v*` tags and `workflow_dispatch`.
 
+## Improvement #12: Send modes, talk-to-cancel, editorial redesign and plain-language docs
+- **Status:** Implemented on 2026-11-08 (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `src/ui.ts`, `src/hud.ts`, `src/fonts.ts`, `index.html`, `src/style.css`, `src/hud.css`, `README.md`, `INSTALL_WITH_AI.md`, `docs/HOW_IT_WORKS.md`, `docs/HOW_WE_BUILT_IT.md`). All 39 Rust unit tests and the frontend build pass. UI verified in the browser preview with the `?demo=` states. Not yet verified: send modes and talk-to-cancel end to end in the packaged desktop app with a real camera and microphone, and on Windows.
+- **Recommended model:** Gemini 4 (send modes change preview timing inside the audio worker state machine).
+- **What changed:**
+  1. **Send modes (`SendMode` in `turn_taking.rs`, `send_mode` in `DictationConfig`):** `pause` (default, same behavior as before), `nod` (preview waits up to `NOD_WAIT_TIMEOUT_MS = 15,000 ms` for a nod, Enter or the hotkey, then gives up without sending), `phrase` (Enter only when the utterance ends with "send it"), `paste_only` (never Enter). A nod that ends the turn in `nod` mode counts as the go-ahead and gets the normal cancelable countdown. App rules and the destructive command guard still downgrade any mode to paste only. Older settings with `autoPressEnter: false` migrate to `paste_only`.
+  2. **Talk to cancel (`should_cancel_preview_on_speech`, `cancel_on_speech`):** speech during the preview cancels it after a `350 ms` grace period and at least `6` consecutive VAD frames (about `190 ms`). With fresh vision the lips must be moving too, so other voices in the room do not cancel. Default on.
+  3. **Editorial redesign:** warm ivory, soft black and burnt orange, with the whole window easing into a different palette for each pipeline state (registered `@property` colors, `0.9 s` ease). Plus Jakarta Sans, Instrument Serif, JetBrains Mono and Outfit are bundled through `@fontsource` so the UI still renders offline. HUD pill and check card restyled to match, with nod-aware hints.
+  4. **Plain-language copy and docs:** UI states renamed (Waiting, Ready, Listening, Writing, Check), Settings rewritten for non-technical users, README rewritten, plus an assistant-driven installer guide and two explainer docs.
+
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
