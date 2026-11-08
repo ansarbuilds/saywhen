@@ -266,6 +266,7 @@ Each stage has an exit criterion. Do not start the next stage until the current 
   3. **Final check:** the full transcript must still start with the wake word (after up to three fillers like "hmm, alright"). The wake word is stripped and the rest takes the normal cleanup, check step and send path. A bare wake word is discarded with a short notice.
   4. **Matching:** position strict, spelling loose. The default word also matches Whisper's usual spellings (Evie, EV, E.V., IV, Ivy and others). "Every time..." or "ask Eevee later" do not match.
   5. **UI:** a Calibrate button on the camera card, and Home and HUD hints while a candidate is being checked.
+  6. **Fixes after the first real test (1 success in 4 tries):** the Whisper model loads lazily, so the start gate now checks the model file instead of `is_loaded`. A natural pause after "Eevee" no longer ends the turn: an unconfirmed candidate ignores silence for up to `4 s`, and after a bare wake word saywhen waits up to `2.5 s` for the command. The early check only drops a candidate when it clearly heard `3+` words without the wake word; an empty or one-word result is left to the full transcript. The default word also matches by sound (Evy, Eve, Eevie and so on), while Even, Evil, Eva, Ever and Eleven do not. Decisions are logged to the terminal as `[saywhen wake] ...` with word counts only, never the text.
 
 ## Stage 6: Later
 - **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
