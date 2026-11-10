@@ -1,6 +1,7 @@
 // Presentation-only helpers for the main window: sidebar navigation, view
 // transitions, slider fills, the state orb's live audio level and hero copy
 // swap animation. Nothing here talks to the backend.
+import { bootStage } from './stage';
 
 type TabId = 'home' | 'preferences' | 'lab' | 'guide';
 
@@ -171,3 +172,4 @@ function initNav() {
 }
 
 initNav();
+bootStage();
