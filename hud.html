@@ -18,15 +18,18 @@
         <div class="preview-hint" id="hud-preview-hint">Esc or shake head to cancel. Nod to send now.</div>
       </section>
 
-      <div class="pill" id="hud-pill">
-        <img class="pill-logo" src="/src/assets/logo.png" alt="" width="20" height="20" draggable="false" />
-        <span class="pill-dot" id="hud-dot"></span>
-        <span class="pill-label" id="hud-label">IDLE</span>
-        <span class="pill-rec hidden" id="hud-rec" title="Saving 16 kHz utterance WAV files to recordings/">REC WAV</span>
-        <span class="pill-meter" id="hud-meter" aria-hidden="true">
-          <i></i><i></i><i></i><i></i><i></i>
-        </span>
-        <span class="pill-detail" id="hud-detail">Starting...</span>
+      <div class="pill-wrap">
+        <span class="pill-bloom" aria-hidden="true"></span>
+        <div class="pill" id="hud-pill">
+          <img class="pill-logo" src="/src/assets/logo.png" alt="" width="20" height="20" draggable="false" />
+          <span class="pill-dot" id="hud-dot"></span>
+          <span class="pill-label" id="hud-label">IDLE</span>
+          <span class="pill-rec hidden" id="hud-rec" title="Saving 16 kHz utterance WAV files to recordings/">REC WAV</span>
+          <span class="pill-meter" id="hud-meter" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </span>
+          <span class="pill-detail" id="hud-detail">Starting...</span>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/hud.ts"></script>
