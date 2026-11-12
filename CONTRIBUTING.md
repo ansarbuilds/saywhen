@@ -9,7 +9,7 @@ Thanks for wanting to help. Bug reports, tuning data and small fixes are all wel
 
 ## Set up
 
-You need Node.js 20 or newer, Rust and CMake (see the README).
+You need Node.js 20 or newer, Rust and CMake (see the README). The Rust version is pinned in `rust-toolchain.toml`, and rustup installs it for you. Please be kind and patient with each other: see the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ```bash
 npm install

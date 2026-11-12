@@ -248,7 +248,7 @@ The film and the animations on this page are illustrations of the interface. Onl
 | [src-tauri/src/inject.rs](src-tauri/src/inject.rs) | Typing into other apps, per-app rules, front-app detection |
 | [src/main.ts](src/main.ts) | Camera, head gestures, main window |
 
-**[How we built it](docs/HOW_WE_BUILT_IT.md)** · **[Vision](docs/VISION.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Roadmap](docs/ROADMAP.md)** · **[Contributing](CONTRIBUTING.md)** · **[Security](SECURITY.md)**
+**[How we built it](docs/HOW_WE_BUILT_IT.md)** · **[Vision](docs/VISION.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Roadmap](docs/ROADMAP.md)** · **[Contributing](CONTRIBUTING.md)** · **[Code of Conduct](CODE_OF_CONDUCT.md)** · **[Security](SECURITY.md)**
 
 ## License
 
