@@ -18,8 +18,8 @@ Record the version, OS version, hardware and result for each applicable platform
 
 | Gate | Apple Silicon | Intel Mac | Windows x64 |
 | --- | --- | --- | --- |
-| Clean checkout: `npm ci`, `npm test`, `npm run check:release`, `npm run build` | Pending CI | Pending CI | Pending CI |
-| Locked Rust tests pass | Local pass | Pending | Pending |
+| Clean checkout: `npm ci`, `npm test`, `npm run check:release`, `npm run build` | Local pass on 2026-11-12 (macOS 27.0.1, M4, existing checkout); CI pending | Pending CI | Pending CI |
+| Locked Rust tests pass | Local pass on 2026-11-12 (45 passed, 3 ignored) | Pending | Pending |
 | Release installer builds and opens on a fresh account | Pending | Pending | Pending |
 | Camera, microphone and typing permissions: deny, retry, grant | Pending | Pending | Pending |
 | Download Tiny, interrupt the download, retry, restart | Pending | Pending | Pending |
@@ -59,5 +59,3 @@ The GPU benchmark crashed inside Metal allocation in the restricted agent sessio
 - The current webview CSP is disabled. A restrictive policy needs testing with MediaPipe WASM, blob workers and Tauri IPC before enabling it.
 - Review optional remote cleanup and API-key storage before advertising it for sensitive work.
 - Real-user accuracy, CPU and battery results are still needed. Existing replay numbers are synthetic-corpus results.
-
-Next action model: Gemini 4, because desktop permission flows, multimodal timing and cross-platform injection need careful integration reasoning.

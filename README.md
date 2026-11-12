@@ -11,7 +11,7 @@
 
 No hotkey to hold. Your voice and camera stay on this computer. You see the words before they go anywhere.
 
-[Watch it](#watch-it) · [Who it's for](#who-its-for) · [How it works](#how-it-works) · [Install](#install) · [Safe to try](#safe-to-try) · [For Claude and Cursor](#for-coding-assistants) · [Project page](https://ansarbuilds.dev/p/saywhen/)
+[Watch it](#watch-it) · [How it works](#how-it-works) · [Safe to try](#safe-to-try) · [Install](#install) · [For Claude and Cursor](#for-coding-assistants) · [Who it's for](#who-its-for) · [Project page](https://ansarbuilds.dev/p/saywhen/)
 
 **Beta**, for Mac and Windows. Real-device checks for signed Mac builds, Intel Macs, and Windows are still open. [Launch checklist](docs/LAUNCH_CHECKLIST.md).
 
@@ -21,25 +21,9 @@ No hotkey to hold. Your voice and camera stay on this computer. You see the word
 
 https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 
-*Sixty seconds, with voice and sound. It is an animation of the idea, not a screen recording, and its timing is not a speed measurement.*
+*Sixty seconds, with voice and sound.*
 
 No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
-
----
-
-## Who it's for
-
-[![A keyboard rests in a glass case. Behind it, out of focus, a person sits at a laptop with both hands off the keys.](docs/visuals/keyboard-museum.jpg)](https://ansarbuilds.dev/p/saywhen/#who)
-
-*Six silent seconds. The keyboard stays in the case. GitHub cannot play it here, so [watch the loop on the project page](https://ansarbuilds.dev/p/saywhen/#who). It is a film, not a measurement.*
-
-[![At home, both hands rest off the keyboard while a small pill glows above an amber laptop screen.](docs/visuals/who-its-for.jpg)](https://ansarbuilds.dev/p/saywhen/#who)
-
-*Then the office. At home the hands stay down. At the office the pill is dark.*
-
-Talk on the days you work from home. In the 2025 Stack Overflow Developer Survey, **32.4%** of developers worked fully remotely and **37.1%** were hybrid. **12.6%** could choose, and **17.9%** worked in an office. In the US, **45%** worked fully remotely. Those shares are the people who answered the work question. They are not a count of who wants voice input.
-
-**62%** of developers in the JetBrains 2025 survey regularly use an AI coding assistant or agent. saywhen is a hands-free way to talk to one. At the office, stay quiet: **Type only** never presses Enter, and the keyboard shortcut still starts listening.
 
 ---
 
@@ -58,7 +42,7 @@ The camera and the microphone have to agree. A camera cannot tell chewing from t
 
 ![saywhen Home showing the cancelable preview and four send styles, using demo data.](docs/screenshots/stage4-cleanup-preview.png)
 
-*The Home screen, captured in browser demo mode. Demo data, not a live recording.*
+*The Home screen, in the app's demo mode.*
 
 A manual shortcut always exists: **Option + Space** on Mac, **Alt + Space** on Windows. That starts and stops listening with no camera.
 
@@ -211,6 +195,16 @@ A person opened this repository in Claude, Cursor, or a similar tool. Read this 
 
 ---
 
+## Who it's for
+
+[![A keyboard rests in a glass case. Behind it, out of focus, a person sits at a laptop with both hands off the keys.](docs/visuals/keyboard-museum.jpg)](https://ansarbuilds.dev/p/saywhen/#who)
+
+People who talk to a coding agent all day and would rather not hold a key to do it. **62%** of developers in the JetBrains 2025 survey regularly use an AI coding assistant or agent, and in the 2025 Stack Overflow survey **32.4%** worked fully remotely and **37.1%** hybrid. Those numbers describe where developers work. They do not count who wants voice input.
+
+Talk on the days you work from home. At the office, stay quiet: **Type only** never presses Enter, and the keyboard shortcut still starts listening. The [project page](https://ansarbuilds.dev/p/saywhen/#who) has the short film this still comes from.
+
+---
+
 ## For developers
 
 saywhen is a [Tauri v2](https://tauri.app) app. Rust runs the engine. TypeScript draws the window.
@@ -227,7 +221,7 @@ On a Mac, if `cargo` is not on your PATH:
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH"
 ```
 
-The animations on this page are illustrations. Their timing is not a measurement.
+The film and the animations on this page are illustrations of the interface, not screen recordings. Their timing is not a measurement. The numbers below are.
 
 | Part | What we measured | Result |
 | --- | --- | --- |
