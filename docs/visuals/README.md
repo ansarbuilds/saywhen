@@ -17,6 +17,7 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 | `keyboard-museum.jpg` | Still from that loop, the keyboard in the case. |
 | `who-its-for.mp4` | Eight-second film loop: home with the pill, the light to the screen, then the office. No words in the picture. Timing is not a measurement. |
 | `who-its-for.jpg` | Still from that loop, used where a video cannot play. |
+| `real-run.mp4`, `real-run.gif`, `real-run.jpg` | A real 23-second screen recording, in real time and without sound: a spoken request goes into Cursor. Cropped to hide the sidebar, menu bar and dock. |
 
 The GIF is an explanatory animation, not an app recording. Its timing must not be presented as measured transcription latency. Existing screenshots in `../screenshots/` are browser demo captures, not proof of native permission or injection behavior.
 

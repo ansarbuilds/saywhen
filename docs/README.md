@@ -15,6 +15,7 @@ Start with what you want to do. The user guides explain the app in plain languag
 | Have my coding assistant help me install | [Install with AI](../INSTALL_WITH_AI.md) |
 | Understand the camera, microphone and preview | [How it works](HOW_IT_WORKS.md) |
 | Check what has actually been verified | [Launch checklist](LAUNCH_CHECKLIST.md) |
+| Write the posts for launch day | [Launch template](LAUNCH_TEMPLATE.md) |
 | Report something that failed | [Open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose) |
 
 ## Understand the project
