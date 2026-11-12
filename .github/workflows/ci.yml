@@ -25,7 +25,7 @@ jobs:
       - name: Check for disallowed em dashes in docs and source
         shell: bash
         run: |
-          if git grep "—" -- docs/ src/ src-tauri/ index.html README.md CLAUDE.md; then
+          if git grep -I "—" -- docs/ src/ src-tauri/ index.html README.md CLAUDE.md; then
             echo "Error: Disallowed em dash found in tracked files."
             exit 1
           fi

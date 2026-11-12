@@ -47,4 +47,3 @@ If the person asked you to install, run, or try saywhen, do that before any code
 
 - Do not use em dashes in docs or code comments.
 - Model files (`*.bin`, `*.gguf`, `*.onnx`) and recordings never get committed.
-- **Model selection guidance:** At the end of each response proposing or guiding next steps, always specify which model to run for the next action (Gemini 3.8 Flash vs Gemini 4) and explain why in one clear sentence.

@@ -8,13 +8,11 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Stage 0: Prior-art search
 - **Status:** Skipped on 2026-11-01 (User directed focus directly to prototype feasibility and open-source implementation).
-- **Recommended model:** Gemini 3.8 Flash (rapid web retrieval, tool feature extraction, and table synthesis).
 - Work through the checklist in [PRIOR_ART.md](PRIOR_ART.md).
 - Exit: a written summary of who has built webcam-gated or lip-triggered voice input, how it worked, and what is left that is worth building.
 
 ## Stage 1: Feasibility spike
 - **Status:** Completed on 2026-11-01 (Spike built in `spikes/stage1-mediapipe/`).
-- **Recommended model:** Gemini 3.8 Flash (straightforward frontend TypeScript, Vite setup, and canvas chart rendering).
 - Minimal page running MediaPipe Face Landmarker, plotting MAR and head yaw live.
 - Test at the real desk: with and without glasses, different lighting (day, night, backlit), different camera angles and distances.
 - Record labeled sessions: talking, silent, yawning, chewing, smiling, turned away.
@@ -30,7 +28,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Stage 2: Handy-core dictation
 - **Status:** Completed on 2026-11-02 (Tauri v2 + Rust audio core in `src-tauri/`).
-- **Recommended model:** Gemini 4 (requires deep reasoning for Rust audio streaming with cpal, lock-free ring buffers, and thread safety).
 - Rebuild the basics, studying Handy for patterns: cpal capture, Silero VAD, whisper.cpp / Parakeet, text injection, manual hotkey.
 - **Empirical Measurements (VERIFIED):**
   - Audio Pipeline: 16 kHz mono resampling with 500 ms (`8,000` samples) circular pre-roll ring buffer and 32 ms (`512` samples) Silero VAD v5 ONNX chunks.
@@ -40,7 +37,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Stage 3: Gated auto start/stop
 - **Status:** Built and active on 2026-11-02 (Multimodal vision + audio state machine wired in `src/` and `src-tauri/`).
-- **Recommended model:** Gemini 4 (complex multimodal synchronization between vision IPC timestamps and audio buffer boundaries).
 - Wire the visual gate into the state machine (IDLE > ARMED > LISTENING > TRANSCRIBING).
 - Ring buffer so the first syllable is not clipped.
 - Head gestures (`nod` = transcribe now, `shake` = cancel) and end phrase stripping (`"send it"`).
@@ -49,7 +45,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Stage 4: Cleanup, preview, auto-Enter
 - **Status:** Built and active on 2026-11-02 (`src-tauri/src/cleanup.rs`, `src-tauri/src/inject.rs`, `src/main.ts`).
-- **Recommended model:** Gemini 3.8 Flash (fast iteration on preview UI components, countdown timers, and prompt engineering).
 - AI cleanup pass (local deterministic developer rules or opt-in BYOK) that keeps code identifiers, paths (`slash`, `dot rs`, `dot ts`) and CLI flags (`dash dash release` -> `--release`) intact while stripping filler words.
 - Cancelable preview HUD with live countdown (`1.8s` default), instant `Esc` / head-shake cancel, and `Enter` / head-nod confirm.
 - Auto-Enter with per-app rules (`lsappinfo` frontmost app detection: auto-send in terminals and coding agents, paste-only in chat apps and email, plus destructive command guard for `rm -rf`, `git reset --hard`, etc.).
@@ -57,7 +52,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Stage 5: Windows, polish, go public
 - **Status:** Completed on 2026-11-02 (`src-tauri/src/inject.rs`, `src-tauri/src/audio.rs`, `index.html`, `README.md`, `docs/screenshots/`).
-- **Recommended model:** Gemini 3.8 Flash (cross-platform configuration tweaks, docs, onboarding UI).
 - Windows support (WebView2, PowerShell Win32 `GetForegroundWindow` detection, `Ctrl+V` clipboard injection).
 - Onboarding modal with privacy & permissions checklist, camera permission UX, and persistent `settings.local.json` configuration.
 - Automated headless Chrome screenshot pipeline (`scripts/capture-screenshots.sh`) capturing Stages 1 to 5 in `docs/screenshots/`.
@@ -75,7 +69,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #2: Injection reliability
 - **Status:** Implemented on 2026-11-03 on branch `feat/injection-reliability` (`src-tauri/src/inject.rs`, `src-tauri/src/inject/macos.rs`, `src-tauri/src/inject/windows.rs`, `src-tauri/src/inject/tests.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/lib.rs`, `src/main.ts`, `src/hud.ts`). All 13 Rust unit tests and frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 4 (cross-platform native OS APIs via `objc2-app-kit` and `windows-sys`, process token elevation, Carbon secure input, and race-free clipboard/keystroke state transitions).
 - **What changed:**
   1. Re-detects the frontmost app immediately before injecting and compares against the preview target (`same_target_app`). If the target changed during the countdown, Enter is never pressed (`onTargetChanged: "abort" | "paste_only"`, default `"abort"`).
   2. Replaced substring allowlist matching with exact name, macOS bundle ID, and Windows `.exe` matching (`Xcode` no longer matches `Code`), removed `saywhen` from the default allowlist, and added an unconditional self-injection block (`is_saywhen_app`).
@@ -102,7 +95,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #3: Turn-taking robustness
 - **Status:** Implemented and benchmarked on macOS (Apple M4) on 2026-11-04 on branch `feat/turn-taking` (`src-tauri/src/turn_taking.rs`, `src-tauri/src/bin/replay.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/transcribe.rs`, `src-tauri/src/lib.rs`, `src/main.ts`, `src/hud.ts`). All 22 Rust unit tests, the 56-utterance offline replay benchmark, and the frontend build pass with zero compiler warnings. Not yet measured on Windows hardware.
-- **Recommended model:** Gemini 4 (multimodal state machine hysteresis, pure start/stop extraction for deterministic WAV + vision replay, adaptive end-of-turn timing, and data-driven VAD threshold calibration).
 - **What changed:**
   1. **Measurement harness and offline replay (`src-tauri/src/turn_taking.rs`, `src-tauri/src/bin/replay.rs`):**
      - Added opt-in `sessionMetricsEnabled` (default `false`), writing one JSON line per utterance to `<app_data_dir>/session-metrics.jsonl` (never to the repo) with trigger source, lip-to-listening ms, utterance length, speech frames, speech duration ms, peak VAD, end reason, post-roll ms, transcript character length, discarded reason, outcome, and user `"Flag False Trigger"` clicks (`flag_false_trigger` command). **No transcript text and no audio** ever appear in `session-metrics.jsonl` (verified by `test_session_metrics_log_never_contains_transcript_text`).
@@ -137,7 +129,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #4: Vision calibration, adaptive FPS, and chewing/smiling separation
 - **Status:** Implemented on 2026-11-04 on branch `feat/vision-calibration` (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `index.html`, `src/style.css`). All 25 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 4 (MediaPipe blendshape signal fusion, median pose/MAR calibration math, and adaptive Worker timer scheduling).
 - **What changed:**
   1. **Per-user gaze and resting MAR calibration (`compute_calibration_baseline`, `#calibrate-vision-btn`, `#reset-calibration-btn`):**
      - Added `calibratedYawOffsetDeg`, `calibratedPitchOffsetDeg`, and `calibratedRestingMar` (`0.016` default) to `DictationConfig` (`#[serde(default)]` backward-compatible with existing `settings.local.json`).
@@ -149,7 +140,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #5: Developer CLI homophone cleanup, thinking-pause stitching, and custom vocabulary
 - **Status:** Implemented and benchmarked on 2026-11-04 on branch `feat/developer-vocab-cleanup` (`src-tauri/src/cleanup.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/bin/replay.rs`, `src/main.ts`, `index.html`). All 27 Rust unit tests, the 56-utterance offline replay benchmark, and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 3.8 Flash (deterministic developer vocabulary rules, custom vocabulary UI wiring, and replay benchmark metric).
 - **What changed:**
   1. **Phonetic CLI homophone recovery (`src-tauri/src/cleanup.rs`):**
      - Added deterministic corrections for phonetic substitutions that Whisper `tiny.en` / `base.en` make on developer CLI commands (`"Cubectal"` -> `"kubectl"`, `"NTM RunBuild"` -> `"npm run build"`, `"Get status"` -> `"git status"`, `"Get If Had"` -> `"git diff head"`, `"Good Log Onaline"` -> `"git log oneline"`, `"Get Stash Pot"` -> `"git stash pop"`, `"Rust Up Update"` -> `"rustup update"`, `"Cargo FM T-Check"` -> `"cargo fmt check"`, `"SRC Torrey"` -> `"src-tauri"`, `"Czechmain.ts"` -> `"check main.ts"`, `"architecture dock"` -> `"architecture doc"`).
@@ -165,7 +155,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #6: Local 7-day utterance history, search filter, and one-click purge
 - **Status:** Implemented on 2026-11-04 on branch `feat/utterance-history` (`src-tauri/src/history.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/lib.rs`, `src/main.ts`, `index.html`, `src/style.css`). All 29 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 3.8 Flash (local 7-day JSONL history persistence, TTL pruning, and UI search/clear wiring).
 - **What changed:**
   1. **7-day auto-pruned local history (`src-tauri/src/history.rs`):**
      - Persists completed utterances in `<app_data_dir>/utterance-history.jsonl` (never inside the repo) when `historyPersistenceEnabled` (default `true`) is enabled.
@@ -178,7 +167,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #7: Audio hot-plug recovery, sleep/lock cooldown, and packaged model path resolution
 - **Status:** Implemented on 2026-11-04 on branch `feat/audio-resilience` (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src-tauri/src/transcribe.rs`, `src-tauri/src/lib.rs`, `src/main.ts`). All 31 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 4 (real-time `cpal` stream health monitoring, preferred-device hot-plug state recovery, wall-clock sleep/wake race prevention, and packaged `.app`/`.exe` model storage resolution).
 - **What changed:**
   1. **Automatic microphone hot-plug recovery and preferred-device restoration (`evaluate_audio_stream_health`, `AUDIO_STREAM_STALL_TIMEOUT_MS = 2,500 ms`):**
      - Tracks `last_audio_callback_at` and `stream_faulted` in `SharedCaptureBuffer`. When a Bluetooth headset (AirPods) or USB mic disconnects (`StreamError` or `>= 2,500 ms` callback stall), the audio worker automatically rebuilds the `cpal` stream on the fallback default input device, emits `"audio-devices-changed"` so the UI dropdown refreshes live, and surfaces a clear notice (`test_audio_hotplug_recovery_and_preferred_device_restore`).
@@ -191,7 +179,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #8: Spoken self-correction ("scratch that"), paste-only voice override ("paste only"), and GitHub Actions CI
 - **Status:** Implemented on 2026-11-04 on branch `feat/voice-overrides-and-ci` (`src-tauri/src/cleanup.rs`, `src-tauri/src/audio.rs`, `.github/workflows/ci.yml`, `README.md`, `CLAUDE.md`). All 32 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 3.8 Flash (deterministic spoken self-correction and delivery override rules, CI workflow YAML, and README/docs synchronization).
 - **What changed:**
   1. **Mid-utterance `"scratch that"` self-correction (`apply_scratch_that_correction`):**
      - Discards any misspoken clause before the last `"scratch that"` in an utterance (for example `"cargo build, scratch that, cargo test --all-targets"` -> `"cargo test --all-targets"`), or cancels the entire utterance if nothing follows `"scratch that"`.
@@ -204,7 +191,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #9: Modular injection split, Linux X11/Wayland detection, and macOS + Windows CI matrix
 - **Status:** Implemented on 2026-11-04 on branch `feat/modular-inject-and-linux-x11` (`src-tauri/src/inject.rs`, `src-tauri/src/inject/policy.rs`, `src-tauri/src/inject/linux.rs`, `src-tauri/src/inject/tests.rs`, `.github/workflows/ci.yml`). All 33 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 4 (cross-platform X11 `xprop`/`/proc` process inspection, Wayland guard detection, and modular injection refactoring below the 500-line split target).
 - **What changed:**
   1. **Modularized `src-tauri/src/inject.rs` below the 500-line target (`349 lines`):**
      - Extracted pure target-policy evaluation, allowlist matching, self-injection protection, and Enter-delay scaling into `src-tauri/src/inject/policy.rs` (`458 lines`).
@@ -216,7 +202,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #10: Opt-in local Ollama / OpenAI-compatible BYOK AI cleanup pass
 - **Status:** Implemented on 2026-11-04 on branch `feat/opt-in-llm-cleanup` (`src-tauri/src/cleanup.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `index.html`). All 34 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 3.8 Flash (local loopback vs remote BYOK classification, output fence/preamble sanitization, and opt-in settings wiring).
 - **What changed:**
   1. **Opt-in secondary LLM cleanup client (`LlmCleanupConfig`, `run_opt_in_llm_cleanup`):**
      - Off by default (`llmCleanupEnabled: false`), preserving 100% zero-network operation unless explicitly enabled by the user.
@@ -227,7 +212,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #11: Live partial connective detection, multi-monitor gaze-window alignment guard, and release workflow
 - **Status:** Implemented on 2026-11-04 on branch `feat/partial-connectives-gaze-guard-and-release` (`src-tauri/src/audio.rs`, `src-tauri/src/inject/policy.rs`, `src-tauri/src/inject/windows.rs`, `src-tauri/src/inject/tests.rs`, `src/hud.ts`, `.github/workflows/release.yml`). All 35 Rust unit tests and the frontend build pass with zero compiler warnings.
-- **Recommended model:** Gemini 4 (real-time non-blocking partial Whisper inference scheduling, multi-monitor coordinate vs head-yaw alignment policy, and cross-platform release workflow).
 - **What changed:**
   1. **Live partial Whisper connective detection during `LISTENING` (`src-tauri/src/audio.rs`, `src/hud.ts`):**
      - When a speaker pauses for `>= 240 ms` after at least `256 ms` (`8` VAD frames) of speech during `LISTENING`, `run_audio_worker` spawns a non-blocking Whisper check on the trailing `2.0s` audio window (`partial_transcript`, `partial_ends_with_connective = ends_with_connective(&text)`).
@@ -240,7 +224,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #12: Send modes, talk-to-cancel, editorial redesign and plain-language docs
 - **Status:** Implemented on 2026-11-08 (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `src/ui.ts`, `src/hud.ts`, `src/fonts.ts`, `index.html`, `src/style.css`, `src/hud.css`, `README.md`, `INSTALL_WITH_AI.md`, `docs/HOW_IT_WORKS.md`, `docs/HOW_WE_BUILT_IT.md`). All 39 Rust unit tests and the frontend build pass. UI verified in the browser preview with the `?demo=` states. Not yet verified: send modes and talk-to-cancel end to end in the packaged desktop app with a real camera and microphone, and on Windows.
-- **Recommended model:** Gemini 4 (send modes change preview timing inside the audio worker state machine).
 - **What changed:**
   1. **Send modes (`SendMode` in `turn_taking.rs`, `send_mode` in `DictationConfig`):** `pause` (default, same behavior as before), `nod` (preview waits up to `NOD_WAIT_TIMEOUT_MS = 15,000 ms` for a nod, Enter or the hotkey, then gives up without sending), `phrase` (Enter only when the utterance ends with "send it"), `paste_only` (never Enter). A nod that ends the turn in `nod` mode counts as the go-ahead and gets the normal cancelable countdown. App rules and the destructive command guard still downgrade any mode to paste only. Older settings with `autoPressEnter: false` migrate to `paste_only`.
   2. **Talk to cancel (`should_cancel_preview_on_speech`, `cancel_on_speech`):** speech during the preview cancels it after a `350 ms` grace period and at least `6` consecutive VAD frames (about `190 ms`). With fresh vision the lips must be moving too, so other voices in the room do not cancel. Default on.
@@ -249,7 +232,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #13: Side-mounted camera support
 - **Status:** Implemented on 2026-11-08 (`src-tauri/src/turn_taking.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `index.html`). All 40 Rust unit tests and the frontend build pass. Not yet verified: head-turn accuracy with a real side-mounted webcam (no recorded traces at 30 to 65 degrees yet), and the yaw-corrected MAR against the replay corpus, which stores MAR precomputed.
-- **Recommended model:** Gemini 4 (lip geometry under head rotation and gate thresholds interact).
 - **What changed:**
   1. **Wider calibration:** the calibrated yaw center may sit up to `MAX_CALIBRATED_YAW_OFFSET_DEG = 65` degrees from the camera axis (was 45). Loaded settings are clamped to the same range.
   2. **`side_camera_mode` (default off):** widens the yaw cone around the calibrated center to at least `35` degrees to enter and `48` to exit (`effective_yaw_cone`), in both the webview gaze pill and the Rust arming cone. Pitch limits are unchanged. Gaze-to-display Enter downgrade (`evaluate_gaze_window_alignment`) is skipped in this mode because head yaw no longer maps to a display.
@@ -263,7 +245,6 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #15: Wake word fallback
 - **Status:** Implemented on 2026-11-08 (`src-tauri/src/wake_word.rs`, `src-tauri/src/audio.rs`, `src/main.ts`, `src/hud.ts`, `index.html`). 43 Rust unit tests pass, including 3 for the matcher. Not yet verified: real false-start rate in a room with other voices, Whisper spellings beyond the alias list, and CPU cost of candidate checks during long conversations.
-- **Recommended model:** Gemini 4 (it changes when the audio worker starts and drops recordings).
 - **What changed:**
   1. **Opt-in `wake_word_enabled` (default off) and `wake_word` (default `eevee`).** While the pipeline is `IDLE` (camera says away, no face, or camera off), `3` consecutive VAD frames start a candidate with trigger source `wake_word`.
   2. **Early check:** once the candidate holds `1.8 s` of audio (or pauses after `1 s`), the first `2.5 s` are transcribed locally. No wake word means a silent drop (`DropWakeCandidate`), no HUD flash, and a `600 ms` quiet gap before the next candidate, so room conversations do not re-trigger every couple of seconds.
@@ -276,14 +257,12 @@ Each stage has an exit criterion. Do not start the next stage until the current 
 
 ## Improvement #16: Logo, redesign and in-app Guide
 - **Status:** Implemented on 2026-11-08 (`src/style.css`, `src/hud.css`, `index.html`, `hud.html`, `src/ui.ts`, `src/main.ts`, `src/hud.ts`, `src/assets/`, `src-tauri/icons/`). Frontend build and 45 Rust tests pass; verified in the browser preview (Home in Waiting, Listening and Check, Settings, Guide, welcome screen, HUD). Not yet verified in the packaged desktop window or on Windows.
-- **Recommended model:** Gemini 3.8 Flash (presentation only, no pipeline changes).
 - **What changed:**
   1. **Logo everywhere:** the new plum, silver and amber "S" is the app icon (all `src-tauri/icons` regenerated from `icon-source.png` on the macOS 824/1024 grid), and appears in the sidebar, welcome screen, Guide and the HUD pill.
   2. **Redesign:** a new default `saywhen` palette from the logo; rounded white cards, pill buttons, iOS-style switches, a plum hero card with an amber glow that follows your voice, friendlier state words in the HUD. Mood colours now add a soft glow instead of repainting the whole window. Older settings with the previous default `lumen` move to `saywhen` once.
   3. **Guide page (`Cmd/Ctrl+4`):** getting started, send styles, do's and don'ts, ways to stop a send, troubleshooting and privacy, in plain words.
 
 ## Stage 6: Later
-- **Recommended model:** Gemini 4 (advanced head/gaze geometry, gesture recognition filters, and native OS accessibility APIs).
 - Gestures (nod = send, shake = cancel) beyond the basics.
 - Gaze-targeted input: send text to the window you are looking at.
 - Linux (X11 first, Wayland later).
