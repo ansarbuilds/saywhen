@@ -6,6 +6,10 @@ saywhen is a free, open source desktop app for macOS and Windows. You look at yo
 
 No hotkey to hold. No "click Send". Everything runs on your own computer.
 
+[![Watch the saywhen 60-second launch film](docs/screenshots/demo-poster.png)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)
+
+> **Watch the film:** **[60-second Launch Film (MP4 with voice & sound)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)** · **[12-second Teaser (MP4)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4)**
+
 ![saywhen main window](docs/screenshots/stage4-cleanup-preview.png)
 
 ---
