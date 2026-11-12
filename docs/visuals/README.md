@@ -11,6 +11,8 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 | `workflow-still.png` | Non-animated alternative showing the check step |
 | `intent-and-privacy.png` | Camera and microphone gate with explicit optional-path caveats |
 | `send-styles.png` | Four send modes and shared policy constraints |
+| `home-day.jpg` | Illustrated home desk for the "who it's for" section. Not a photograph or a measurement. |
+| `home-and-office.jpg` | Illustrated home desk beside a quiet office. Not a claim about a weekly schedule. |
 
 The GIF is an explanatory animation, not an app recording. Its timing must not be presented as measured transcription latency. Existing screenshots in `../screenshots/` are browser demo captures, not proof of native permission or injection behavior.
 

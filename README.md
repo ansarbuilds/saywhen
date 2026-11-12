@@ -13,7 +13,7 @@ saywhen is a free, open source desktop app for Mac and Windows. It is for people
 
 Your voice and camera stay on your computer. You always get a short chance to cancel before anything is sent.
 
-[Watch the demo](#watch-the-demo) · [Safe to try](#safe-to-try) · [How it works](#how-it-works) · [Install](#install) · [For Claude and Cursor](#for-coding-assistants) · [Docs](docs/README.md) · [Project page](https://ansarbuilds.dev/p/saywhen/)
+[Watch the demo](#watch-the-demo) · [Who it's for](#who-its-for) · [Safe to try](#safe-to-try) · [How it works](#how-it-works) · [Install](#install) · [For Claude and Cursor](#for-coding-assistants) · [Docs](docs/README.md) · [Project page](https://ansarbuilds.dev/p/saywhen/)
 
 **Beta.** You can build it and try it today. Packaged installers exist, and real-device checks for Windows, Intel Macs, and signed Mac builds are still open. See the [launch checklist](docs/LAUNCH_CHECKLIST.md).
 
@@ -125,6 +125,27 @@ Yes. That is the design.
 - **Microphone.** Your voice is turned into text on your computer. The audio is discarded after that, unless you turn on local tuning recordings in Settings.
 - **History.** The last 7 days of text stay on your computer so you can search and copy them. Turn this off in Settings, or clear it with one click.
 - **Internet.** After the speech model is downloaded, saywhen works offline. Optional AI clean-up is off by default. If you turn it on, you choose where the text goes. A local Ollama is the default.
+
+---
+
+## Who it's for
+
+![Illustration of a person at a home desk, hands resting off the keyboard, with a small amber pill glowing above the laptop.](docs/visuals/home-day.jpg)
+
+For the day you work from home. In the 2025 Stack Overflow Developer Survey, 32.4% of developers worked fully remotely. In the US, 45% did.
+
+Where those developers worked, among people who answered the work question:
+
+- Fully remote: 32.4%
+- Hybrid: 37.1%
+- Free to choose: 12.6%
+- In an office: 17.9%
+
+That split is not a measure of who wants voice input. 62% of developers in the JetBrains 2025 Developer Ecosystem survey regularly use an AI coding assistant or agent. saywhen is a hands-free way to talk to one on the days you are home.
+
+![Illustration split between a home desk, where the pill glows and the hands rest, and an open office, where the person is typing and the pill is dim.](docs/visuals/home-and-office.jpg)
+
+Talk at home. Stay quiet at the office. The picture is an illustration, not a claim about a typical weekly schedule. At the office, the keyboard shortcut still starts listening, and Type only never presses Enter.
 
 ---
 
