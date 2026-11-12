@@ -7,77 +7,62 @@
 [![CI](https://github.com/kmsmohamedansar/saywhen/actions/workflows/ci.yml/badge.svg)](https://github.com/kmsmohamedansar/saywhen/actions/workflows/ci.yml)
 ![Platforms: macOS and Windows](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-dfe5ec.svg)
 
-**Look at the screen. Say what you want. saywhen types it, and can press Enter.**
+**Look at the screen. Say the command. saywhen types it, and can press Enter.**
 
-saywhen is a free, open source desktop app for Mac and Windows. It is for people who talk to a terminal or a coding assistant (Terminal, Cursor, VS Code, Claude Code, and others) and do not want to hold a hotkey.
+No hotkey to hold. Your voice and camera stay on this computer. You see the words before they go anywhere.
 
-Your voice and camera stay on your computer. You always get a short chance to cancel before anything is sent.
+[Watch it](#watch-it) · [Who it's for](#who-its-for) · [How it works](#how-it-works) · [Install](#install) · [Safe to try](#safe-to-try) · [For Claude and Cursor](#for-coding-assistants) · [Project page](https://ansarbuilds.dev/p/saywhen/)
 
-[Watch the demo](#watch-the-demo) · [Who it's for](#who-its-for) · [Safe to try](#safe-to-try) · [How it works](#how-it-works) · [Install](#install) · [For Claude and Cursor](#for-coding-assistants) · [Docs](docs/README.md) · [Project page](https://ansarbuilds.dev/p/saywhen/)
-
-**Beta.** You can build it and try it today. Packaged installers exist, and real-device checks for Windows, Intel Macs, and signed Mac builds are still open. See the [launch checklist](docs/LAUNCH_CHECKLIST.md).
-
-## Safe to try
-
-The camera, the microphone, and Enter are the parts worth asking about.
-
-- **The camera does not keep a picture.** Each frame is used for a moment to notice your face, then thrown away. Nothing is saved, and nothing is uploaded.
-- **Your voice stays on this computer.** Speech becomes text here. The audio is discarded after that. A cloud clean-up step exists, and it stays off until you turn it on.
-- **You see the words before they go anywhere.** A preview comes first. Press Esc, shake your head, or keep talking to cancel. For a first try, choose **Type only**. Enter is never pressed.
-- **The install warning is a missing signature.** This beta is not signed by Apple or Microsoft yet, so Mac and Windows ask an extra question. That question is about the signature. [Install](#install) explains the one step. You can also [build saywhen yourself](#build-it-yourself) from this repository and skip the downloaded app.
+**Beta**, for Mac and Windows. Real-device checks for signed Mac builds, Intel Macs, and Windows are still open. [Launch checklist](docs/LAUNCH_CHECKLIST.md).
 
 ---
 
-## Watch the demo
+## Watch it
 
 https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 
-*The 60-second launch film. Press play; it has voice and sound. The film is an animation that shows the idea. It is not a live screen recording, and its timing is not a speed measurement.*
+*Sixty seconds, with voice and sound. It is an animation of the idea, not a screen recording, and its timing is not a speed measurement.*
 
-Player not showing? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
+No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
 
-<details>
-<summary><strong>Open the animated step-by-step walkthrough</strong></summary>
+---
 
-![Illustrated workflow: look at the screen, speak a command, transcribe locally, review a cancelable preview, and paste into a trusted terminal with Enter.](docs/visuals/workflow.gif)
+## Who it's for
 
-*Illustrated pause-mode walkthrough, simplified timing, not a live screen recording.* [View the still image](docs/visuals/workflow-still.png).
+![Home day: Look. Talk. Hands off the keyboard. Office day: Stay quiet, Type only, the shortcut is still there. Then where developers worked in the 2025 Stack Overflow survey: 32.4% fully remote, 37.1% hybrid, 12.6% free to choose, 17.9% in an office. US fully remote 45%. JetBrains 2025: 62% regularly use an AI coding assistant.](docs/visuals/who-its-for.gif)
 
-</details>
+*Home, then the office, then the survey. An illustration. The timing is not a measurement.* [Still frame](docs/visuals/who-its-for.jpg).
 
-<details>
-<summary><strong>See the app interface</strong></summary>
+Talk on the days you work from home. In the 2025 Stack Overflow Developer Survey, **32.4%** of developers worked fully remotely and **37.1%** were hybrid. **12.6%** could choose, and **17.9%** worked in an office. In the US, **45%** worked fully remotely. Those shares are the people who answered the work question. They are not a count of who wants voice input.
 
-![saywhen Home showing the cancelable preview and four send styles, using demo data.](docs/screenshots/stage4-cleanup-preview.png)
-
-*App interface captured in browser demo mode. This is separate from the film and the walkthrough above.*
-
-</details>
-
-The short animations on this page are illustrations drawn from the app's interface. They are not screen recordings, and their timing is not a measurement.
+**62%** of developers in the JetBrains 2025 survey regularly use an AI coding assistant or agent. saywhen is a hands-free way to talk to one. At the office, stay quiet: **Type only** never presses Enter, and the keyboard shortcut still starts listening.
 
 ---
 
 ## How it works
 
-![The five saywhen states light up in order: Waiting, Ready, Listening, Writing, and Check. A short line under each state says what the app is waiting for.](docs/visuals/animated/five-states.gif)
+![The five saywhen states light up in order: Waiting, Ready, Listening, Writing, and Check.](docs/visuals/animated/five-states.gif)
 
-1. **Look** at your screen. saywhen uses your webcam to notice you are facing it. It only keeps a few numbers, such as which way your head is turned. Pictures are never saved or sent anywhere.
-2. **Talk.** When your lips move and the microphone hears your voice, it starts listening.
-3. **Stop talking.** saywhen writes down what you said, tidies developer speech (`dash dash release` becomes `--release`), and shows you the result for a moment.
-4. **It sends.** The text is typed into the app you are using, and Enter is pressed when that is allowed. Changed your mind? Say "cancel", shake your head, or press **Esc**.
+The camera and the microphone have to agree. A camera cannot tell chewing from talking. A microphone cannot tell who you are talking to.
+
+1. **Look.** saywhen notices you are facing the screen. It keeps a few numbers, such as head angle. The picture is thrown away.
+2. **Talk.** Lips moving, and a voice on the microphone. Listening starts. The last half second is already kept, so the first word is not lost.
+3. **Read it.** `dash dash release` becomes `--release`. A preview shows the result.
+4. **Send, or don't.** Esc, a head shake, or talking again throws it away. If you let it go, the text is typed into the app in front. Enter is pressed only when that is allowed.
 
 ![Two spoken phrases are crossed out as saywhen turns them into cargo test --release and kubectl get pods.](docs/visuals/animated/cleanup.gif)
 
-The longer, friendly explanation is **[How saywhen works](docs/HOW_IT_WORKS.md)**.
+![saywhen Home showing the cancelable preview and four send styles, using demo data.](docs/screenshots/stage4-cleanup-preview.png)
+
+*The Home screen, captured in browser demo mode. Demo data, not a live recording.*
 
 A manual shortcut always exists: **Option + Space** on Mac, **Alt + Space** on Windows. That starts and stops listening with no camera.
+
+The longer version is **[How saywhen works](docs/HOW_IT_WORKS.md)**.
 
 ---
 
 ## Pick how you send
-
-You choose this once on the Home screen. You can change it any time.
 
 ![Four send cards show a countdown, a nod, the words send it, and typing without pressing Enter.](docs/visuals/animated/send-styles.gif)
 
@@ -88,15 +73,9 @@ You choose this once on the Home screen. You can change it any time.
 | **Say "send it"** | End with "send it" to press Enter. Otherwise the text is only typed. | Mixing notes and commands |
 | **Type only** | Your words are typed. Enter is never pressed. | The first time you try saywhen |
 
-You can always stop a send:
+![Pressing Esc stops a preview countdown and shows Canceled. Nothing sent.](docs/visuals/animated/cancel.gif)
 
-- **Shake your head** or press **Esc** to cancel.
-- **Nod** or press **Enter** to send right away.
-- **Start talking again** during the countdown to cancel it. You can turn this off in Settings.
-
-![Pressing Esc stops a preview countdown and shows Canceled. Nothing sent. The visual also shows that shaking your head or talking again can stop the countdown.](docs/visuals/animated/cancel.gif)
-
-### Handy things to say
+Stop it any time: shake your head, press **Esc**, or start talking again during the countdown. Nod, or press **Enter**, to send right away.
 
 | Say this | What happens |
 | --- | --- |
@@ -105,57 +84,31 @@ You can always stop a send:
 | "scratch that" | Throws away what you just said |
 | "cancel that" / "never mind" | Throws away the whole thing |
 
-### Safety built in
+---
+
+## Safe to try
 
 ![A warning marks rm -rf dist/ as paste only. The command sits at the terminal prompt with Enter still unpressed.](docs/visuals/animated/safety.gif)
 
 - Enter is pressed only in apps you trust. Terminals and code editors are trusted by default. In chat, email, and browsers, saywhen only types.
-- Risky commands such as `rm -rf`, `git reset --hard`, and `git push --force` are never sent automatically. They are typed, with a warning, and you press Enter yourself.
+- Risky commands such as `rm -rf`, `git reset --hard`, and `git push --force` are typed, with a warning. You press Enter yourself. The check is a heuristic, not a guarantee.
 - If you switch apps during the countdown, saywhen stops. It does not type into the new app.
-
----
-
-## Is it private?
-
-Yes. That is the design.
 
 ![An illustrated camera frame produces readings for head angle, lips moving, and face present. The picture fades away and the readings remain.](docs/visuals/animated/privacy.gif)
 
-- **Camera.** Pictures stay in memory for a split second, then they are thrown away. Only numbers are used: head angle, and how open your mouth is. Nothing is saved or sent.
-- **Microphone.** Your voice is turned into text on your computer. The audio is discarded after that, unless you turn on local tuning recordings in Settings.
-- **History.** The last 7 days of text stay on your computer so you can search and copy them. Turn this off in Settings, or clear it with one click.
-- **Internet.** After the speech model is downloaded, saywhen works offline. Optional AI clean-up is off by default. If you turn it on, you choose where the text goes. A local Ollama is the default.
-
----
-
-## Who it's for
-
-![Illustration of a person at a home desk, hands resting off the keyboard, with a small amber pill glowing above the laptop.](docs/visuals/home-day.jpg)
-
-For the day you work from home. In the 2025 Stack Overflow Developer Survey, 32.4% of developers worked fully remotely. In the US, 45% did.
-
-Where those developers worked, among people who answered the work question:
-
-- Fully remote: 32.4%
-- Hybrid: 37.1%
-- Free to choose: 12.6%
-- In an office: 17.9%
-
-That split is not a measure of who wants voice input. 62% of developers in the JetBrains 2025 Developer Ecosystem survey regularly use an AI coding assistant or agent. saywhen is a hands-free way to talk to one on the days you are home.
-
-![Illustration split between a home desk, where the pill glows and the hands rest, and an open office, where the person is typing and the pill is dim.](docs/visuals/home-and-office.jpg)
-
-Talk at home. Stay quiet at the office. The picture is an illustration, not a claim about a typical weekly schedule. At the office, the keyboard shortcut still starts listening, and Type only never presses Enter.
+- **Camera.** Pictures stay in memory for a split second, then they are thrown away. Nothing is saved or sent.
+- **Microphone.** Your voice becomes text on this computer. The audio is discarded after that, unless you turn on local tuning recordings.
+- **History.** The last 7 days of text stay on your computer. Turn this off, or clear it with one click.
+- **Internet.** After the speech model is downloaded, saywhen works offline. Optional cloud clean-up stays off until you turn it on. A local Ollama is the default.
+- **The install warning.** This beta is not signed by Apple or Microsoft yet. The extra question is about that missing signature. [Install](#install) has the one step. You can also build saywhen from this repository and skip the downloaded app.
 
 ---
 
 ## Install
 
-Pick one path.
-
 ### Point Claude or Cursor at this repo
 
-Open this folder in Claude or Cursor and paste:
+Open this folder and paste:
 
 ```text
 Set up saywhen on my computer.
@@ -167,7 +120,7 @@ On a Mac, do not start the app yourself. Tell me the command to run in the Termi
 When the window is open, walk me through First launch in the README, one step at a time.
 ```
 
-You only have the link, and the folder is not open yet? Paste this instead:
+You only have the link? Paste this instead:
 
 ```text
 Clone https://github.com/kmsmohamedansar/saywhen and open that folder.
@@ -176,34 +129,26 @@ Ask me before you install anything. Explain each step in one plain sentence.
 On a Mac, do not start the app yourself. Tell me the command to run in the Terminal app.
 ```
 
-The full checklist is [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md). The rules your assistant must keep are in [For coding assistants](#for-coding-assistants).
+The full checklist is [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md).
 
 ### Download the app
 
 Get the beta installer from the **[v0.2.0 release](https://github.com/kmsmohamedansar/saywhen/releases/tag/v0.2.0)**:
 
-- **Mac:** the `.dmg` file (`aarch64` is for Apple Silicon, `x64` is for Intel Macs when that build is included). Open it and drag saywhen into Applications.
-- **Windows:** the `-setup.exe` file. Run it.
+- **Mac:** the `.dmg` file (`aarch64` is Apple Silicon, `x64` is Intel when that build is included). Drag saywhen into Applications.
+- **Windows:** the `-setup.exe` file.
 
-If your Mac says saywhen "is damaged" or "cannot be opened", this beta is not signed by Apple yet. The message is about that missing signature. Run this once in Terminal, then open the app again:
+If your Mac says saywhen "is damaged" or "cannot be opened", this beta is not signed by Apple yet. Run this once, then open the app again:
 
 ```bash
 xattr -cr /Applications/saywhen.app
 ```
 
-On Windows, SmartScreen appears for the same reason: this beta is not signed yet. Click **More info**, then **Run anyway**.
+On Windows, SmartScreen appears for the same reason. Click **More info**, then **Run anyway**.
 
 ### Build it yourself
 
-You need three free tools first:
-
-- **Node.js 20 or newer:** [nodejs.org](https://nodejs.org)
-- **Rust:** [rustup.rs](https://rustup.rs)
-- **CMake:** on a Mac, `brew install cmake`. On Windows, install it from [cmake.org](https://cmake.org/download/) and tick "Add CMake to the system PATH".
-
-Windows also needs [Visual Studio Build Tools 2022](https://visualstudio.microsoft.com/downloads/) with the "Desktop development with C++" workload.
-
-Then, in a terminal:
+You need Node.js 20 or newer, Rust, and CMake. On Windows, also install Visual Studio Build Tools 2022 with the "Desktop development with C++" workload.
 
 ```bash
 git clone https://github.com/kmsmohamedansar/saywhen.git
@@ -212,17 +157,15 @@ npm ci
 npx tauri dev
 ```
 
-The first run downloads the camera model (about 4 MB) and can take 5 to 15 minutes while it compiles. Later starts are much faster. On a Mac, run that last command in the **Terminal** app. A background shell from an assistant usually cannot get camera permission. The development app is named **saywhen-dev**.
+The first run downloads the camera model (about 4 MB) and can take 5 to 15 minutes to compile. On a Mac, run that last command in the **Terminal** app. A background shell usually cannot get camera permission. The development app is named **saywhen-dev**.
 
 ### First launch
 
-Do these once, in order:
-
-1. **Download a speech model.** Open **Settings** (second item in the sidebar), find **Speech model**, and click **Download**. Tiny is about 75 MB and the fastest. Base is more accurate.
+1. **Download a speech model.** Settings, then Speech model, then Download. Tiny is about 75 MB and the fastest. Base is more accurate.
 2. **Allow the microphone and camera** when your computer asks.
-3. **Allow Accessibility (Mac only).** This lets saywhen type into other apps. Click **Setup guide** in the sidebar, then the orange badge next to Accessibility. Turn on **saywhen** for the installed app, or **saywhen-dev** if you built it yourself. Remove old saywhen entries first if macOS is confused.
-4. **Pick a send style** on Home. For a first try, pick **Type only**, so Enter is never pressed by accident.
-5. **Turn on the camera** on Home. Look at the screen with your mouth closed and click **Calibrate**.
+3. **Allow Accessibility (Mac only).** Setup guide in the sidebar, then the orange badge. Turn on **saywhen**, or **saywhen-dev** if you built it. Remove old saywhen entries first if macOS is confused.
+4. **Pick Type only** on Home for a first try, so Enter is never pressed.
+5. **Turn on the camera.** Look at the screen with your mouth closed and click **Calibrate**.
 6. Open a terminal, look at it, and say "git status".
 
 ---
@@ -264,32 +207,14 @@ A person opened this repository in Claude, Cursor, or a similar tool. Read this 
 
 ---
 
-## Learn more
-
-**[Browse the documentation](docs/README.md)** for install help, the plain-language guide, and the engineering notes.
-
-- **[How saywhen works](docs/HOW_IT_WORKS.md):** camera, listening, and sending, without the engineering words.
-- **[How we built it](docs/HOW_WE_BUILT_IT.md):** the story, stage by stage, with the measurements.
-- **[Vision](docs/VISION.md)**, **[Architecture](docs/ARCHITECTURE.md)**, **[Roadmap](docs/ROADMAP.md)**, **[Risks](docs/RISKS.md)**, **[Prior art](docs/PRIOR_ART.md):** the deeper documents.
-- **[Contributing](CONTRIBUTING.md)** and **[Security](SECURITY.md).**
-
-To update a copy you built yourself:
-
-```bash
-cd saywhen && git pull && npm ci && npx tauri dev
-```
-
----
-
 ## For developers
 
-saywhen is a [Tauri v2](https://tauri.app) app. The engine is Rust. The window is TypeScript, HTML, and CSS.
+saywhen is a [Tauri v2](https://tauri.app) app. Rust runs the engine. TypeScript draws the window.
 
 ```bash
 npm run build
 cargo test --locked --manifest-path src-tauri/Cargo.toml
 cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- recordings
-./scripts/capture-screenshots.sh
 ```
 
 On a Mac, if `cargo` is not on your PATH:
@@ -298,7 +223,7 @@ On a Mac, if `cargo` is not on your PATH:
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH"
 ```
 
-### Measured on Apple Silicon
+The animations on this page are illustrations. Their timing is not a measurement.
 
 | Part | What we measured | Result |
 | --- | --- | --- |
@@ -310,23 +235,19 @@ export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH"
 | Speech to text (Whisper tiny.en, GPU) | 1.5 s of audio | 87 to 473 ms |
 | Finding the front app (macOS) | Median of 20 calls | 1 to 2 microseconds |
 
-### Where to look
-
 | Path | What it is |
 | --- | --- |
 | [src-tauri/src/audio.rs](src-tauri/src/audio.rs) | Microphone, 500 ms pre-roll, voice detection, the 5-state machine, settings |
 | [src-tauri/src/turn_taking.rs](src-tauri/src/turn_taking.rs) | When to start, when you are done, send modes, speech-cancel |
-| [src-tauri/src/bin/replay.rs](src-tauri/src/bin/replay.rs) | Offline replay benchmark |
 | [src-tauri/src/transcribe.rs](src-tauri/src/transcribe.rs) | Whisper on the GPU, model download, "send it" detection |
 | [src-tauri/src/cleanup.rs](src-tauri/src/cleanup.rs) | Developer word clean-up, "scratch that", custom words, risky-command guard |
 | [src-tauri/src/inject.rs](src-tauri/src/inject.rs) | Typing into other apps, per-app rules, front-app detection |
 | [src/main.ts](src/main.ts) | Camera, head gestures, main window |
-| [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md) | The setup procedure assistants must follow |
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). To report a security or privacy problem, use [SECURITY.md](SECURITY.md), not a public issue.
+**[How we built it](docs/HOW_WE_BUILT_IT.md)** · **[Vision](docs/VISION.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Roadmap](docs/ROADMAP.md)** · **[Contributing](CONTRIBUTING.md)** · **[Security](SECURITY.md)**
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
-Built by [Mohamed Ansar](https://ansarbuilds.dev). The story and the film are on the [project page](https://ansarbuilds.dev/p/saywhen/).
+Built by [Mohamed Ansar](https://ansarbuilds.dev). The film is on the [project page](https://ansarbuilds.dev/p/saywhen/).
