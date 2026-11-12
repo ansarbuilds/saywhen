@@ -1,4 +1,4 @@
-![saywhen: Look. Talk. Sent. Hands-free voice input, illustrated with a silver and amber ribbon on plum.](docs/visuals/brand-hero.png)
+![The saywhen pill moves from Waiting to Check as spoken words become cargo test --release. The preview counts down and the command is sent to Terminal.](docs/visuals/animated/hero-loop.gif)
 
 # saywhen
 
@@ -45,14 +45,20 @@ Player not showing? [Watch it on the project page](https://ansarbuilds.dev/p/say
 
 </details>
 
+The short animations on this page are illustrations drawn from the app's interface. They are not screen recordings, and their timing is not a measurement.
+
 ---
 
 ## How it works
+
+![The five saywhen states light up in order: Waiting, Ready, Listening, Writing, and Check. A short line under each state says what the app is waiting for.](docs/visuals/animated/five-states.gif)
 
 1. **Look** at your screen. saywhen uses your webcam to notice you are facing it. It only keeps a few numbers, such as which way your head is turned. Pictures are never saved or sent anywhere.
 2. **Talk.** When your lips move and the microphone hears your voice, it starts listening.
 3. **Stop talking.** saywhen writes down what you said, tidies developer speech (`dash dash release` becomes `--release`), and shows you the result for a moment.
 4. **It sends.** The text is typed into the app you are using, and Enter is pressed when that is allowed. Changed your mind? Say "cancel", shake your head, or press **Esc**.
+
+![Two spoken phrases are crossed out as saywhen turns them into cargo test --release and kubectl get pods.](docs/visuals/animated/cleanup.gif)
 
 The longer, friendly explanation is **[How saywhen works](docs/HOW_IT_WORKS.md)**.
 
@@ -64,7 +70,7 @@ A manual shortcut always exists: **Option + Space** on Mac, **Alt + Space** on W
 
 You choose this once on the Home screen. You can change it any time.
 
-![Four send styles: pause for a countdown, nod to confirm, finish with send it, or type without Enter. App rules can withhold Enter in every mode.](docs/visuals/send-styles.png)
+![Four send cards show a countdown, a nod, the words send it, and typing without pressing Enter.](docs/visuals/animated/send-styles.gif)
 
 | Send style | What you do | Good for |
 | --- | --- | --- |
@@ -79,6 +85,8 @@ You can always stop a send:
 - **Nod** or press **Enter** to send right away.
 - **Start talking again** during the countdown to cancel it. You can turn this off in Settings.
 
+![Pressing Esc stops a preview countdown and shows Canceled. Nothing sent. The visual also shows that shaking your head or talking again can stop the countdown.](docs/visuals/animated/cancel.gif)
+
 ### Handy things to say
 
 | Say this | What happens |
@@ -90,7 +98,7 @@ You can always stop a send:
 
 ### Safety built in
 
-![Intent, Voice, Control: a camera lens, amber audio waveform and silver Esc key. Decorative brand illustration.](docs/visuals/brand-features.png)
+![A warning marks rm -rf dist/ as paste only. The command sits at the terminal prompt with Enter still unpressed.](docs/visuals/animated/safety.gif)
 
 - Enter is pressed only in apps you trust. Terminals and code editors are trusted by default. In chat, email, and browsers, saywhen only types.
 - Risky commands such as `rm -rf`, `git reset --hard`, and `git push --force` are never sent automatically. They are typed, with a warning, and you press Enter yourself.
@@ -101,6 +109,8 @@ You can always stop a send:
 ## Is it private?
 
 Yes. That is the design.
+
+![An illustrated camera frame produces readings for head angle, lips moving, and face present. The picture fades away and the readings remain.](docs/visuals/animated/privacy.gif)
 
 - **Camera.** Pictures stay in memory for a split second, then they are thrown away. Only numbers are used: head angle, and how open your mouth is. Nothing is saved or sent.
 - **Microphone.** Your voice is turned into text on your computer. The audio is discarded after that, unless you turn on local tuning recordings in Settings.

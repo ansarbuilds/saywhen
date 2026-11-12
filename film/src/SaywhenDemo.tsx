@@ -23,7 +23,7 @@ import { FilmSubtitles } from "./cinematic";
 // ============================================================================
 // BRAND TOKENS (Strictly from saywhen src/style.css & src/hud.css)
 // ============================================================================
-const C = {
+export const C = {
   plum: "#22061c",
   plumDeep: "#330a2b",
   plumInk: "#2a0823",
@@ -41,7 +41,7 @@ const C = {
   borderDark: "rgba(223, 229, 236, 0.16)",
 } as const;
 
-const F = {
+export const F = {
   serif: "'Instrument Serif', Georgia, serif",
   sans: "'Plus Jakarta Sans', -apple-system, sans-serif",
   mono: "'JetBrains Mono', monospace",
@@ -59,12 +59,12 @@ const DT = 1 / FPS;
 // ============================================================================
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
-const seg = (t: number, a: number, b: number) =>
+export const seg = (t: number, a: number, b: number) =>
   b <= a ? (t >= b ? 1 : 0) : clamp((t - a) / (b - a), 0, 1);
 
 const eo = (u: number) => 1 - Math.pow(1 - u, 3);
 const ei = (u: number) => u * u * u;
-const eio = (u: number) =>
+export const eio = (u: number) =>
   u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
 const bo = (u: number) => {
   const c1 = 1.70158;

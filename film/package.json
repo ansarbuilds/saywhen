@@ -6,7 +6,14 @@
   "scripts": {
     "studio": "remotion studio",
     "render": "remotion render SaywhenAnnounce out/saywhen-announce.mp4 --codec=h264 --pixel-format=yuv420p --crf=14",
-    "render:demo": "remotion render SaywhenDemo out/saywhen-demo.mp4 --codec=h264 --pixel-format=yuv420p --crf=14"
+    "render:demo": "remotion render SaywhenDemo out/saywhen-demo.mp4 --codec=h264 --pixel-format=yuv420p --crf=14",
+    "render:hero-loop": "node scripts/render-loop.mjs hero-loop",
+    "render:five-states": "node scripts/render-loop.mjs five-states",
+    "render:cleanup": "node scripts/render-loop.mjs cleanup",
+    "render:send-styles": "node scripts/render-loop.mjs send-styles",
+    "render:cancel": "node scripts/render-loop.mjs cancel",
+    "render:safety": "node scripts/render-loop.mjs safety",
+    "render:privacy": "node scripts/render-loop.mjs privacy"
   },
   "dependencies": {
     "@fontsource/instrument-serif": "5.3.0",

@@ -1,0 +1,72 @@
+[
+  {
+    "name": "hero-loop",
+    "width": 1600,
+    "height": 800,
+    "duration": 9,
+    "posterAt": 5.7,
+    "alt": "The saywhen pill moves from Waiting to Check as spoken words become cargo test --release. The preview counts down and the command is sent to Terminal.",
+    "caption": "Look. Talk. Sent.",
+    "placement": "README header, above the project title"
+  },
+  {
+    "name": "five-states",
+    "width": 1600,
+    "height": 500,
+    "duration": 8,
+    "posterAt": 3.4,
+    "alt": "The five saywhen states light up in order: Waiting, Ready, Listening, Writing, and Check. A short line under each state says what the app is waiting for.",
+    "caption": "See what saywhen is waiting for.",
+    "placement": "How it works"
+  },
+  {
+    "name": "cleanup",
+    "width": 1600,
+    "height": 500,
+    "duration": 6,
+    "posterAt": 4.8,
+    "alt": "Two spoken phrases are crossed out as saywhen turns them into cargo test --release and kubectl get pods.",
+    "caption": "Say the words. Get the command.",
+    "placement": "How it works, after the stop-talking step"
+  },
+  {
+    "name": "send-styles",
+    "width": 1600,
+    "height": 700,
+    "duration": 10,
+    "posterAt": 0,
+    "alt": "Four send cards show a countdown, a nod, the words send it, and typing without pressing Enter.",
+    "caption": "Choose how you want to send.",
+    "placement": "Pick how you send"
+  },
+  {
+    "name": "cancel",
+    "width": 1600,
+    "height": 500,
+    "duration": 6,
+    "posterAt": 3.7,
+    "alt": "Pressing Esc stops a preview countdown and shows Canceled. Nothing sent. The visual also shows that shaking your head or talking again can stop the countdown.",
+    "caption": "Cancel while the preview counts down.",
+    "placement": "Pick how you send, after the ways to stop a send"
+  },
+  {
+    "name": "safety",
+    "width": 1600,
+    "height": 500,
+    "duration": 6,
+    "posterAt": 3.8,
+    "alt": "A warning marks rm -rf dist/ as paste only. The command sits at the terminal prompt with Enter still unpressed.",
+    "caption": "Risky commands wait for your hand.",
+    "placement": "Safety built in"
+  },
+  {
+    "name": "privacy",
+    "width": 1600,
+    "height": 500,
+    "duration": 8,
+    "posterAt": 3.6,
+    "alt": "An illustrated camera frame produces readings for head angle, lips moving, and face present. The picture fades away and the readings remain.",
+    "caption": "The picture is never saved. Only the numbers are used.",
+    "placement": "Is it private?"
+  }
+]
