@@ -7,7 +7,6 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 | `brand-hero.png` | AI-generated silver-and-amber editorial brand artwork |
 | `brand-features.png` | AI-generated intent, voice and control feature illustration |
 | `readme-hero.png` | Project introduction and three-step concept |
-| `demo-preview.gif` | 16-second silent cut from the launch film (seconds 8 to 24), 640 px wide, about 3 MB. Shown at the top of the main README |
 | `workflow.gif` | 12-second illustrated pause-mode loop, approximately 1.1 MB |
 | `workflow-still.png` | Non-animated alternative showing the check step |
 | `intent-and-privacy.png` | Camera and microphone gate with explicit optional-path caveats |
@@ -15,10 +14,12 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 
 The GIF is an explanatory animation, not an app recording. Its timing must not be presented as measured transcription latency. Existing screenshots in `../screenshots/` are browser demo captures, not proof of native permission or injection behavior.
 
-The preview clip is cut from the rendered film in `film/out/` (not committed):
+## The film in the main README
+
+The player at the top of the main README is a GitHub attachment, not a file in this repository. GitHub only plays videos that were uploaded through its web editor, and the free limit is 10 MB. To replace it, encode the film under that size, drag the file into any issue or comment box on github.com (no need to submit), and paste the `https://github.com/user-attachments/assets/...` link it gives you on a line of its own in the README.
 
 ```bash
-ffmpeg -ss 8 -t 16 -i film/out/saywhen-demo.mp4 -vf "fps=8,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" docs/visuals/demo-preview.gif
+ffmpeg -i film/out/saywhen-demo.mp4 -c:v libx264 -preset slow -crf 26 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart film/out/saywhen-demo-github.mp4
 ```
 
 ## Regenerate

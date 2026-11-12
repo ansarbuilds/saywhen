@@ -21,11 +21,11 @@ Your voice and camera stay on your computer. You always get a short chance to ca
 
 ## Watch the demo
 
-[![A 16-second silent clip from the saywhen launch film: the camera sees you facing the screen, your words appear as you speak, a preview counts down, and the command runs in a terminal. Click to watch the full film with sound.](docs/visuals/demo-preview.gif)](https://ansarbuilds.dev/p/saywhen/)
+https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 
-**[Watch the full 60-second film with sound](https://ansarbuilds.dev/p/saywhen/)** · [Download the MP4](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4) · [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4)
+*The 60-second launch film. Press play; it has voice and sound. The film is an animation that shows the idea. It is not a live screen recording, and its timing is not a speed measurement.*
 
-*The clip above is a silent cut from the launch film. The film is an animation that shows the idea. It is not a live screen recording, and its timing is not a speed measurement.*
+Player not showing? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
 
 <details>
 <summary><strong>Open the animated step-by-step walkthrough</strong></summary>
