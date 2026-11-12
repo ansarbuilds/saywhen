@@ -14,6 +14,14 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 
 The GIF is an explanatory animation, not an app recording. Its timing must not be presented as measured transcription latency. Existing screenshots in `../screenshots/` are browser demo captures, not proof of native permission or injection behavior.
 
+## The film in the main README
+
+The player at the top of the main README is a GitHub attachment, not a file in this repository. GitHub only plays videos that were uploaded through its web editor, and the free limit is 10 MB. To replace it, encode the film under that size, drag the file into any issue or comment box on github.com (no need to submit), and paste the `https://github.com/user-attachments/assets/...` link it gives you on a line of its own in the README.
+
+```bash
+ffmpeg -i film/out/saywhen-demo.mp4 -c:v libx264 -preset slow -crf 26 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart film/out/saywhen-demo-github.mp4
+```
+
 ## Regenerate
 
 Install Pillow in your chosen Python environment, then run from the repository root:
