@@ -2632,6 +2632,27 @@ body.did-error .gate-status-badge { animation: badge-error 0.6s var(--ease-out) 
   60% { transform: translateX(2px); }
 }
 
+.preview-hud:not(.hidden) {
+  animation: preview-enter 0.28s var(--ease-spring) both;
+}
+.utterance-card {
+  animation: card-rise 0.24s var(--ease-out) both;
+}
+.mode-card {
+  transition: transform 0.2s var(--ease-out), border-color 0.2s var(--ease-out), background 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+}
+.mode-card:hover {
+  transform: translateY(-2px);
+}
+@keyframes preview-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
 .guide-note { margin: -2px 0 12px; color: var(--muted); font-size: 12.5px; }
 
 html[data-motion='reduced'] *,

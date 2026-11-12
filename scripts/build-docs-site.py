@@ -144,42 +144,69 @@ def first_paragraph(text: str) -> str:
     return ""
 
 
-def rewrite_target(target: str, current_slug: str) -> str:
+def normalize_repo_path(path: str, source_rel_dir: str) -> str:
+    combined = f"{source_rel_dir}/{path}" if source_rel_dir else path
+    parts: list[str] = []
+    for part in combined.split("/"):
+        if not part or part == ".":
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
+MEDIA_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".mp4", ".webm")
+
+
+def rewrite_target(target: str, current_slug: str, source_rel_dir: str = "") -> str:
     if not target or target.startswith(("http://", "https://", "mailto:", "#", "data:")):
         return target
     path, _, anchor = target.partition("#")
     suffix = f"#{anchor}" if anchor else ""
-    if path.endswith(".md"):
-        stem = Path(path).name[:-3]
+    if path.endswith(".html") and path in {f"{slug}.html" for slug in SLUGS.values()}:
+        return target
+    repo_rel = normalize_repo_path(path, source_rel_dir)
+    if repo_rel.endswith(".md"):
+        stem = Path(repo_rel).name[:-3]
         slug = SLUGS.get(stem)
         if slug:
             return f"{slug}.html{suffix}"
-        return f"{REPO}/blob/main/{path}{suffix}"
-    if path.endswith(".html") and path in {f"{slug}.html" for slug in SLUGS.values()}:
-        return target
-    if path.startswith(("visuals/", "docs/visuals/")):
-        return f"{RAW}/{path}"
-    if path.startswith("../"):
-        return f"{REPO}/blob/main/{path[3:]}{suffix}"
-    if path.startswith("src/") or path.startswith("src-tauri/") or path.startswith("scripts/") or path.endswith((".rs", ".ts", ".css", ".toml", ".json")):
-        return f"{REPO}/blob/main/{path}{suffix}"
-    if path.startswith(("docs/", "public/")):
-        return f"{REPO}/blob/main/{path}{suffix}"
+        return f"{REPO}/blob/main/{repo_rel}{suffix}"
+    if repo_rel.lower().endswith(MEDIA_EXTENSIONS) or repo_rel.startswith(
+        ("docs/visuals/", "docs/screenshots/", "public/")
+    ):
+        return f"{RAW}/{repo_rel}"
+    if (
+        repo_rel.startswith(("src/", "src-tauri/", "scripts/", "docs/", "film/"))
+        or repo_rel.endswith((".rs", ".ts", ".css", ".toml", ".json", ".py", ".sh", ".mjs"))
+    ):
+        return f"{REPO}/blob/main/{repo_rel}{suffix}"
     return target
 
 
-def rewrite_markdown(text: str, slug: str) -> str:
-    def link_repl(match: re.Match[str]) -> str:
-        label, target = match.group(1), match.group(2)
-        return f"[{label}]({rewrite_target(target, slug)})"
-
-    def image_repl(match: re.Match[str]) -> str:
-        label, target = match.group(1), match.group(2)
-        return f"![{label}]({rewrite_target(target, slug)})"
-
-    text = re.sub(r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)", lambda m: (f"![{m.group(2)}]({rewrite_target(m.group(3), slug)})" if m.group(1) else f"[{m.group(2)}]({rewrite_target(m.group(3), slug)})"), text)
-    text = re.sub(r'(<img[^>]+src=")([^"]+)(")', lambda m: m.group(1) + rewrite_target(m.group(2), slug) + m.group(3), text)
-    text = re.sub(r'(<a[^>]+href=")([^"]+)(")', lambda m: m.group(1) + rewrite_target(m.group(2), slug) + m.group(3), text)
+def rewrite_markdown(text: str, slug: str, source_rel_dir: str = "") -> str:
+    text = re.sub(
+        r"(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)",
+        lambda m: (
+            f"![{m.group(2)}]({rewrite_target(m.group(3), slug, source_rel_dir)})"
+            if m.group(1)
+            else f"[{m.group(2)}]({rewrite_target(m.group(3), slug, source_rel_dir)})"
+        ),
+        text,
+    )
+    text = re.sub(
+        r'(<img[^>]+src=")([^"]+)(")',
+        lambda m: m.group(1) + rewrite_target(m.group(2), slug, source_rel_dir) + m.group(3),
+        text,
+    )
+    text = re.sub(
+        r'(<a[^>]+href=")([^"]+)(")',
+        lambda m: m.group(1) + rewrite_target(m.group(2), slug, source_rel_dir) + m.group(3),
+        text,
+    )
     return text
 
 
@@ -534,7 +561,9 @@ def write_site():
         text = path.read_text(encoding="utf-8")
         title = TITLES.get(slug) or first_heading(text)
         description = DESCRIPTIONS.get(slug) or first_paragraph(text)
-        rewritten = rewrite_markdown(text, slug)
+        rel_dir = str(path.relative_to(ROOT).parent).replace("\\", "/")
+        source_rel_dir = "" if rel_dir == "." else rel_dir
+        rewritten = rewrite_markdown(text, slug, source_rel_dir)
         body = MARKDOWN(rewritten)
         body, toc = add_heading_ids(body)
         rendered[slug] = (body, toc)

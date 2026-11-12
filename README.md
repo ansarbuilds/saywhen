@@ -6,26 +6,32 @@
   <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
   &nbsp;
   <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
+  &nbsp;
+  <a href="https://ansarbuilds.dev/p/saywhen/#try-it"><img src="https://img.shields.io/badge/Try_Interactive_Preview-fbb303?style=for-the-badge&logoColor=22061c" alt="Try Interactive Preview on ansarbuilds.dev" height="44"></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f6f1ea?labelColor=22061c" alt="License: MIT"></a>
   <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
-  <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
   <a href="#how-it-works">How it works</a> ·
+  <a href="#speaks-developer">Speaks developer</a> ·
   <a href="#the-real-thing">See it for real</a> ·
+  <a href="#you-stay-in-control">Send styles</a> ·
   <a href="#private-by-design">Privacy</a> ·
   <a href="#install">Install</a> ·
+  <a href="docs/FAQ.md">FAQ</a> ·
+  <a href="docs/CHANGELOG.md">Changelog</a> ·
   <a href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
 </p>
 
 <p align="center">
   <img src="docs/visuals/scene.gif" alt="One command, start to finish. A Facing the screen tag lights up. The saywhen pill goes from Waiting to Listening while the words cargo test dash dash release appear in a speech bubble. A preview of cargo test --release counts down, then the command is typed into the terminal and the tests pass." width="100%">
 </p>
-<p align="center"><sub>A live illustration of the interface. The real, unedited recording is <a href="#the-real-thing">further down</a>.</sub></p>
+<p align="center"><sub>A live illustration of the interface (try canceling it yourself on the <a href="https://ansarbuilds.dev/p/saywhen/#try-it">interactive demo page</a>). The real, unedited recording is <a href="#the-real-thing">further down</a>.</sub></p>
 
 <br>
 
@@ -58,6 +64,22 @@ https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 - Cancel with **Esc**, a head shake, or by talking again during the countdown. Or say "scratch that".
 - Enter is pressed only in apps you trust. Terminals and code editors are trusted by default. In chat, email and browsers, saywhen only types.
 - If the app in front changes during the countdown, saywhen stops and types nothing.
+
+<details>
+<summary>See the animated state machine and desktop app screenshots</summary>
+
+<p align="center">
+  <img src="docs/visuals/animated/five-states.gif" alt="Animated five-state pipeline: Waiting, Ready, Listening, Writing, and Check." width="100%">
+</p>
+<p align="center">
+  <img src="docs/visuals/animated/cancel.gif" alt="Animated preview cancellation flow with Esc, head shake, or talking again." width="100%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/stage3-multimodal-listening.png" alt="Desktop app window showing camera gate, oscilloscope, and send modes." width="49%">
+  <img src="docs/screenshots/stage4-cleanup-preview.png" alt="Desktop app window showing cancelable preview banner and utterance history." width="49%">
+</p>
+
+</details>
 
 ## Private by design
 

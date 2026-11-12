@@ -69,9 +69,11 @@ pub fn setup_hud_window(app: &AppHandle) -> Result<(), String> {
     hud.show()
         .map_err(|e| format!("HUD: could not show window: {}", e))?;
 
-    // Showing the HUD at launch must not leave it as the key window.
+    // Showing the HUD at launch or moving displays must not steal focus when main is hidden.
     if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        let _ = main.set_focus();
+        if main.is_visible().unwrap_or(false) {
+            let _ = main.set_focus();
+        }
     }
     Ok(())
 }

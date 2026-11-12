@@ -1314,14 +1314,34 @@ function syncSetupChecklist() {
   syncOnboardingBadges();
 }
 
+function formatCountdownSec(ms: number): string {
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
+function updateLlmPrivacyBadge() {
+  const badge = document.getElementById('llm-privacy-badge');
+  if (!badge) return;
+  const raw = llmEndpointInput.value.trim();
+  let isLocal = false;
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase();
+    isLocal = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  } catch {
+    isLocal = false;
+  }
+  badge.textContent = isLocal ? 'Local on this device' : 'External endpoint';
+  badge.className = `gauge-tag ${isLocal ? 'tag-ok' : 'tag-warn'}`;
+}
+
 function renderModelsDropdown() {
   modelSelect.innerHTML = '';
   for (const m of modelsCatalog) {
     const opt = document.createElement('option');
     opt.value = m.id;
-    opt.textContent = m.installed
-      ? `${m.label} [Installed]`
-      : `${m.label} [Click Download]`;
+    const rec = m.id === 'tiny.en' ? ' [Recommended]' : '';
+    const status = m.installed ? 'Installed' : 'Download';
+    opt.textContent = `${m.label}${rec} (${status})`;
     if (m.id === selectedModelId) {
       opt.selected = true;
     }
@@ -2353,8 +2373,9 @@ async function syncConfigToBackend() {
   };
 
   vadThreshDisplay.textContent = currentConfig.vadThreshold.toFixed(2);
-  previewCountdownDisplay.textContent = `${currentConfig.previewCountdownMs} ms`;
+  previewCountdownDisplay.textContent = formatCountdownSec(currentConfig.previewCountdownMs);
   llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
+  updateLlmPrivacyBadge();
   updateCalibrationDisplay();
   updateHistoryBadgeDisplay();
   refreshRangeFills();
@@ -2410,7 +2431,7 @@ async function initApp() {
     vadThreshSlider.value = String(currentConfig.vadThreshold);
     vadThreshDisplay.textContent = currentConfig.vadThreshold.toFixed(2);
     previewCountdownSlider.value = String(currentConfig.previewCountdownMs);
-    previewCountdownDisplay.textContent = `${currentConfig.previewCountdownMs} ms`;
+    previewCountdownDisplay.textContent = formatCountdownSec(currentConfig.previewCountdownMs);
     allowlistInput.value = currentConfig.autoSendAllowlist.join(', ');
     customVocabInput.value = currentConfig.customVocab || '';
 
@@ -2450,6 +2471,7 @@ async function initApp() {
       currentConfig.llmEndpointUrl || 'http://127.0.0.1:11434/v1/chat/completions';
     llmModelInput.value = currentConfig.llmModel || 'qwen2.5-coder:1.5b';
     llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
+    updateLlmPrivacyBadge();
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
@@ -2524,6 +2546,10 @@ async function initApp() {
     hidePreviewBanner();
     canceledSendsCount += 1;
     updateStatsDisplay();
+    if (practiceListening) {
+      resetPractice();
+      if (obPracticeStatus) obPracticeStatus.textContent = 'Practice canceled. Try again.';
+    }
   });
 
   await listen<UtteranceCompleteEvent>('utterance-complete', (event) => {
@@ -2535,7 +2561,7 @@ async function initApp() {
   });
 
   await listen('paste-last-requested', () => {
-    void pasteLastTranscript();
+    void pasteLastTranscript(120);
   });
 
   await listen<PracticeCompleteEvent>('practice-complete', (event) => {
@@ -2543,6 +2569,10 @@ async function initApp() {
   });
 
   await listen<string>('pipeline-error', (event) => {
+    if (practiceListening) {
+      resetPractice();
+      if (obPracticeStatus) obPracticeStatus.textContent = event.payload;
+    }
     showError(event.payload);
   });
 
@@ -2562,6 +2592,7 @@ async function initApp() {
       currentConfig.llmEndpointUrl || 'http://127.0.0.1:11434/v1/chat/completions';
     llmModelInput.value = currentConfig.llmModel || 'qwen2.5-coder:1.5b';
     llmCleanupFields?.classList.toggle('hidden', !currentConfig.llmCleanupEnabled);
+    updateLlmPrivacyBadge();
     toggleSessionMetrics.checked = Boolean(currentConfig.sessionMetricsEnabled);
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
@@ -2804,6 +2835,7 @@ toggleAdaptiveFps.addEventListener('change', syncConfigToBackend);
 toggleHistoryPersistence.addEventListener('change', syncConfigToBackend);
 toggleLlmCleanup.addEventListener('change', syncConfigToBackend);
 llmEndpointInput.addEventListener('change', syncConfigToBackend);
+llmEndpointInput.addEventListener('input', updateLlmPrivacyBadge);
 llmModelInput.addEventListener('change', syncConfigToBackend);
 toggleSessionMetrics.addEventListener('change', syncConfigToBackend);
 toggleSaveAudio.addEventListener('change', syncConfigToBackend);
@@ -2894,24 +2926,42 @@ async function downloadSelectedModel() {
   }
 }
 
-async function pasteLastTranscript() {
+async function pasteLastTranscript(delayMs = 120, triggerBtn?: HTMLButtonElement) {
   if (!lastTranscriptText) {
     showError('Nothing to paste yet. Say something first.');
     return;
+  }
+  const origLabel = triggerBtn?.textContent || 'Paste last';
+  if (triggerBtn && delayMs >= 1000) {
+    triggerBtn.disabled = true;
+    triggerBtn.textContent = `Focus target (${Math.round(delayMs / 1000)}s)...`;
   }
   try {
     await invoke('manual_inject_text', {
       text: lastTranscriptText,
       pressEnter: false,
       useClipboardPaste: true,
-      delayMs: 120,
+      delayMs,
     });
+    if (triggerBtn && delayMs >= 1000) {
+      triggerBtn.textContent = 'Pasted!';
+    }
   } catch (err) {
+    if (triggerBtn && delayMs >= 1000) {
+      triggerBtn.textContent = 'Failed';
+    }
     showError(`Could not paste the last transcript: ${String(err)}`);
+  } finally {
+    if (triggerBtn && delayMs >= 1000) {
+      window.setTimeout(() => {
+        triggerBtn.disabled = false;
+        triggerBtn.textContent = origLabel;
+      }, 1500);
+    }
   }
 }
 
-pasteLastBtn.addEventListener('click', () => void pasteLastTranscript());
+pasteLastBtn.addEventListener('click', () => void pasteLastTranscript(2000, pasteLastBtn));
 
 downloadModelBtn.addEventListener('click', () => void downloadSelectedModel());
 
@@ -2937,6 +2987,7 @@ clearTerminalBtn.addEventListener('click', () => {
 historySearchInput.addEventListener('input', filterUtteranceFeed);
 
 clearFeedBtn.addEventListener('click', () => {
+  lastTranscriptText = '';
   transcriptList.innerHTML = '';
   transcriptList.appendChild(emptyFeed);
   emptyFeed.classList.remove('hidden');

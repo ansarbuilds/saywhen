@@ -1482,6 +1482,10 @@ fn run_audio_worker(
                         v.reset();
                     }
                     let mut guard = shared.lock().unwrap();
+                    if source == "practice" && guard.state == PipelineState::PREVIEW {
+                        guard.pending_preview.take();
+                        guard.cancel_active_or_preview(&turn_cfg);
+                    }
                     if guard.state == PipelineState::IDLE || guard.state == PipelineState::ARMED {
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
@@ -1491,6 +1495,11 @@ fn run_audio_worker(
                             0
                         };
                         guard.begin_listening(&source, seed);
+                    } else if source == "practice" && guard.state != PipelineState::LISTENING {
+                        let _ = app_handle.emit(
+                            "pipeline-error",
+                            "Finish the current transcription first, then start the practice again.",
+                        );
                     }
                 }
                 AudioCommand::CancelListening => {

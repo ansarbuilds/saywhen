@@ -5,20 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>saywhen</title>
-    <script>
-      try {
-        var themeChoice = localStorage.getItem('saywhen-theme') || 'system';
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var dark = themeChoice === 'dark' || (themeChoice === 'system' && prefersDark);
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-        document.documentElement.dataset.themeChoice = themeChoice;
-        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-        var contrast = localStorage.getItem('saywhen-contrast') === 'high' ? 'high' : 'normal';
-        document.documentElement.dataset.contrast = contrast;
-        var motion = localStorage.getItem('saywhen-motion') === 'reduced' ? 'reduced' : 'full';
-        document.documentElement.dataset.motion = motion;
-      } catch (error) {}
-    </script>
+    <script src="/boot.js"></script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body data-state="IDLE" data-send-mode="pause" data-palette="saywhen" data-mood-colors="on">
@@ -505,7 +492,7 @@
                   <div class="pref-row pref-row-slider">
                     <div class="pref-text">
                       <label class="field-label" for="vad-thresh-slider">Noise filter</label>
-                      <span class="pref-desc">Turn it up if background noise starts recordings by mistake.</span>
+                      <span class="pref-desc">Lower (0.20) catches soft speech; higher (0.80) ignores room noise.</span>
                     </div>
                     <div class="pref-control slider-control">
                       <input type="range" id="vad-thresh-slider" min="0.20" max="0.80" step="0.05" value="0.45" class="range-slider" />
@@ -585,7 +572,7 @@
                     </div>
                     <div class="pref-control slider-control">
                       <input type="range" id="preview-countdown-slider" min="800" max="3500" step="100" value="1800" class="range-slider" />
-                      <span class="mono-val" id="preview-countdown-display">1800 ms</span>
+                      <span class="mono-val" id="preview-countdown-display">1.8 s</span>
                     </div>
                   </div>
                   <label class="toggle-row">
@@ -679,7 +666,7 @@
                   </label>
                   <div id="llm-cleanup-fields" class="llm-fields hidden">
                     <div class="field-group">
-                      <label class="field-label" for="llm-endpoint-input">Endpoint URL</label>
+                      <label class="field-label" for="llm-endpoint-input">Endpoint URL <span class="gauge-tag tag-ok" id="llm-privacy-badge">Local loopback</span></label>
                       <input type="text" id="llm-endpoint-input" class="text-control" value="http://127.0.0.1:11434/v1/chat/completions" />
                     </div>
                     <div class="field-group">

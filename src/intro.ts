@@ -60,7 +60,9 @@ export function initIntro(): void {
   } catch {
     seen = false;
   }
-  if (!seen) {
+  const params = new URLSearchParams(window.location.search);
+  const demoOrPremiere = params.has('demo') || params.get('premiere') === '1';
+  if (!seen && !demoOrPremiere) {
     window.setTimeout(openIntro, 420);
   }
 }

@@ -143,8 +143,11 @@ fn update_dictation_config(
     config: DictationConfig,
 ) -> Result<DictationConfig, String> {
     let previous = state.audio.get_config();
-    let requested_hotkey = config
-        .hotkey_accelerator
+    let trimmed_hotkey = config.hotkey_accelerator.trim().to_string();
+    if trimmed_hotkey.eq_ignore_ascii_case("escape") || trimmed_hotkey.eq_ignore_ascii_case("esc") {
+        return Err("Escape is reserved for canceling previews. Pick a shortcut with a modifier like CommandOrControl+Shift+Space.".to_string());
+    }
+    let requested_hotkey = trimmed_hotkey
         .parse::<Shortcut>()
         .map_err(|err| format!("That shortcut is not valid: {}", err))?;
     let updated = state.audio.update_config(config)?;
@@ -154,16 +157,16 @@ fn update_dictation_config(
             .lock()
             .map_err(|_| "Shortcut lock failed".to_string())?
             .clone();
-        if let Err(err) = app.global_shortcut().unregister(old_hotkey) {
-            let _ = state.audio.update_config(previous);
-            return Err(format!("Could not release the old shortcut: {}", err));
+        if requested_hotkey != old_hotkey {
+            let _ = app.global_shortcut().unregister(old_hotkey);
+            if let Err(err) = app.global_shortcut().register(requested_hotkey) {
+                let _ = app.global_shortcut().register(old_hotkey);
+                let _ = state.audio.update_config(previous);
+                return Err(format!("That shortcut is already taken: {}", err));
+            }
+            *state.hotkey.lock().map_err(|_| "Shortcut lock failed".to_string())? =
+                requested_hotkey;
         }
-        if let Err(err) = app.global_shortcut().register(requested_hotkey) {
-            let _ = app.global_shortcut().register(old_hotkey);
-            let _ = state.audio.update_config(previous);
-            return Err(format!("That shortcut is already taken: {}", err));
-        }
-        *state.hotkey.lock().map_err(|_| "Shortcut lock failed".to_string())? = requested_hotkey;
     }
     if !updated.history_persistence_enabled {
         if let Ok(app_data_dir) = app.path().app_data_dir() {

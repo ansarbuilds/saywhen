@@ -463,7 +463,10 @@ pub fn should_auto_start(inputs: &GateInputs, cfg: &TurnTakingConfig) -> bool {
 
 pub fn is_manual_or_hotkey_trigger(trigger_source: &str) -> bool {
     let lower = trigger_source.to_ascii_lowercase();
-    lower.contains("hotkey") || lower.contains("manual") || lower.contains("button")
+    lower.contains("hotkey")
+        || lower.contains("manual")
+        || lower.contains("button")
+        || lower.contains("practice")
 }
 
 pub fn required_min_speech_ms(trigger_source: &str, cfg: &TurnTakingConfig) -> u64 {
@@ -1588,5 +1591,13 @@ mod tests {
             detect_system_sleep_or_stall_jump(1_000_000, 1_045_000, SYSTEM_SLEEP_JUMP_THRESHOLD_MS),
             Some(45_000)
         );
+    }
+
+    #[test]
+    fn test_practice_counts_as_manual_trigger() {
+        assert!(is_manual_or_hotkey_trigger("practice"));
+        assert!(is_manual_or_hotkey_trigger("ui_button"));
+        assert!(is_manual_or_hotkey_trigger("hotkey"));
+        assert!(!is_manual_or_hotkey_trigger("hands_free_multimodal"));
     }
 }
