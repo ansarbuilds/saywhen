@@ -11,15 +11,25 @@ permissions:
 
 jobs:
   build-tauri:
-    name: Package Release (${{ matrix.platform }})
+    name: Package Release (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
-          - platform: windows-latest
+          # Cross-compiled on the Apple Silicon runner. Not yet verified on a real
+          # Intel Mac; fail-fast is off so a failure here never blocks the others.
+          - name: macOS Intel
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - name: Windows x64
+            platform: windows-latest
+            target: ''
             args: ''
 
     steps:
@@ -35,15 +45,55 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
       - name: Cache Cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: npm ci
+
+      # Signing and notarization are opt-in. They switch on only when the
+      # repository secrets below exist, so forks and unsigned builds keep working.
+      # Secrets needed (Settings > Secrets and variables > Actions):
+      #   APPLE_CERTIFICATE           base64 of the Developer ID Application .p12
+      #   APPLE_CERTIFICATE_PASSWORD  password used when exporting the .p12
+      #   APPLE_SIGNING_IDENTITY      "Developer ID Application: Name (TEAMID)"
+      #   APPLE_ID                    Apple ID email used for notarization
+      #   APPLE_PASSWORD              app-specific password for that Apple ID
+      #   APPLE_TEAM_ID               10-character team id
+      - name: Enable macOS signing and notarization (when secrets exist)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          S_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          S_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          S_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          S_APPLE_ID: ${{ secrets.APPLE_ID }}
+          S_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          S_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$S_APPLE_CERTIFICATE" ] || [ -z "$S_APPLE_SIGNING_IDENTITY" ]; then
+            echo "::warning::No Apple signing secrets found. This macOS build is UNSIGNED and will trigger Gatekeeper warnings."
+            exit 0
+          fi
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            src="S_$name"
+            value="${!src}"
+            if [ -n "$value" ]; then
+              {
+                echo "$name<<__SAYWHEN_EOF__"
+                echo "$value"
+                echo "__SAYWHEN_EOF__"
+              } >> "$GITHUB_ENV"
+            fi
+          done
+          if [ -z "$S_APPLE_ID" ] || [ -z "$S_APPLE_PASSWORD" ] || [ -z "$S_APPLE_TEAM_ID" ]; then
+            echo "::warning::Signing is on but notarization secrets are missing. The build will be signed but NOT notarized."
+          fi
 
       - name: Build Tauri desktop bundle
         uses: tauri-apps/tauri-action@v0
@@ -53,7 +103,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'saywhen v__VERSION__'
-          releaseBody: 'Local-first hands-free voice input for developers (macOS Apple Silicon & Windows x64).'
+          releaseBody: 'Local-first hands-free voice input for developers (macOS Apple Silicon, macOS Intel and Windows x64).'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

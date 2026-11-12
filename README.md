@@ -58,6 +58,21 @@ In every style you can always stop a send:
 
 ## Install
 
+### Download the app
+
+Get the latest installer from the **[Releases page](https://github.com/kmsmohamedansar/saywhen/releases/latest)**:
+
+- **Mac:** the `.dmg` file (`aarch64` is for Apple Silicon, `x64` is for Intel Macs when the release includes one). Open it and drag saywhen into Applications.
+- **Windows:** the `-setup.exe` file. Run it.
+
+If your Mac says saywhen "is damaged" or "cannot be opened", that build was not signed by Apple yet. Run this once in Terminal, then open the app again:
+
+```bash
+xattr -cr /Applications/saywhen.app
+```
+
+On Windows, if SmartScreen appears, click **More info** then **Run anyway**.
+
 ### The easy way: let your AI assistant do it
 
 If you use **Claude Code**, **Cursor** or another coding assistant, open it in an empty folder and paste this:
@@ -167,7 +182,7 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- recordings
 | Face tracking (MediaPipe) | Time per camera frame | 12 to 15 ms |
 | "Facing the screen" check | Telling facing from turned away | 100% on our test sessions |
 | "Mouth still" check | Ignoring a closed or still mouth | 96.2% rejected correctly |
-| Start and end of speech | 56 recorded sentences | 0% false starts (was 36.4%), 0% cut-offs (was 52.9%) |
+| Start and end of speech | 56 test clips (computer-generated speech plus simulated camera traces, not live users) | 0% false starts (was 36.4%), 0% cut-offs (was 52.9%) |
 | Developer word clean-up | 34 spoken commands | 34 of 34 exact (was 44.1%) |
 | Speech to text (Whisper tiny.en, GPU) | 1.5 s of audio | 87 to 473 ms |
 | Finding the front app (macOS) | Median of 20 calls | 1 to 2 microseconds |
@@ -189,7 +204,7 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- recordings
 | [src/hud.ts](src/hud.ts), [src/hud.css](src/hud.css), [hud.html](hud.html) | Floating status pill and check card |
 | [src/fonts.ts](src/fonts.ts) | Bundled fonts (Plus Jakarta Sans, Instrument Serif, JetBrains Mono, Outfit) |
 
-Contributions are welcome. Please keep the principles in [AGENTS.md](AGENTS.md): local-first, private, always cancelable, fail loudly, measure everything.
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and keep the principles in [AGENTS.md](AGENTS.md): local-first, private, always cancelable, fail loudly, measure everything. To report a security or privacy problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 
