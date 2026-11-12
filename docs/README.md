@@ -4,7 +4,7 @@
 
 Start with what you want to do. The user guides explain the app in plain language; the engineering documents go deeper into how it is built.
 
-**[Watch the demo film with sound](https://ansarbuilds.dev/p/saywhen/)** · [Play it in the README](../README.md#watch-the-demo) · [Download the MP4](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)
+**[Watch the demo film with sound](https://ansarbuilds.dev/p/saywhen/)** · [Play it in the README](../README.md#watch-the-demo) · [Download the MP4](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)
 
 ## Try it
 
@@ -15,7 +15,7 @@ Start with what you want to do. The user guides explain the app in plain languag
 | Have my coding assistant help me install | [Install with AI](../INSTALL_WITH_AI.md) |
 | Understand the camera, microphone and preview | [How it works](HOW_IT_WORKS.md) |
 | Check what has actually been verified | [Launch checklist](LAUNCH_CHECKLIST.md) |
-| Report something that failed | [Open an issue](https://github.com/kmsmohamedansar/saywhen/issues/new/choose) |
+| Report something that failed | [Open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose) |
 
 ## Understand the project
 
