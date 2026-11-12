@@ -78,7 +78,7 @@ cd saywhen
 ```
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Step 4: Start it
@@ -86,6 +86,8 @@ npm install
 ```bash
 npx tauri dev
 ```
+
+The first run downloads and verifies the camera model (about 4 MB) and prepares its runtime automatically. If this fails, check the connection and retry; do not skip asset preparation.
 
 The first build compiles everything and can take 5 to 15 minutes. Tell the person this is normal. When it finishes, the saywhen window opens, plus a small status pill near the bottom of the screen.
 
@@ -117,5 +119,5 @@ If something did not work, open the **Problems** list on the Home screen, read t
 ## Updating later
 
 ```bash
-cd saywhen && git pull && npm install && npx tauri dev
+cd saywhen && git pull && npm ci && npx tauri dev
 ```

@@ -1,34 +1,33 @@
 # Architecture
 
-Status: draft, pre-prototype. Everything here is a plan, not a measured result.
+Status: implemented beta. Hardware validation gaps and release gates are tracked in [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md). Measurements below describe the specific recorded sessions, not a guarantee for other hardware.
 
 ## Stack
 
 - **Shell:** Tauri v2 (Rust backend, TypeScript frontend in the system webview).
-- **Vision:** MediaPipe Tasks Vision (Face Landmarker + Hand Landmarker) running in the webview via WASM/WebGL. Chosen because it works the same on macOS, Windows and Linux without native per-platform vision code.
+- **Vision:** MediaPipe Tasks Vision (Face Landmarker) running in the webview via WASM/WebGL. Chosen because it works the same on macOS, Windows and Linux without native per-platform vision code.
 - **Audio capture:** `cpal` in Rust (`src-tauri/src/audio.rs`) with automatic hot-plug recovery (`evaluate_audio_stream_health`), preferred-device restoration, and wall-clock system sleep/lock detection (`detect_system_sleep_or_stall_jump`).
 - **Voice activity detection:** Silero VAD (ONNX).
-- **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run to `<app_data_dir>/models` in packaged `.app` / `.exe` builds (or `./models` in dev runs), never committed.
+- **Transcription:** whisper.cpp (via Rust bindings), with Tiny.en and Base.en available. Models downloaded on first run to `<app_data_dir>/models` in packaged `.app` / `.exe` builds (or `./models` in dev runs), never committed.
 - **AI cleanup:** deterministic local developer pass (`src-tauri/src/cleanup.rs`, `< 50 us`) plus opt-in secondary local Ollama (`http://127.0.0.1:11434/v1/chat/completions`) or OpenAI-compatible BYOK pass (`run_opt_in_llm_cleanup`, off by default, `1.2s` timeout with deterministic fallback).
 - **Text injection:** `enigo` for keystrokes (`src-tauri/src/inject.rs`, `inject/macos.rs`, `inject/windows.rs`), clipboard paste via `arboard` as the default path, then a synthetic Enter after a length-scaled delay.
 - **Storage:** `<app_data_dir>/utterance-history.jsonl` for 7-day local transcript history (`src-tauri/src/history.rs`), automatically pruned on startup and write (`HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`), with one-click purge. Settings in `<app_data_dir>/settings.local.json` (a legacy repo-root `settings.local.json` is copied there once on first launch).
 
 ## Pipeline
 
-```
-webcam -> webview (MediaPipe) -> face/gaze/MAR features --+
-                                                         |
-mic -> cpal -> ring buffer -> Silero VAD ----------------+--> intent gate (Rust)
-                                                         |
-                                        LISTENING: audio segment
-                                                         |
-                                       whisper.cpp / Parakeet
-                                                         |
-                                            AI cleanup pass
-                                                         |
-                                       preview + cancel window
-                                                         |
-                                    inject text + Enter (enigo)
+```mermaid
+flowchart TD
+    Camera["Webcam frames in memory"] --> Vision["MediaPipe face features"]
+    Mic["Microphone audio"] --> VAD["Pre-roll and Silero VAD"]
+    Vision --> Gate{"Intent gate"}
+    VAD --> Gate
+    Gate --> Speech["Capture and local Whisper"]
+    Speech --> Cleanup["Developer cleanup"]
+    Cleanup --> Preview["Cancelable preview"]
+    Preview --> Policy{"Target and send rules"}
+    Policy --> Paste["Paste only"]
+    Policy --> Enter["Paste and Enter"]
+    Preview --> Cancel["Cancel"]
 ```
 
 The webview sends only derived numbers (landmark-based features such as MAR, yaw, pitch, face present, gesture events) to Rust over Tauri IPC. Raw frames never leave the webview process memory.
@@ -48,7 +47,7 @@ The webview sends only derived numbers (landmark-based features such as MAR, yaw
   - Linux (`src-tauri/src/inject/linux.rs`): queries X11 `_NET_ACTIVE_WINDOW` -> `_NET_WM_PID` / `WM_CLASS` / `_NET_WM_NAME` + `/proc/<pid>/exe`, and fails loudly with clipboard fallback if running under pure Wayland without XWayland `DISPLAY`.
 - **Exact allowlist and self-injection guard:**
   - Matches exact app names (case-insensitive), macOS bundle identifiers (such as `com.apple.Terminal`, `com.googlecode.iterm2`, `dev.warp.Warp-Stable`, `com.mitchellh.ghostty`, `com.microsoft.VSCode`, `com.todesktop.230313mzl4w4u92`, `dev.zed.Zed`, `com.anthropic.claudefordesktop`), and Windows executable names (`WindowsTerminal.exe`, `Code.exe`, `Cursor.exe`, etc.). Substring matches (such as `"Xcode"` matching `"Code"`) are rejected.
-  - `saywhen` itself (`dev.saywhen.desktop`, `saywhen.exe`, or matching PID) is removed from the default allowlist and unconditionally refused so `saywhen` never types into or presses Enter on its own windows.
+  - `saywhen` itself (`dev.saywhen.app`, `saywhen.exe`, or matching PID) is removed from the default allowlist and unconditionally refused so `saywhen` never types into or presses Enter on its own windows.
 - **Pre-injection target verification (`onTargetChanged: "abort" | "paste_only"`, default `"abort"`):**
   - Right before injecting at the end of the preview countdown, `saywhen` re-detects the frontmost app and compares PID, bundle ID, executable, and name against the preview target. If the user switched apps during the countdown, `saywhen` never presses Enter: it either aborts (leaving the transcript on the clipboard and surfacing an error) or pastes without Enter (`"paste_only"`).
 - **Multi-monitor gaze-window alignment guard (`evaluate_gaze_window_alignment` in `src-tauri/src/inject/policy.rs`):**
@@ -64,10 +63,23 @@ The webview sends only derived numbers (landmark-based features such as MAR, yaw
 
 ## State machine and gate
 
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> ARMED: Fresh facing signal
+    ARMED --> IDLE: Look away
+    ARMED --> LISTENING: Lips and speech agree
+    LISTENING --> TRANSCRIBING: Turn ends
+    LISTENING --> CANCELED: Cancel
+    TRANSCRIBING --> PREVIEW: Text ready
+    TRANSCRIBING --> ARMED: Empty or discarded
+    PREVIEW --> SENT: Send rule permits delivery
+    PREVIEW --> CANCELED: Cancel or expiry
+    SENT --> ARMED
+    CANCELED --> ARMED
 ```
-IDLE > ARMED > LISTENING > TRANSCRIBING > PREVIEW > SENT
-                                                  > CANCELED
-```
+
+This diagram shows the default camera-gated path. Hotkey and opt-in wake-word entry paths are described below and in the roadmap. Delivery may paste without Enter according to send mode and app policy.
 
 | State | Entered when | Leaves when |
 | --- | --- | --- |
