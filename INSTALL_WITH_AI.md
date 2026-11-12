@@ -76,7 +76,7 @@ If `INSTALL_WITH_AI.md` is already in the current folder, the code is here. Stay
 If it is not, download it:
 
 ```bash
-git clone https://github.com/kmsmohamedansar/saywhen.git
+git clone https://github.com/ansarbuilds/saywhen.git
 ```
 
 ```bash

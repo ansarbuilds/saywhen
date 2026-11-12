@@ -3,8 +3,8 @@
 # saywhen
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-fbb303.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/kmsmohamedansar/saywhen?include_prereleases&color=fbb303&label=release)](https://github.com/kmsmohamedansar/saywhen/releases/tag/v0.2.0)
-[![CI](https://github.com/kmsmohamedansar/saywhen/actions/workflows/ci.yml/badge.svg)](https://github.com/kmsmohamedansar/saywhen/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&color=fbb303&label=release)](https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0)
+[![CI](https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml/badge.svg)](https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml)
 ![Platforms: macOS and Windows](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-dfe5ec.svg)
 
 **Look at the screen. Say the command. saywhen types it, and can press Enter.**
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 
 *Sixty seconds, with voice and sound. It is an animation of the idea, not a screen recording, and its timing is not a speed measurement.*
 
-No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
+No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
 
 ---
 
@@ -123,7 +123,7 @@ When the window is open, walk me through First launch in the README, one step at
 You only have the link? Paste this instead:
 
 ```text
-Clone https://github.com/kmsmohamedansar/saywhen and open that folder.
+Clone https://github.com/ansarbuilds/saywhen and open that folder.
 Then follow INSTALL_WITH_AI.md from the top.
 Ask me before you install anything. Explain each step in one plain sentence.
 On a Mac, do not start the app yourself. Tell me the command to run in the Terminal app.
@@ -133,7 +133,7 @@ The full checklist is [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md).
 
 ### Download the app
 
-Get the beta installer from the **[v0.2.0 release](https://github.com/kmsmohamedansar/saywhen/releases/tag/v0.2.0)**:
+Get the beta installer from the **[v0.2.0 release](https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0)**:
 
 - **Mac:** the `.dmg` file (`aarch64` is Apple Silicon, `x64` is Intel when that build is included). Drag saywhen into Applications.
 - **Windows:** the `-setup.exe` file.
@@ -151,7 +151,7 @@ On Windows, SmartScreen appears for the same reason. Click **More info**, then *
 You need Node.js 20 or newer, Rust, and CMake. On Windows, also install Visual Studio Build Tools 2022 with the "Desktop development with C++" workload.
 
 ```bash
-git clone https://github.com/kmsmohamedansar/saywhen.git
+git clone https://github.com/ansarbuilds/saywhen.git
 cd saywhen
 npm ci
 npx tauri dev
@@ -201,9 +201,9 @@ A person opened this repository in Claude, Cursor, or a similar tool. Read this 
 | I want to talk while looking away | Turn on **Settings > Wake word when you look away** and start with "Eevee", as in "Eevee, run the tests". |
 | My webcam sits beside the screen | Look at the screen you talk to, keep your mouth closed, and click **Calibrate**. saywhen learns that the camera is off to the side. It works up to about a 65 to 70 degree head turn. |
 | It starts when I am not talking to it | Turn up **Settings > Noise filter**, or pick **Nod to send**. |
-| My first or last word is cut off | Speak a little more slowly at the end, then [open an issue](https://github.com/kmsmohamedansar/saywhen/issues/new/choose) so it can be tuned. |
+| My first or last word is cut off | Speak a little more slowly at the end, then [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose) so it can be tuned. |
 | It typed but did not press Enter | The app may be missing from **Settings > Apps where Enter can be pressed**, or the command looked risky. |
-| Something else | Open **Problems** on Home. Copy the message and [open an issue](https://github.com/kmsmohamedansar/saywhen/issues/new/choose). |
+| Something else | Open **Problems** on Home. Copy the message and [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose). |
 
 ---
 
