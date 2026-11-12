@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>How saywhen works · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link is-active" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Using saywhen</span></div>
+      <article class="prose">
+        <h1 id="how-saywhen-works">How saywhen works</h1>
+<p>This page explains saywhen without any technical words. If you want the engineering detail, see <a href="architecture.html">ARCHITECTURE.md</a>.</p>
+<p><img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/visuals/steps.jpg" alt="Three steps. Look: the pill says Ready. Talk: the pill says Listening. Check, sent: a preview of cargo test --release counts down." /></p>
+<h2 id="the-big-idea">The big idea</h2>
+<p>Imagine talking to a friend who is helping you at your computer. You do not press a button before you speak. Your friend just <em>knows</em> you are talking to them, because you are looking at them and your mouth is moving. And they wait until you are finished before they act.</p>
+<p>saywhen tries to be that friend for your computer.</p>
+<p><img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/visuals/intent-and-privacy.png" alt="The default intent gate combines face, gaze and lip movement with microphone speech detection before capturing an utterance. Processing is local; optional paths are explained below." /></p>
+<h2 id="the-four-helpers-inside-saywhen">The four helpers inside saywhen</h2>
+<h3 id="1-the-watcher-camera">1. The watcher (camera)</h3>
+<p>The watcher looks through your webcam about 15 times a second and answers three yes-or-no questions:</p>
+<ul>
+<li>Is there a face?</li>
+<li>Is it looking at the screen?</li>
+<li>Are the lips moving like someone talking?</li>
+</ul>
+<p>It does this by finding a few hundred dots on your face (corners of your eyes, edges of your lips) and doing a little maths on them. <strong>The picture itself is thrown away straight after.</strong> Nothing is saved, nothing leaves your computer. Only the yes-or-no answers are used.</p>
+<p><strong>What if the camera is not in front of you?</strong> Lots of people use a laptop camera next to a bigger monitor, so the camera sees the side of their face. Switch on <strong>Camera is off to the side</strong> in Settings, look at the screen you actually talk to, and click <strong>Calibrate</strong>. saywhen then treats that direction as &quot;looking at the screen&quot;. It works until your head is turned about 65 degrees from the camera. Past that, the camera cannot see enough of your lips, so use the keyboard shortcut instead.</p>
+<p><strong>Talking without looking (wake word).</strong> Switch on <strong>Wake word when you look away</strong> in Settings. Then, when the camera does not see you facing the screen, start your sentence with the wake word: &quot;Eevee, run the tests&quot;. saywhen turns the first couple of seconds into text on your computer. If they do not start with &quot;Eevee&quot;, it throws them away straight away and nothing happens. If they do, it removes &quot;Eevee&quot; and carries on as usual, with the check step and the countdown. A soft chime tells you it caught the wake word (one note means &quot;go on, I am listening for the rest&quot;). You can pick your own wake word, but a short unusual name works best: everyday words like &quot;alright&quot; would start by mistake.</p>
+<p>The watcher also notices two head movements:</p>
+<ul>
+<li><strong>A nod</strong> means &quot;yes, send it&quot;.</li>
+<li><strong>A shake</strong> means &quot;no, stop&quot;.</li>
+</ul>
+<h3 id="2-the-listener-microphone">2. The listener (microphone)</h3>
+<p>The listener checks the microphone about 30 times a second and asks: &quot;Is this a human voice, or just noise?&quot;</p>
+<p>It also keeps the last half second of sound in a small memory, like a tape that keeps rewinding. That way, when you start talking, your very first word is already saved, even though saywhen needed a moment to notice you.</p>
+<p><strong>In the default hands-free mode, both the watcher and listener must agree before an utterance starts.</strong> This helps reject a podcast or another person speaking when your own lips are still. It reduces accidental starts; it does not guarantee they never happen. The manual hotkey and optional wake word provide separate ways to start.</p>
+<h3 id="3-the-writer-speech-to-text">3. The writer (speech to text)</h3>
+<p>When you stop talking, the writer turns your recording into text. It uses a speech model called Whisper that runs on your own computer (on a Mac it uses the graphics chip). In the recorded Apple Silicon benchmark, 1.5 seconds of audio took 87 to 473 milliseconds to transcribe with Tiny.en. Your model and hardware will affect the time.</p>
+<p>Then a tidy-up step fixes the words developers use a lot:</p>
+<table>
+<thead>
+<tr>
+  <th>You say</th>
+  <th>It writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>&quot;cargo test dash dash release&quot;</td>
+  <td><code>cargo test --release</code></td>
+</tr>
+<tr>
+  <td>&quot;cubectal get pods&quot;</td>
+  <td><code>kubectl get pods</code></td>
+</tr>
+<tr>
+  <td>&quot;um, git status&quot;</td>
+  <td><code>git status</code></td>
+</tr>
+</tbody>
+</table>
+<p>You can teach it your own words too (project names, tools) in Settings.</p>
+<h3 id="4-the-sender-typing-it-for-you">4. The sender (typing it for you)</h3>
+<p>The sender shows you the text for a moment, then types it into the app you are using, and presses Enter if it is allowed to.</p>
+<p>How it decides to send depends on the <strong>send style</strong> you picked:</p>
+<table>
+<thead>
+<tr>
+  <th>Send style</th>
+  <th>When it sends</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Just pause</strong></td>
+  <td>After a short countdown (about 2 seconds)</td>
+</tr>
+<tr>
+  <td><strong>Nod to send</strong></td>
+  <td>Only when you nod. If you do not nod in 15 seconds, nothing is sent.</td>
+</tr>
+<tr>
+  <td><strong>Say &quot;send it&quot;</strong></td>
+  <td>Only presses Enter if your sentence ended with &quot;send it&quot;</td>
+</tr>
+<tr>
+  <td><strong>Type only</strong></td>
+  <td>Never presses Enter, only types</td>
+</tr>
+</tbody>
+</table>
+<p>And you can always stop it: shake your head, press Esc, or (in the countdown) just start talking again. The manual shortcut can be changed in <strong>Settings &gt; Sending</strong>; the default is Option + Space on a Mac and Alt + Space on Windows.</p>
+<h2 id="the-five-moods-of-saywhen">The five moods of saywhen</h2>
+<p><img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/visuals/workflow.gif" alt="saywhen cycles through ready, listening, writing, preview and delivery in an illustrated pause-mode example." /></p>
+<p><em>Concept animation with simplified timing.</em> <a href="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/visuals/workflow-still.png">Static alternative</a>.</p>
+<p>You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults, taken from the saywhen logo (plum, silver and amber). In <strong>Settings &gt; Appearance</strong> you can choose System, Light or Dark, pick another palette, and choose whether the glow changes with each mood. There is also a <strong>Guide</strong> page inside the app with the do's and don'ts.</p>
+<table>
+<thead>
+<tr>
+  <th>Mood</th>
+  <th>What it means</th>
+  <th>Colour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Waiting</strong></td>
+  <td>Nobody is looking at the screen</td>
+  <td>Calm plum</td>
+</tr>
+<tr>
+  <td><strong>Ready</strong></td>
+  <td>You are looking. Start talking any time.</td>
+  <td>A soft silver glow</td>
+</tr>
+<tr>
+  <td><strong>Listening</strong></td>
+  <td>You are talking and it is recording</td>
+  <td>Amber, the bars move with your voice</td>
+</tr>
+<tr>
+  <td><strong>Writing</strong></td>
+  <td>It is turning your voice into text</td>
+  <td>Lilac, with a spinning ring</td>
+</tr>
+<tr>
+  <td><strong>Check</strong></td>
+  <td>It is showing you the text before sending</td>
+  <td>Amber countdown bar</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-safety-rules">The safety rules</h2>
+<p>saywhen is careful about pressing Enter, because Enter makes things happen.</p>
+<ol>
+<li><strong>Only in safe apps.</strong> It presses Enter in terminals and code editors you trust. In chat apps, email and web browsers it only types, so a half-finished message is never sent to a person.</li>
+<li><strong>Never risky commands.</strong> If the text looks dangerous (deleting files with <code>rm -rf</code>, <code>git push --force</code> and similar), it only types it and shows a warning. You press Enter yourself if you really mean it.</li>
+<li><strong>Never the wrong window.</strong> If you switch to a different app while it is counting down, it stops instead of typing into the wrong place.</li>
+<li><strong>Always a way out.</strong> Every send can be cancelled. And there is always a keyboard shortcut (Option + Space on Mac, Alt + Space on Windows) if you do not want to use the camera at all.</li>
+</ol>
+<h2 id="what-is-kept-and-what-is-not">What is kept, and what is not</h2>
+<table>
+<thead>
+<tr>
+  <th>Thing</th>
+  <th>Kept?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Camera pictures</td>
+  <td><strong>Never.</strong> Thrown away a split second after they are looked at.</td>
+</tr>
+<tr>
+  <td>Your voice recordings</td>
+  <td><strong>No.</strong> Deleted right after they become text. (Unless you switch on &quot;Save recordings&quot; in Diagnostics to help improve saywhen.)</td>
+</tr>
+<tr>
+  <td>The text you said</td>
+  <td><strong>7 days</strong>, on your computer only, so you can search and copy it. You can turn this off or clear it.</td>
+</tr>
+<tr>
+  <td>Internet access</td>
+  <td>Setup downloads model/runtime files. After setup, local dictation works offline. Optional remote AI cleanup sends text to the endpoint you choose.</td>
+</tr>
+</tbody>
+</table>
+<p><a href="overview.html">Back to documentation</a> · <a href="overview.html#install">Install saywhen</a> · <a href="overview.html#for-coding-assistants">For coding assistants</a> · <a href="architecture.html">Engineering details</a></p>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="troubleshooting.html"><span>Previous</span><strong>When something goes wrong</strong></a><a class="pager-link pager-next" href="changelog.html"><span>Next</span><strong>Changelog</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/HOW_IT_WORKS.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#the-big-idea">The big idea</a><a class="toc-2" href="#the-four-helpers-inside-saywhen">The four helpers inside saywhen</a><a class="toc-3" href="#1-the-watcher-camera">1. The watcher (camera)</a><a class="toc-3" href="#2-the-listener-microphone">2. The listener (microphone)</a><a class="toc-3" href="#3-the-writer-speech-to-text">3. The writer (speech to text)</a><a class="toc-3" href="#4-the-sender-typing-it-for-you">4. The sender (typing it for you)</a><a class="toc-2" href="#the-five-moods-of-saywhen">The five moods of saywhen</a><a class="toc-2" href="#the-safety-rules">The safety rules</a><a class="toc-2" href="#what-is-kept-and-what-is-not">What is kept, and what is not</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

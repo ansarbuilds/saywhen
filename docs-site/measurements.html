@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>What has been measured · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link is-active" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Engineering</span></div>
+      <article class="prose">
+        <h1 id="what-has-been-measured">What has been measured</h1>
+<p>These numbers come from prototype sessions on an Apple Silicon Mac. The films and animations in this repository are illustrations, and their timing is not a measurement. The numbers below are.</p>
+<table>
+<thead>
+<tr>
+  <th>Part</th>
+  <th>What we measured</th>
+  <th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Face tracking (MediaPipe)</td>
+  <td>Time per camera frame</td>
+  <td>12 to 15 ms</td>
+</tr>
+<tr>
+  <td>&quot;Facing the screen&quot; check</td>
+  <td>Telling facing from turned away</td>
+  <td>100% on our test sessions</td>
+</tr>
+<tr>
+  <td>&quot;Mouth still&quot; check</td>
+  <td>Ignoring a closed or still mouth</td>
+  <td>96.2% rejected correctly</td>
+</tr>
+<tr>
+  <td>Start and end of speech</td>
+  <td>56 test clips (generated speech plus simulated camera traces, not live users)</td>
+  <td>0% false starts (was 36.4%), 0% cut-offs (was 52.9%)</td>
+</tr>
+<tr>
+  <td>Developer word clean-up</td>
+  <td>34 spoken commands</td>
+  <td>34 of 34 exact (was 44.1%)</td>
+</tr>
+<tr>
+  <td>Speech to text (Whisper tiny.en, GPU)</td>
+  <td>1.5 s of audio</td>
+  <td>87 to 473 ms</td>
+</tr>
+<tr>
+  <td>Finding the front app (macOS)</td>
+  <td>Median of 20 calls</td>
+  <td>1 to 2 microseconds</td>
+</tr>
+</tbody>
+</table>
+<p>The start-and-end-of-speech clips are generated speech with simulated camera traces, not live users. Real-user accuracy, CPU and battery use are not measured yet. The <a href="launch-checklist.html">launch checklist</a> lists what has been checked on which hardware.</p>
+<p>Run the replay benchmark yourself:</p>
+<pre><code class="language-bash">cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- recordings
+</code></pre>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="how-we-built-it.html"><span>Previous</span><strong>How we built saywhen</strong></a><a class="pager-link pager-next" href="risks.html"><span>Next</span><strong>Risks</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/MEASUREMENTS.md">Edit this page on GitHub</a></footer>
+    </main>
+    
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

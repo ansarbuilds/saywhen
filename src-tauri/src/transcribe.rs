@@ -84,6 +84,16 @@ impl TranscriberEngine {
         fallback
     }
 
+    /// Path the downloader writes to, so the UI can follow its progress.
+    pub fn model_download_path(&self, model_id: &str) -> Option<PathBuf> {
+        let filename = match model_id {
+            "tiny.en" => "ggml-tiny.en.bin",
+            "base.en" => "ggml-base.en.bin",
+            _ => return None,
+        };
+        Some(self.resolve_models_dir().join(filename).with_extension("bin.part"))
+    }
+
     pub fn list_models(&self) -> Vec<ModelInfo> {
         let dir = self.resolve_models_dir();
         let specs = [

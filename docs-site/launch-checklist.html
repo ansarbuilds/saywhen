@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Launch checklist · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link is-active" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Project</span></div>
+      <article class="prose">
+        <h1 id="launch-checklist">Launch checklist</h1>
+<p>Status: beta preparation complete locally; public launch sign-off is pending.</p>
+<h2 id="verified-in-this-checkout">Verified in this checkout</h2>
+<ul>
+<li>Frontend production build passes and includes the camera model and MediaPipe WASM runtime.</li>
+<li>macOS Apple Silicon debug <code>.app</code> packaging succeeds. This is not a signed production installer test.</li>
+<li>46 automated Rust tests pass, including model format validation and the model checksum check; 3 desktop/GPU tests are explicitly ignored by default.</li>
+<li>3 Node release tests pass: wrong release tags, failed model requests and corrupt camera-model responses are rejected.</li>
+<li>Release metadata versions agree. CI and release packaging now run these checks before bundling.</li>
+<li>Camera asset preparation validates the pinned face model's SHA-256 and copies WASM from the installed npm version. Cached asset preparation passes.</li>
+<li>A fresh download was attempted but blocked by this session's DNS/network restrictions (<code>ENOTFOUND storage.googleapis.com</code>). It must pass on a clean CI runner before release.</li>
+</ul>
+<h2 id="required-before-publishing">Required before publishing</h2>
+<p>Record the version, OS version, hardware and result for each applicable platform. Do not infer Windows or Intel Mac results from Apple Silicon.</p>
+<table>
+<thead>
+<tr>
+  <th>Gate</th>
+  <th>Apple Silicon</th>
+  <th>Intel Mac</th>
+  <th>Windows x64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Clean checkout: <code>npm ci</code>, <code>npm test</code>, <code>npm run check:release</code>, <code>npm run build</code></td>
+  <td>Local pass on 2026-11-12 (macOS 27.0.1, M4, existing checkout); CI pending</td>
+  <td>Pending CI</td>
+  <td>Pending CI</td>
+</tr>
+<tr>
+  <td>Locked Rust tests pass</td>
+  <td>Local pass on 2026-11-12 (46 passed, 3 ignored)</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Release installer builds and opens on a fresh account</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Camera, microphone and typing permissions: deny, retry, grant</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Download Tiny, interrupt the download, retry, restart</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Disconnect internet after setup: camera and dictation work</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Type only, pause, nod and phrase modes behave as labeled</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Esc, shake and speech cancel before injection</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Switch app during preview: no delivery to the new app</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Switch app after paste: no Enter in the new app</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Risky commands are downgraded; no unintended execution</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Hide window for 10 minutes: gate remains active</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Sleep/wake, mic unplug/reconnect: no stale send</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Full work session: record unwanted sends and missed starts</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+<tr>
+  <td>Signing and installer security prompts documented</td>
+  <td>Pending</td>
+  <td>Pending</td>
+  <td>Pending</td>
+</tr>
+</tbody>
+</table>
+<p>Use a disposable terminal with harmless commands for delivery tests. The destructive-command matcher is a heuristic, not a shell parser or a guarantee against dangerous commands. Test risky strings in an editor, never a live shell. Paste itself can execute multiline input in some terminals.</p>
+<p>Run hardware-dependent tests explicitly from an interactive desktop, after downloading Tiny:</p>
+<pre><code class="language-bash">cargo test --locked --manifest-path src-tauri/Cargo.toml -- --ignored --test-threads=1
+</code></pre>
+<p>The GPU benchmark crashed inside Metal allocation in the restricted agent session. It remains a required hardware check; excluding it from unattended unit tests is not a fix or proof of runtime compatibility. The clipboard test temporarily replaces clipboard contents, so run it when the clipboard can be used for testing.</p>
+<h2 id="prepare-the-release">Prepare the release</h2>
+<ol>
+<li>Complete the gates for every platform being advertised. Omit unverified platform installers from a public release, or label them explicitly experimental.</li>
+<li>Choose an unused version and update <code>package.json</code>, <code>package-lock.json</code>, <code>src-tauri/Cargo.toml</code>, <code>src-tauri/Cargo.lock</code> and <code>src-tauri/tauri.conf.json</code> together. Run <code>npm run check:release</code>.</li>
+<li>Configure the Apple signing and notarization secrets listed in <code>.github/workflows/release.yml</code>. Verify the final downloaded app with <code>codesign --verify --deep --strict</code> and <code>spctl --assess --type execute</code>. Windows signing still needs separate configuration or a clearly disclosed unsigned beta.</li>
+<li>Push reviewed changes and a matching <code>v&lt;version&gt;</code> tag. The workflow creates a <strong>draft prerelease</strong>, not a public release. All intended matrix jobs must pass; a successful platform alone is not enough.</li>
+<li>Download and test the actual installers. Add release notes with supported OS/hardware, signing status, first-run instructions, known limitations and the exact test evidence.</li>
+<li>Check the README demo links and attach the referenced video assets. The README clip links to the project page at <code>https://ansarbuilds.dev/p/saywhen/</code>, so that page must be live before the repository goes public. Publish the draft only after the gates pass. Mark it stable only after the hardware evidence supports that claim.</li>
+</ol>
+<h2 id="remaining-hardening">Remaining hardening</h2>
+<ul>
+<li>Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. Since 2026-11-12 they are also pinned to one revision of the model repository and to SHA-256 digests. Both digests were checked against real downloads of Tiny and Base. The v0.2.0 installers predate this, so it ships with the next build.</li>
+<li>A restrictive webview CSP is set in <code>src-tauri/tauri.conf.json</code>. Before merging, run <code>npx tauri dev</code> and a release build, then confirm: the window and HUD draw with their fonts, the camera turns on and Calibrate works, a phrase is transcribed and typed, and the webview console shows no &quot;Content Security Policy&quot; errors.</li>
+<li>Review optional remote cleanup and API-key storage before advertising it for sensitive work.</li>
+<li>Real-user accuracy, CPU and battery results are still needed. Existing replay numbers are synthetic-corpus results.</li>
+</ul>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="code-of-conduct.html"><span>Previous</span><strong>Code of Conduct</strong></a><a class="pager-link pager-next" href="launch-template.html"><span>Next</span><strong>Launch template</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/LAUNCH_CHECKLIST.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#verified-in-this-checkout">Verified in this checkout</a><a class="toc-2" href="#required-before-publishing">Required before publishing</a><a class="toc-2" href="#prepare-the-release">Prepare the release</a><a class="toc-2" href="#remaining-hardening">Remaining hardening</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

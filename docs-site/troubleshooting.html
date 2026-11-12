@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>When something goes wrong · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link is-active" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Start here</span></div>
+      <article class="prose">
+        <h1 id="when-something-goes-wrong">When something goes wrong</h1>
+<p>Start with the symptom. Each answer says what to check first and what to send if it still fails.</p>
+<h2 id="nothing-gets-typed">Nothing gets typed</h2>
+<ol>
+<li>Check the app in front. saywhen types into the focused app, not into a window that is behind it.</li>
+<li>On a Mac, open <strong>System Settings &gt; Privacy &amp; Security &gt; Accessibility</strong> and allow <strong>saywhen</strong>, or <strong>saywhen-dev</strong> if you built it yourself. Remove old saywhen entries first if macOS shows more than one.</li>
+<li>Look at <strong>Problems</strong> on Home. If the message mentions Accessibility, click <strong>Open Accessibility settings</strong>.</li>
+<li>Try <strong>Type only</strong> on Home. If the text appears but Enter is not pressed, the problem is the app rule, not the microphone.</li>
+<li>If the target app is running as administrator on Windows, Windows blocks input from a non-elevated app. Run saywhen the same way as the target, or use the app without elevation.</li>
+</ol>
+<h2 id="it-never-starts-listening">It never starts listening</h2>
+<ol>
+<li>Turn the camera on. The pill should say <strong>Ready</strong> when you look at the screen.</li>
+<li>Click <strong>Calibrate</strong> while looking at the screen you actually talk to, with your mouth closed. Calibration teaches saywhen what &quot;facing the screen&quot; means for your desk.</li>
+<li>Check the camera preview. If it is black or frozen, see <strong>The camera sees me but it never says Ready</strong> below.</li>
+<li>Try <strong>Option + Space</strong> on a Mac or <strong>Alt + Space</strong> on Windows. If that works, the audio path is fine and the problem is the camera gate.</li>
+<li>If you use a laptop camera next to a larger monitor, turn on <strong>Camera is off to the side</strong> in Settings and calibrate while looking at the larger screen.</li>
+</ol>
+<h2 id="the-camera-sees-me-but-it-never-says-ready">The camera sees me but it never says Ready</h2>
+<ul>
+<li>Make sure your face is inside the frame and the room is not backlit. A bright window behind you can hide your face.</li>
+<li>Look directly at the screen you want to talk to. Looking at a second monitor while the camera expects the first one is the most common cause.</li>
+<li>Click <strong>Calibrate</strong> again. Do not talk or smile during the 1.5 seconds.</li>
+<li>If you wear glasses, try calibrating with them on and without them. Pick the one you use most.</li>
+<li>If the app says <strong>I can see you, but you look away</strong>, the calibration is wrong for this position. Calibrate again, or turn on side-camera mode.</li>
+<li>If the camera is off to the side, the useful range is about 65 to 70 degrees of head turn. Past that, use the hotkey.</li>
+</ul>
+<h2 id="it-starts-when-i-am-not-talking-to-it">It starts when I am not talking to it</h2>
+<ul>
+<li>Turn up <strong>Settings &gt; Noise filter</strong>.</li>
+<li>Pick <strong>Nod to send</strong>. Nothing is sent until you nod, even if it starts listening.</li>
+<li>If another person or a podcast is triggering it, the camera and microphone should both agree. Check that your lips are not in view while the other voice is speaking.</li>
+<li>Say <strong>&quot;cancel&quot;</strong> or press <strong>Esc</strong> during the check step. Talking again during the countdown also cancels.</li>
+<li>If it starts from a cough or a keyboard click, that is a false start. Open <strong>Problems</strong>, or use <strong>Flag False Trigger</strong> on the recent item, so the session log records it.</li>
+</ul>
+<h2 id="it-typed-but-did-not-press-enter">It typed but did not press Enter</h2>
+<ol>
+<li>The app may not be on the trusted list. Open <strong>Settings &gt; Apps where Enter can be pressed</strong> and add it.</li>
+<li>The command may have looked risky. <code>rm -rf</code>, <code>git reset --hard</code>, <code>git push --force</code> and similar commands are only typed, with a warning, so you can press Enter yourself.</li>
+<li>The target app may have changed during the countdown. saywhen stops instead of pressing Enter in the wrong place.</li>
+<li><strong>Type only</strong> mode never presses Enter. Choose <strong>Just pause</strong>, <strong>Nod to send</strong> or <strong>Say &quot;send it&quot;</strong> if you want automatic Enter.</li>
+<li>On a Mac, Terminal's <strong>Secure Keyboard Entry</strong> blocks synthetic input. Turn it off while using saywhen.</li>
+</ol>
+<h2 id="it-typed-into-the-wrong-app">It typed into the wrong app</h2>
+<ul>
+<li>Check whether you switched windows during the countdown. By default, saywhen aborts when the front app changes.</li>
+<li>The default is to abort. saywhen does not yet expose a setting to paste without Enter when the app changes, so do not switch windows during the countdown if you want the text delivered.</li>
+<li>If the wrong app is consistently detected, the frontmost app detection is the thing to report. Copy the Problems message and include the app names.</li>
+</ul>
+<h2 id="the-model-download-fails-or-stalls">The model download fails or stalls</h2>
+<ol>
+<li>Check your internet connection and try again. The download resumes from a temporary file only after the old partial file is removed, so a retry starts clean.</li>
+<li>Make sure there is enough free disk space. Tiny is about 75 MB; Base is about 142 MB.</li>
+<li>If it fails twice, try the other model. A smaller model is enough to finish setup.</li>
+<li>On a managed network, the download host may be blocked. The model comes from a pinned Hugging Face revision; ask your network administrator to allow it.</li>
+<li>Do not rename or edit files inside the models folder by hand. Download the model again from Settings instead.</li>
+</ol>
+<h2 id="my-microphone-disappeared">My microphone disappeared</h2>
+<ul>
+<li>Unplug and replug the microphone or headset. saywhen rebuilds the audio stream and falls back to the default device.</li>
+<li>Open <strong>Settings &gt; Microphone</strong> and pick the device again. The list refreshes when devices change.</li>
+<li>If the microphone is a Bluetooth headset, check that it is connected and not in a call that has taken exclusive control.</li>
+<li>On macOS, check <strong>System Settings &gt; Privacy &amp; Security &gt; Microphone</strong>.</li>
+<li>On Windows, check <strong>Settings &gt; Privacy &amp; security &gt; Microphone</strong> and the sound control panel.</li>
+</ul>
+<h2 id="the-camera-stopped-after-i-closed-the-window">The camera stopped after I closed the window</h2>
+<p>Closing the main window keeps saywhen running in the menu bar or tray. The camera gate should keep working. If the pill says <strong>Camera gate stalled</strong>, open saywhen from the tray, turn the camera off and on, and check the camera permission. On a laptop, closing the lid or locking the screen also pauses the gate until you wake it.</p>
+<h2 id="the-installer-says-the-app-is-damaged-or-cannot-be-opened">The installer says the app is damaged or cannot be opened</h2>
+<p>This beta is not signed by Apple yet.</p>
+<pre><code class="language-bash">xattr -cr /Applications/saywhen.app
+</code></pre>
+<p>Then open the app again. If you built the app yourself, use the <code>saywhen-dev.app</code> name and remove old saywhen entries from <strong>System Settings &gt; Privacy &amp; Security &gt; Accessibility</strong> before allowing the new build.</p>
+<p>On Windows, SmartScreen shows <strong>More info</strong>, then <strong>Run anyway</strong>. This is the missing signature, not a virus warning.</p>
+<h2 id="how-to-send-a-useful-report">How to send a useful report</h2>
+<p>Open <strong>Problems</strong> on Home and click <strong>Copy</strong> on the message. Include:</p>
+<ul>
+<li>what you said, and which app was in front</li>
+<li>macOS or Windows version, and the saywhen version</li>
+<li>whether the camera and microphone were on</li>
+<li>the exact Problems text</li>
+<li>whether it happens every time or only sometimes</li>
+</ul>
+<p>Open an issue at <a href="https://github.com/ansarbuilds/saywhen/issues/new/choose">https://github.com/ansarbuilds/saywhen/issues/new/choose</a>. Do not paste API keys, tokens or private transcripts.</p>
+<h2 id="still-stuck">Still stuck?</h2>
+<p>Read the <a href="faq.html">FAQ</a> or <a href="how-it-works.html">how it works</a>. If the problem is a permission prompt, the <a href="install-with-ai.html">install guide</a> walks through each one.</p>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="install-with-ai.html"><span>Previous</span><strong>Install saywhen with an AI assistant</strong></a><a class="pager-link pager-next" href="how-it-works.html"><span>Next</span><strong>How saywhen works</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/TROUBLESHOOTING.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#nothing-gets-typed">Nothing gets typed</a><a class="toc-2" href="#it-never-starts-listening">It never starts listening</a><a class="toc-2" href="#the-camera-sees-me-but-it-never-says-ready">The camera sees me but it never says Ready</a><a class="toc-2" href="#it-starts-when-i-am-not-talking-to-it">It starts when I am not talking to it</a><a class="toc-2" href="#it-typed-but-did-not-press-enter">It typed but did not press Enter</a><a class="toc-2" href="#it-typed-into-the-wrong-app">It typed into the wrong app</a><a class="toc-2" href="#the-model-download-fails-or-stalls">The model download fails or stalls</a><a class="toc-2" href="#my-microphone-disappeared">My microphone disappeared</a><a class="toc-2" href="#the-camera-stopped-after-i-closed-the-window">The camera stopped after I closed the window</a><a class="toc-2" href="#the-installer-says-the-app-is-damaged-or-cannot-be-opened">The installer says the app is damaged or cannot be opened</a><a class="toc-2" href="#how-to-send-a-useful-report">How to send a useful report</a><a class="toc-2" href="#still-stuck">Still stuck?</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

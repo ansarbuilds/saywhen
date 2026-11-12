@@ -13,6 +13,8 @@
     "predev": "npm run assets",
     "prebuild": "npm run assets",
     "check:release": "node scripts/check-release.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "docs:build": "python3 scripts/build-docs-site.py",
     "test": "node --test scripts/release.test.mjs"
   },
   "dependencies": {

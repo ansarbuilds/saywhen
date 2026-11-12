@@ -7,8 +7,8 @@ type TabId = 'home' | 'preferences' | 'lab' | 'guide';
 
 const TAB_META: Record<TabId, { num: string; title: string; subtitle: string }> = {
   home: { num: '01', title: 'Home', subtitle: 'Talk, check, send' },
-  preferences: { num: '02', title: 'Settings', subtitle: 'Listening, sending and privacy' },
-  lab: { num: '03', title: 'Lab', subtitle: 'Live numbers and a practice box' },
+  preferences: { num: '02', title: 'Settings', subtitle: 'Listening, sending, words and privacy' },
+  lab: { num: '03', title: 'Diagnostics', subtitle: 'Live numbers, tests and a practice box' },
   guide: { num: '04', title: 'Guide', subtitle: 'How to use saywhen, what to do and what to avoid' },
 };
 
@@ -35,7 +35,10 @@ let levelFrame = 0;
 let targetLevel = 0;
 
 function prefersReducedMotion(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return (
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    document.documentElement.dataset.motion === 'reduced'
+  );
 }
 
 function replay(el: Element | null, cls: string) {

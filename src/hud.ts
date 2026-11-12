@@ -79,7 +79,28 @@ const previewFill = document.getElementById('hud-preview-fill') as HTMLElement;
 const previewHint = document.getElementById('hud-preview-hint') as HTMLElement;
 
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-const hotkeyLabel = isMac ? 'Option+Space' : 'Alt+Space';
+function formatHotkey(raw: string): string {
+  const labels: Record<string, string> = isMac
+    ? { Cmd: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧' }
+    : { Cmd: 'Win', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+  return (raw || 'Alt+Space')
+    .split('+')
+    .map((part) => labels[part] ?? (part === 'Space' ? 'Space' : part.replace(/^Key/, '')))
+    .join('+');
+}
+
+let hotkeyLabel = formatHotkey(
+  (() => {
+    try {
+      return localStorage.getItem('saywhen-hotkey') || 'Alt+Space';
+    } catch {
+      return 'Alt+Space';
+    }
+  })()
+);
+window.addEventListener('storage', (event) => {
+  if (event.key === 'saywhen-hotkey') hotkeyLabel = formatHotkey(event.newValue || 'Alt+Space');
+});
 
 let previewTotalMs = 1800;
 let previewWaitsForNod = false;

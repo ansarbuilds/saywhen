@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Questions people ask · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link is-active" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Start here</span></div>
+      <article class="prose">
+        <h1 id="questions-people-ask">Questions people ask</h1>
+<p>Short answers first. Each one links to the page with the detail.</p>
+<h2 id="is-saywhen-free">Is saywhen free?</h2>
+<p>Yes. saywhen is MIT licensed. There is no account, no subscription and no paid tier. The only optional cost is an AI endpoint if you turn on cloud clean-up, and the default is a local Ollama server.</p>
+<h2 id="does-it-work-offline">Does it work offline?</h2>
+<p>Yes, after the speech model and the camera runtime have downloaded. The first setup needs the internet. After that, dictation, the camera gate, the check step and typing into other apps run on your computer. Optional cloud clean-up is off by default and sends text only, never audio or camera pictures.</p>
+<h2 id="does-it-record-my-camera-or-my-voice">Does it record my camera or my voice?</h2>
+<p>No. Camera frames are read in memory and thrown away. Audio is turned into text and discarded after transcription. The text you said is kept for 7 days in local history unless you turn history off. The one exception is the opt-in &quot;Save recordings&quot; switch in Diagnostics, which is off by default, turns itself off on restart and writes 16 kHz WAV files to the <code>recordings/</code> folder.</p>
+<h2 id="how-is-this-different-from-wispr-flow">How is this different from Wispr Flow?</h2>
+<p>Wispr Flow is a polished cloud dictation app. It uses a hotkey, supports many languages and devices, and keeps its models and clean-up in the cloud. saywhen is local-first, camera-gated and built for terminals and coding agents. It has no hotkey in the default path, shows a cancelable preview before Enter, and is free and open source. Neither one is better at everything. If you want a cloud keyboard everywhere, Wispr Flow is the more mature product. If you want your voice and camera to stay on your computer and you mostly type into a terminal or an agent, saywhen is the more honest fit.</p>
+<h2 id="can-i-try-it-before-allowing-accessibility">Can I try it before allowing Accessibility?</h2>
+<p>Yes. The welcome screen has a practice box. Record a short phrase and saywhen shows you the raw transcript and the cleaned text inside the welcome screen. It does not type into another app, does not need Accessibility and does not save the practice to history. Allow Accessibility only when you are ready for saywhen to type into your terminal or editor.</p>
+<h2 id="does-it-work-without-a-camera">Does it work without a camera?</h2>
+<p>Yes. Press <strong>Option + Space</strong> on a Mac or <strong>Alt + Space</strong> on Windows to start and stop by hand. On Home, choose <strong>Type only</strong> so Enter is never pressed until you press it.</p>
+<h2 id="can-i-make-the-text-easier-to-read">Can I make the text easier to read?</h2>
+<p>Open <strong>Settings &gt; Appearance</strong>. You can choose Light, Dark or System, turn on <strong>High contrast</strong> for black, white and amber, scale the whole window with <strong>Text size</strong> (Small, Default, Large or Extra large). The choice is remembered.</p>
+<h2 id="can-i-change-the-keyboard-shortcut">Can I change the keyboard shortcut?</h2>
+<p>Yes. Open <strong>Settings &gt; Sending</strong> and click the shortcut button. Press the new combination, or press Escape to cancel. The default is Option + Space on a Mac and Alt + Space on Windows. If another app already owns the combination, saywhen keeps the old one and tells you what happened.</p>
+<h2 id="which-apps-can-it-type-into">Which apps can it type into?</h2>
+<p>Any app that accepts pasted text, subject to the operating system's permissions. Enter is only pressed in apps on the trusted list in Settings. Terminals and code editors are trusted by default. Chat, email and browsers only receive typed text.</p>
+<h2 id="does-it-support-languages-other-than-english">Does it support languages other than English?</h2>
+<p>Not yet. The current model list is English only (<code>tiny.en</code> and <code>base.en</code>). The app does not claim otherwise. If you need another language, do not install saywhen expecting it to work.</p>
+<h2 id="which-macs-and-windows-versions-are-supported">Which Macs and Windows versions are supported?</h2>
+<p>The tested build is Apple Silicon macOS. A 64-bit Windows build is produced by CI, but hands-on checks on Windows hardware are still open. An Intel Mac build is produced by CI but has not been checked on Intel hardware. The <a href="launch-checklist.html">launch checklist</a> lists exactly what has been verified and what has not.</p>
+<h2 id="why-does-my-computer-warn-me-about-the-installer">Why does my computer warn me about the installer?</h2>
+<p>The beta is not signed by Apple or Microsoft yet, so Gatekeeper or SmartScreen adds an extra prompt. On a Mac, the README explains the <code>xattr</code> command. On Windows, click <strong>More info</strong>, then <strong>Run anyway</strong>. This warning is about the missing signature, not about the app's behaviour. Signing and notarization are required before a stable release.</p>
+<h2 id="where-does-saywhen-keep-my-data">Where does saywhen keep my data?</h2>
+<p>Settings, models and the 7-day text history live in the app data directory for your user. The exact path depends on the platform. History can be cleared from Home. There is no cloud account and no server that receives your transcripts.</p>
+<h2 id="can-i-turn-off-the-check-step">Can I turn off the check step?</h2>
+<p>No. The preview is the safety promise. Every automatic send passes through a short, cancelable check before Enter. If you want a faster path, use <strong>Nod to send</strong> or <strong>Type only</strong>; both keep a way out.</p>
+<h2 id="something-is-broken-what-should-i-send">Something is broken. What should I send?</h2>
+<p>Open <strong>Problems</strong> on Home, click <strong>Copy</strong> on the message, and include:</p>
+<ul>
+<li>what you said and which app was in front</li>
+<li>the operating system and app version</li>
+<li>whether the camera and microphone were on</li>
+<li>the exact text from Problems</li>
+</ul>
+<p>Never send a recording with private content unless you choose to. Do not paste API keys or tokens into an issue.</p>
+<h2 id="still-stuck">Still stuck?</h2>
+<p>Read <a href="troubleshooting.html">when something goes wrong</a>, or <a href="https://github.com/ansarbuilds/saywhen/issues/new/choose">open an issue</a>.</p>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="overview.html"><span>Previous</span><strong>What is saywhen</strong></a><a class="pager-link pager-next" href="install-with-ai.html"><span>Next</span><strong>Install saywhen with an AI assistant</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/FAQ.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#is-saywhen-free">Is saywhen free?</a><a class="toc-2" href="#does-it-work-offline">Does it work offline?</a><a class="toc-2" href="#does-it-record-my-camera-or-my-voice">Does it record my camera or my voice?</a><a class="toc-2" href="#how-is-this-different-from-wispr-flow">How is this different from Wispr Flow?</a><a class="toc-2" href="#can-i-try-it-before-allowing-accessibility">Can I try it before allowing Accessibility?</a><a class="toc-2" href="#does-it-work-without-a-camera">Does it work without a camera?</a><a class="toc-2" href="#can-i-make-the-text-easier-to-read">Can I make the text easier to read?</a><a class="toc-2" href="#can-i-change-the-keyboard-shortcut">Can I change the keyboard shortcut?</a><a class="toc-2" href="#which-apps-can-it-type-into">Which apps can it type into?</a><a class="toc-2" href="#does-it-support-languages-other-than-english">Does it support languages other than English?</a><a class="toc-2" href="#which-macs-and-windows-versions-are-supported">Which Macs and Windows versions are supported?</a><a class="toc-2" href="#why-does-my-computer-warn-me-about-the-installer">Why does my computer warn me about the installer?</a><a class="toc-2" href="#where-does-saywhen-keep-my-data">Where does saywhen keep my data?</a><a class="toc-2" href="#can-i-turn-off-the-check-step">Can I turn off the check step?</a><a class="toc-2" href="#something-is-broken-what-should-i-send">Something is broken. What should I send?</a><a class="toc-2" href="#still-stuck">Still stuck?</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

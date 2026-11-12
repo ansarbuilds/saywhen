@@ -39,10 +39,16 @@ pub fn setup_hud_window(app: &AppHandle) -> Result<(), String> {
         .get_webview_window(HUD_LABEL)
         .ok_or_else(|| "HUD window `hud` is missing from tauri.conf.json".to_string())?;
 
-    let monitor = hud
-        .primary_monitor()
-        .map_err(|e| format!("HUD: could not query primary monitor: {}", e))?
-        .or(hud.current_monitor().ok().flatten())
+    // Prefer the display under the pointer, then the display the HUD is already on,
+    // and only then the primary display. That keeps the pill on the screen the person
+    // is actually using instead of always on the built-in one.
+    let cursor_monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|point| app.monitor_from_point(point.x, point.y).ok().flatten());
+    let monitor = cursor_monitor
+        .or_else(|| hud.current_monitor().ok().flatten())
+        .or_else(|| hud.primary_monitor().ok().flatten())
         .ok_or_else(|| "HUD: no monitor found".to_string())?;
 
     let work = monitor.work_area();
@@ -139,10 +145,11 @@ pub fn build_tray(app: &AppHandle, audio: Arc<AudioPipelineController>) -> tauri
         None::<&str>,
     )?;
     let hud = MenuItem::with_id(app, "hud", "Show / Hide HUD Pill", true, None::<&str>)?;
+    let place = MenuItem::with_id(app, "place", "Move HUD to This Display", true, None::<&str>)?;
     let cancel = MenuItem::with_id(app, "cancel", "Cancel Current Utterance", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit saywhen", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &camera, &hud, &cancel, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &camera, &hud, &place, &cancel, &sep, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("saywhen-tray")
         .tooltip("saywhen")
@@ -155,6 +162,11 @@ pub fn build_tray(app: &AppHandle, audio: Arc<AudioPipelineController>) -> tauri
             "hud" => {
                 let cfg = audio.toggle_hud_enabled();
                 let _ = app.emit("dictation-config-updated", cfg);
+            }
+            "place" => {
+                if let Err(err) = setup_hud_window(app) {
+                    let _ = app.emit("pipeline-error", err);
+                }
             }
             "cancel" => {
                 let _ = audio.send_command(AudioCommand::CancelPreview(

@@ -137,7 +137,7 @@ The first run downloads the camera model (about 4 MB) and can take 5 to 15 minut
 
 ## Beta, honestly
 
-saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md) or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
+saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md), the [FAQ](docs/FAQ.md), or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
 
 ## For coding assistants
 

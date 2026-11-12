@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Contributing to saywhen · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link is-active" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Project</span></div>
+      <article class="prose">
+        <h1 id="contributing-to-saywhen">Contributing to saywhen</h1>
+<p>Thanks for wanting to help. Bug reports, tuning data and small fixes are all welcome.</p>
+<h2 id="before-you-start">Before you start</h2>
+<ul>
+<li>For anything bigger than a small fix, open an issue first so we can agree on the approach.</li>
+<li>Read <a href="https://github.com/ansarbuilds/saywhen/blob/main/AGENTS.md">AGENTS.md</a> and <a href="architecture.html">docs/ARCHITECTURE.md</a>. The principles there are not optional: local-first, private, always cancelable, fail loudly, measure everything.</li>
+</ul>
+<h2 id="set-up">Set up</h2>
+<p>You need Node.js 20 or newer, Rust and CMake (see the README). The Rust version is pinned in <code>rust-toolchain.toml</code>, and rustup installs it for you. Please be kind and patient with each other: see the <a href="code-of-conduct.html">Code of Conduct</a>.</p>
+<pre><code class="language-bash">npm install
+</code></pre>
+<pre><code class="language-bash">npx tauri dev
+</code></pre>
+<h2 id="before-you-open-a-pull-request">Before you open a pull request</h2>
+<pre><code class="language-bash">npm run build
+</code></pre>
+<pre><code class="language-bash">cargo test --manifest-path src-tauri/Cargo.toml
+</code></pre>
+<p>If you changed when saywhen starts or stops listening, also run the replay benchmark and paste the before and after numbers into the pull request:</p>
+<pre><code class="language-bash">cargo run --manifest-path src-tauri/Cargo.toml --bin replay -- --generate-corpus recordings
+</code></pre>
+<h2 id="rules-of-the-road">Rules of the road</h2>
+<ul>
+<li><strong>Privacy first.</strong> Never write camera frames to disk, send them anywhere or log them. Audio is only kept when the user opts in.</li>
+<li><strong>Never commit</strong> model files (<code>*.bin</code>, <code>*.gguf</code>, <code>*.onnx</code>), recordings or <code>settings.local.json</code>.</li>
+<li><strong>Numbers, not vibes.</strong> Claims about accuracy, speed, CPU or battery need a measurement. Say what you verified and what you assumed.</li>
+<li><strong>No em dashes</strong> in docs or code comments. CI checks this.</li>
+<li><strong>Plain language</strong> in anything a user reads.</li>
+<li>Keep pull requests small and focused on one thing.</li>
+</ul>
+<h2 id="reporting-a-bug">Reporting a bug</h2>
+<p>Use the bug report template. The <strong>Problems</strong> panel on the Home screen has a copy button for the error message. Please do not attach recordings of your voice or screenshots that show private text.</p>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="vision.html"><span>Previous</span><strong>Vision</strong></a><a class="pager-link pager-next" href="security.html"><span>Next</span><strong>Security and privacy</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/CONTRIBUTING.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#before-you-start">Before you start</a><a class="toc-2" href="#set-up">Set up</a><a class="toc-2" href="#before-you-open-a-pull-request">Before you open a pull request</a><a class="toc-2" href="#rules-of-the-road">Rules of the road</a><a class="toc-2" href="#reporting-a-bug">Reporting a bug</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

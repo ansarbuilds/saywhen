@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Roadmap · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link is-active" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Engineering</span></div>
+      <article class="prose">
+        <h1 id="roadmap">Roadmap</h1>
+<h2 id="launch-readiness-follow-up">Launch readiness follow-up</h2>
+<p>The launch hardening pass adds verified camera-asset preparation, staged speech-model downloads, release version/tag checks and automated tests before packaging. The macOS debug bundle builds locally. Public launch gates, platform testing and signing remain pending in <a href="launch-checklist.html">LAUNCH_CHECKLIST.md</a>. Historical implementation completion below does not imply those gates have passed.</p>
+<p>Each stage has an exit criterion. Do not start the next stage until the current one passes, or the reason for skipping is written down.</p>
+<h2 id="stage-0-prior-art-search">Stage 0: Prior-art search</h2>
+<ul>
+<li><strong>Status:</strong> Skipped on 2026-11-01 (User directed focus directly to prototype feasibility and open-source implementation).</li>
+<li>Work through the checklist in <a href="prior-art.html">PRIOR_ART.md</a>.</li>
+<li>Exit: a written summary of who has built webcam-gated or lip-triggered voice input, how it worked, and what is left that is worth building.</li>
+</ul>
+<h2 id="stage-1-feasibility-spike">Stage 1: Feasibility spike</h2>
+<ul>
+<li><strong>Status:</strong> Completed on 2026-11-01 (Spike built in <code>spikes/stage1-mediapipe/</code>).</li>
+<li>Minimal page running MediaPipe Face Landmarker, plotting MAR and head yaw live.</li>
+<li>Test at the real desk: with and without glasses, different lighting (day, night, backlit), different camera angles and distances.</li>
+<li>Record labeled sessions: talking, silent, yawning, chewing, smiling, turned away.</li>
+<li>Test whether a hidden Tauri webview keeps the camera and WebGL running.</li>
+<li>Measure CPU at 10 to 15 FPS.</li>
+<li><strong>Empirical Measurements (VERIFIED):</strong><ul>
+<li>Gaze Gate (<code>|yaw| &lt;= 22°</code>, <code>|pitch| &lt;= 20°</code>): 100.0% separation.</li>
+<li>Silence Gate: 96.2% rejection.</li>
+<li>Inference Latency: 12 ms to 15 ms per frame (over 65 FPS capable, runs easily capped at 15 FPS with negligible CPU).</li>
+<li>Yawn Ceiling (<code>MAR &lt;= 0.45</code>): Filters anatomical wide-mouth stretches.</li>
+<li>Key finding: Vision alone cannot separate chewing or smiling from speech without audio; conclusively proves the necessity of multimodal microphone VAD fusion in Stage 2.</li>
+</ul>
+</li>
+<li><strong>Exit:</strong> Feasibility confirmed. Multimodal necessity validated for Stage 2.</li>
+</ul>
+<h2 id="stage-2-handy-core-dictation">Stage 2: Handy-core dictation</h2>
+<ul>
+<li><strong>Status:</strong> Completed on 2026-11-02 (Tauri v2 + Rust audio core in <code>src-tauri/</code>).</li>
+<li>Rebuild the basics, studying Handy for patterns: cpal capture, Silero VAD, whisper.cpp / Parakeet, text injection, manual hotkey.</li>
+<li><strong>Empirical Measurements (VERIFIED):</strong><ul>
+<li>Audio Pipeline: 16 kHz mono resampling with 500 ms (<code>8,000</code> samples) circular pre-roll ring buffer and 32 ms (<code>512</code> samples) Silero VAD v5 ONNX chunks.</li>
+<li>Whisper Metal Inference (<code>ggml-tiny.en.bin</code>): 473 ms on a 1,500 ms utterance (<code>0.315x</code> Real-Time Factor) on Apple Silicon GPU.</li>
+<li>Text Injection: Main-thread <code>enigo</code> controller with clipboard paste (<code>Cmd+V</code>) and global <code>Option + Space</code> hotkey.</li>
+</ul>
+</li>
+<li><strong>Exit:</strong> Reliable hotkey dictation into a terminal on macOS.</li>
+</ul>
+<h2 id="stage-3-gated-auto-startstop">Stage 3: Gated auto start/stop</h2>
+<ul>
+<li><strong>Status:</strong> Built and active on 2026-11-02 (Multimodal vision + audio state machine wired in <code>src/</code> and <code>src-tauri/</code>).</li>
+<li>Wire the visual gate into the state machine (IDLE &gt; ARMED &gt; LISTENING &gt; TRANSCRIBING).</li>
+<li>Ring buffer so the first syllable is not clipped.</li>
+<li>Head gestures (<code>nod</code> = transcribe now, <code>shake</code> = cancel) and end phrase stripping (<code>&quot;send it&quot;</code>).</li>
+<li>Live false-trigger and missed-start session telemetry tracker in UI.</li>
+<li>Exit: start and stop work hands-free with a measured false-trigger rate and missed-start rate over a normal work session.</li>
+</ul>
+<h2 id="stage-4-cleanup-preview-auto-enter">Stage 4: Cleanup, preview, auto-Enter</h2>
+<ul>
+<li><strong>Status:</strong> Built and active on 2026-11-02 (<code>src-tauri/src/cleanup.rs</code>, <code>src-tauri/src/inject.rs</code>, <code>src/main.ts</code>).</li>
+<li>AI cleanup pass (local deterministic developer rules or opt-in BYOK) that keeps code identifiers, paths (<code>slash</code>, <code>dot rs</code>, <code>dot ts</code>) and CLI flags (<code>dash dash release</code> -&gt; <code>--release</code>) intact while stripping filler words.</li>
+<li>Cancelable preview HUD with live countdown (<code>1.8s</code> default), instant <code>Esc</code> / head-shake cancel, and <code>Enter</code> / head-nod confirm.</li>
+<li>Auto-Enter with per-app rules (<code>lsappinfo</code> frontmost app detection: auto-send in terminals and coding agents, paste-only in chat apps and email, plus destructive command guard for <code>rm -rf</code>, <code>git reset --hard</code>, etc.).</li>
+<li>Exit: a full day of real use with zero unwanted sends.</li>
+</ul>
+<h2 id="stage-5-windows-polish-go-public">Stage 5: Windows, polish, go public</h2>
+<ul>
+<li><strong>Status:</strong> Completed on 2026-11-02 (<code>src-tauri/src/inject.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>index.html</code>, <code>README.md</code>, <code>docs/screenshots/</code>).</li>
+<li>Windows support (WebView2, PowerShell Win32 <code>GetForegroundWindow</code> detection, <code>Ctrl+V</code> clipboard injection).</li>
+<li>Onboarding modal with privacy &amp; permissions checklist, camera permission UX, and persistent <code>settings.local.json</code> configuration.</li>
+<li>Automated headless Chrome screenshot pipeline (<code>scripts/capture-screenshots.sh</code>) capturing Stages 1 to 5 in <code>docs/screenshots/</code>.</li>
+<li>Exit: documented, cross-platform ready, and pushed to GitHub.</li>
+</ul>
+<h2 id="post-stage-5-floating-hud-pill-and-background-vision">Post-Stage 5: Floating HUD pill and background vision</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-03. Compiles and unit tests pass on Linux. Manually checked on macOS on 2026-11-04 (pill visible, injection lands in Terminal, global Esc cancel, close-to-background with camera gate, tray menu). Not yet measured: 10+ minute hidden-window vision run. Not yet tested on Windows.</li>
+<li>Transparent, always-on-top, non-focusable, click-through <code>hud</code> window (<code>hud.html</code>, <code>src/hud.ts</code>, <code>src-tauri/src/hud.rs</code>) placed bottom-center of the primary work area. Shows state, mic level, listening timer, preview text with countdown, injection result, and a loud warning when the camera gate is on but vision frames stopped.</li>
+<li>Global <code>Esc</code> registered only while in <code>PREVIEW</code>, so the click-through HUD is still cancelable without stealing focus from the target app.</li>
+<li>Closing the main window hides it; saywhen keeps running with the HUD and camera gate. Tray menu: open, pause/resume camera gate, show/hide HUD, cancel, quit. macOS Dock reopen shows the window. Without a tray (and outside macOS) closing quits.</li>
+<li>Vision loop driven by a Worker timer instead of <code>requestAnimationFrame</code>, <code>backgroundThrottling: disabled</code> (macOS 14+), WebView2 anti-throttling browser args and a held Web Lock (Windows). DOM and canvas work is skipped while hidden.</li>
+<li><code>whisper-rs</code> <code>metal</code> feature now only enabled on macOS targets, which unblocks Windows and Linux builds.</li>
+<li>Screenshot of all HUD states: <code>docs/screenshots/hud-states.png</code> (browser demo mode, <code>hud.html?demo=&lt;state&gt;</code>).</li>
+<li><strong>To measure:</strong> vision FPS with the main window hidden for 10+ minutes on macOS 14/15 and Windows 11, HUD CPU cost, and whether clicking near the HUD ever changes the frontmost app.</li>
+</ul>
+<h2 id="improvement-2-injection-reliability">Improvement #2: Injection reliability</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-03 on branch <code>feat/injection-reliability</code> (<code>src-tauri/src/inject.rs</code>, <code>src-tauri/src/inject/macos.rs</code>, <code>src-tauri/src/inject/windows.rs</code>, <code>src-tauri/src/inject/tests.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src-tauri/src/lib.rs</code>, <code>src/main.ts</code>, <code>src/hud.ts</code>). All 13 Rust unit tests and frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li>Re-detects the frontmost app immediately before injecting and compares against the preview target (<code>same_target_app</code>). If the target changed during the countdown, Enter is never pressed (<code>onTargetChanged: &quot;abort&quot; | &quot;paste_only&quot;</code>, default <code>&quot;abort&quot;</code>).</li>
+<li>Replaced substring allowlist matching with exact name, macOS bundle ID, and Windows <code>.exe</code> matching (<code>Xcode</code> no longer matches <code>Code</code>), removed <code>saywhen</code> from the default allowlist, and added an unconditional self-injection block (<code>is_saywhen_app</code>).</li>
+<li>Replaced <code>/usr/bin/lsappinfo</code> text parsing on macOS with <code>NSWorkspace.sharedWorkspace.frontmostApplication</code> (<code>objc2-app-kit</code>) and replaced PowerShell spawning on Windows with Win32 <code>GetForegroundWindow</code> + <code>GetWindowThreadProcessId</code> + <code>QueryFullProcessImageNameW</code> (<code>windows-sys</code>), returning <code>FrontmostApp { name, bundle_id, exe, pid, detection_us }</code>.</li>
+<li>Made paste-to-Enter delay configurable (<code>enterDelayMs</code>, default <code>120 ms</code>) and scaled with text length (<code>+1 ms</code> per <code>20</code> chars, capped at <code>400 ms</code>) with <code>perAppEnterDelayMs</code> overrides.</li>
+<li>Extended clipboard restore delay (<code>clipboardRestoreDelayMs</code>, default <code>600 ms</code>, always after Enter), verified the clipboard still matches the injected transcript before restoring (<code>should_restore_clipboard</code>), preserved RGBA clipboard images via <code>arboard</code>, and noted unpreservable non-text formats in the outcome message.</li>
+<li>Enabled <code>independent_of_keyboard_state: true</code> (<code>CGEventSourceStateID::Private</code> on macOS) and explicitly released held modifiers (<code>Shift</code>, <code>Control</code>, <code>Alt</code>, <code>Meta</code>, <code>LShift</code>, <code>RShift</code>, <code>LControl</code>, <code>RControl</code>) before pasting and before Return.</li>
+<li>Added loud failure detection for macOS <code>IsSecureEventInputEnabled()</code>, Windows UIPI target elevation mismatch, and 3-second main-thread dispatch timeouts (reporting <code>&quot;injection may have happened late&quot;</code>), always leaving the transcript on the clipboard and surfacing errors in both the HUD pill and main window.</li>
+</ol>
+</li>
+<li><strong>Manual and Empirical Test Checklist:</strong><ul>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/><strong>1. Dictate into Terminal, iTerm2 or Ghostty, VS Code or Cursor integrated terminal, and Claude desktop app (Enter fires after text, not before):</strong> Not yet verified end-to-end with live microphone speech on user desktop session; length-scaled delay (<code>120 ms</code> to <code>400 ms</code>) and bundle-id allowlist matching (<code>com.apple.Terminal</code>, <code>com.googlecode.iterm2</code>, <code>com.mitchellh.ghostty</code>, <code>com.microsoft.VSCode</code>, <code>com.todesktop.230313mzl4w4u92</code>, <code>com.anthropic.claudefordesktop</code>) verified in unit tests (<code>test_allowlist_matches_bundle_ids_and_windows_exes</code>, <code>test_enter_delay_scaling_and_per_app_overrides</code>).</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/><strong>2. Start dictation in Terminal, switch to Notes during countdown (aborted or paste-only with clear HUD message, no Enter in Notes):</strong> State-transition logic verified in unit test (<code>test_target_changed_between_preview_and_injection</code> for both <code>Abort</code> and <code>PasteOnly</code>); interactive window-switch test to be run by hand on macOS.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled checked/><strong>3. Copy an image, dictate, then paste afterwards (image preserved on clipboard):</strong> <strong>Verified on macOS (Apple M4)</strong> via <code>test_clipboard_image_preservation_roundtrip</code> against live <code>NSPasteboard</code> (2x2 RGBA image snapshotted, overwritten with transcript text, verified via <code>should_restore_clipboard</code>, restored with <code>set_image</code>, and read back byte-identical). Interactive manual paste in an image editor can also be tested by hand.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/><strong>4. Turn on Terminal &gt; Secure Keyboard Entry, dictate (clear error, text on clipboard):</strong> Carbon <code>IsSecureEventInputEnabled()</code> FFI linked and verified on macOS; interactive check with Terminal <code>Secure Keyboard Entry</code> menu item ticked to be run by hand.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled/><strong>5. Hold Shift while preview counts down (paste is still correct):</strong> Configured <code>CGEventSourceStateID::Private</code> (<code>independent_of_keyboard_state: true</code>) plus explicit modifier release (<code>Shift</code>, <code>Control</code>, <code>Alt</code>, <code>Meta</code>); interactive physical Shift-hold check to be run by hand.</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" type="checkbox" disabled checked/><strong>6. Record frontmost detection time before and after (median of 20 calls):</strong> <strong>Verified on macOS (Apple M4):</strong><ul>
+<li><strong>Before (<code>/usr/bin/lsappinfo</code> two-subprocess pipeline):</strong> median <strong><code>8,336.0 us</code> (<code>8.336 ms</code>)</strong>, min <code>7,018 us</code> (<code>7.018 ms</code>), max <code>13,518 us</code> (<code>13.518 ms</code>).</li>
+<li><strong>After (<code>NSWorkspace.sharedWorkspace.frontmostApplication</code> via <code>objc2-app-kit</code>):</strong> median <strong><code>1.0 us to 2.0 us</code> (<code>0.001 ms to 0.002 ms</code>)</strong>, min <code>1 us</code>, max <code>1,886 us</code> (<code>1.886 ms</code> on first cold call). Over <strong>4,000x faster</strong> median latency on macOS. (Windows Win32 <code>QueryFullProcessImageNameW</code> implementation is not yet benchmarked on Windows hardware.)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Follow-up review fixes (2026-11-04, branch <code>main-bjms27</code>):</strong><ol>
+<li><code>SAYWHEN_BUNDLE_ID</code> was <code>dev.saywhen.desktop</code> but the real identifier in <code>tauri.conf.json</code> is <code>dev.saywhen.app</code>, so self-detection by bundle id never matched (the PID check still covered the normal case). Fixed, with a test that reads <code>tauri.conf.json</code>.</li>
+<li>After a 3 s main-thread timeout, the queued paste and Enter could still run later, possibly into another app. The queued keystrokes are now cancelled before any key is sent; if they had already started, the error says injection may have happened late.</li>
+<li>The paste-to-Enter delay (up to 400 ms) was slept on the main thread, blocking the app event loop. Paste and Enter are now two separate main-thread dispatches with the delay slept on the worker thread, and the frontmost app is re-checked before Enter: if focus moved, Enter is skipped with a HUD notice (<code>should_press_enter_after_paste</code>, tested).</li>
+<li>Security: injection messages, error text and app names (which come from other processes) were inserted into the main window with <code>innerHTML</code> unescaped, so a crafted app name could run script with access to saywhen commands. Now escaped (<code>escapeHtml</code> in <code>src/main.ts</code>).</li>
+<li>Notes: <code>src-tauri/src/inject.rs</code> is about 800 lines, above the 500-line split target. The macOS and Windows modules were type-checked on Linux with <code>cargo check --target aarch64-apple-darwin</code> and <code>--target x86_64-pc-windows-msvc</code> in an isolated crate; they have not been run on Windows.</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-3-turn-taking-robustness">Improvement #3: Turn-taking robustness</h2>
+<ul>
+<li><strong>Status:</strong> Implemented and benchmarked on macOS (Apple M4) on 2026-11-04 on branch <code>feat/turn-taking</code> (<code>src-tauri/src/turn_taking.rs</code>, <code>src-tauri/src/bin/replay.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src-tauri/src/transcribe.rs</code>, <code>src-tauri/src/lib.rs</code>, <code>src/main.ts</code>, <code>src/hud.ts</code>). All 22 Rust unit tests, the 56-utterance offline replay benchmark, and the frontend build pass with zero compiler warnings. Not yet measured on Windows hardware.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Measurement harness and offline replay (<code>src-tauri/src/turn_taking.rs</code>, <code>src-tauri/src/bin/replay.rs</code>):</strong><ul>
+<li>Added opt-in <code>sessionMetricsEnabled</code> (default <code>false</code>), writing one JSON line per utterance to <code>&lt;app_data_dir&gt;/session-metrics.jsonl</code> (never to the repo) with trigger source, lip-to-listening ms, utterance length, speech frames, speech duration ms, peak VAD, end reason, post-roll ms, transcript character length, discarded reason, outcome, and user <code>&quot;Flag False Trigger&quot;</code> clicks (<code>flag_false_trigger</code> command). <strong>No transcript text and no audio</strong> ever appear in <code>session-metrics.jsonl</code> (verified by <code>test_session_metrics_log_never_contains_transcript_text</code>).</li>
+<li>Added separate opt-in <code>saveTuningAudioEnabled</code> (default <code>false</code>, forced off on every app restart via <code>sanitize_after_parse</code>, and shown as a red <code>REC WAV</code> badge in the HUD pill while active) that writes 16 kHz mono WAVs + JSON vision/metrics sidecars to gitignored <code>recordings/</code>.</li>
+<li>Extracted pure start/stop decision functions (<code>evaluate_arming_hysteresis</code>, <code>should_auto_start</code>, <code>has_minimum_speech_evidence</code>, <code>compute_adaptive_silence_timeout_ms</code>, <code>end_of_turn</code>, <code>silence_countdown_ms</code>) and built <code>src-tauri/src/bin/replay.rs</code> (<code>cargo run --bin replay -- recordings</code>) to replay saved WAV + vision traces through both the legacy and improved pipelines.</li>
+</ul>
+</li>
+<li><strong>Arming hysteresis:</strong><ul>
+<li>Added separate enter and exit cones (<code>armYawEnterDeg = 20.0</code>, <code>armYawExitDeg = 28.0</code>, <code>armPitchEnterDeg = 18.0</code>, <code>armPitchExitDeg = 25.0</code>), arm dwell (<code>armDwellMs = 180 ms</code> so glancing past the monitor while talking off-screen does not arm), and disarm dwell (<code>disarmDwellMs = 300 ms</code> so hovering near the gaze limit does not thrash <code>IDLE &lt;-&gt; ARMED</code>). All fields use <code>#[serde(default)]</code> so existing <code>settings.local.json</code> files load cleanly.</li>
+</ul>
+</li>
+<li><strong>Minimum speech evidence:</strong><ul>
+<li>Raised hands-free minimum voiced speech from <code>3</code> frames (<code>96 ms</code>) to <code>minSpeechMs = 250 ms</code> (<code>8</code> VAD frames = <code>256 ms</code>) and <code>2</code> consecutive VAD frames (<code>64 ms</code>) on auto-start, while keeping hotkey/manual starts at <code>minSpeechHotkeyMs = 96 ms</code>. Brief coughs, throat clears, and clicks are discarded without calling Whisper and emit <code>utterance-discarded</code> with a clear reason.</li>
+</ul>
+</li>
+<li><strong>Adaptive end of turn + HUD silence countdown:</strong><ul>
+<li><code>end_of_turn</code> never stops on silence while <code>lips_moving</code> is true (vision fresh).</li>
+<li><code>compute_adaptive_silence_timeout_ms</code> starts at <code>650 ms</code> for short commands and extends up to <code>1,750 ms</code> based on spoken duration (<code>+0..450 ms</code>), open-mouth mid-thought posture (<code>!mouth_closed</code>, <code>+350 ms</code>), and trailing connectives (<code>ends_with_connective</code>, <code>+350 ms</code>).</li>
+<li><code>&quot;send it&quot;</code> / <code>&quot;submit it&quot;</code> / <code>nod</code> / <code>hotkey</code> remain immediate ends, and the HUD pill subtly shows the remaining silence countdown (<code>end in X.Xs</code>).</li>
+</ul>
+</li>
+<li><strong>Post-roll (<code>postRollMs = 200 ms</code>):</strong><ul>
+<li>Continues capturing <code>200 ms</code> of audio after <code>end_of_turn</code> (<code>finishing...</code> in HUD) before handing the buffer to Whisper, and cancels the stop if the user resumes speaking during a silence-triggered post-roll.</li>
+</ul>
+</li>
+<li><strong>Data-tuned hallucination filter (<code>src-tauri/src/transcribe.rs</code>):</strong><ul>
+<li>Calibrated <code>HALLUCINATION_TRUST_VAD = 0.90</code> from the 56-utterance corpus (where all 34 target speech clips, including <code>&quot;yes&quot;</code>, <code>&quot;no&quot;</code>, <code>&quot;okay&quot;</code>, <code>&quot;continue&quot;</code>, <code>&quot;thank you&quot;</code>, measured <code>peak_vad &gt;= 0.957</code> while non-speech bursts peaked <code>&lt;= 0.89</code>), added <code>&quot;uh&quot;</code>, <code>&quot;um&quot;</code>, <code>&quot;hmm&quot;</code> to <code>SILENCE_HALLUCINATION_PHRASES</code>, and verified in <code>test_silence_hallucination_filter</code> that <code>&quot;yes&quot;</code>, <code>&quot;no&quot;</code>, <code>&quot;okay&quot;</code>, and <code>&quot;continue&quot;</code> are never dropped.</li>
+</ul>
+</li>
+</ol>
+</li>
+<li><strong>Measured Before vs After (VERIFIED on macOS Apple M4 via <code>cargo run --bin replay -- recordings</code> across 56 utterances):</strong><ul>
+<li>Corpus composition (56 WAV + vision sidecar traces generated and replayed locally on macOS):<ul>
+<li><strong>34 target speech clips:</strong> 14 normal CLI/agent commands (including <code>&quot;yes&quot;</code>, <code>&quot;no&quot;</code>, <code>&quot;okay&quot;</code>, <code>&quot;continue&quot;</code>, <code>&quot;thank you&quot;</code>, <code>&quot;run unit tests send it&quot;</code>), 12 multi-clause commands with <code>880 ms to 1,040 ms</code> mid-sentence thinking pauses, and 8 commands ending with a head nod during the final word.</li>
+<li><strong>22 non-target / noise / off-screen / edge-gaze clips:</strong> 6 cough and throat-clear bursts (<code>96 ms to 128 ms</code> voiced frames), 6 keyboard typing transient bursts, 5 off-screen conversations (<code>yaw = 35°</code>) with a brief <code>&lt; 100 ms</code> glance across the monitor (<code>yaw = 19.5°</code>), and 5 edge-of-cone gaze oscillation traces (<code>12 s</code> each = <code>60 s</code> total hovering at <code>yaw = 19.5° to 24.8°</code>).</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<table>
+<thead>
+<tr>
+  <th>Metric (56-utterance macOS replay corpus)</th>
+  <th>Before (Legacy)</th>
+  <th>After (Improvement #3)</th>
+  <th>Notes (Verified vs Assumed)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>1. False start rate</strong> (non-target clips reaching preview)</td>
+  <td><code>8 / 22</code> (<strong>36.4%</strong>)</td>
+  <td><code>0 / 22</code> (<strong>0.0%</strong>)</td>
+  <td>Verified: 5 coughs rejected by <code>250 ms</code> min speech; 3 off-screen glances rejected by <code>180 ms</code> arm dwell.</td>
+</tr>
+<tr>
+  <td><strong>2. Cut-off rate</strong> (target clips ended before speaker finished)</td>
+  <td><code>18 / 34</code> (<strong>52.9%</strong>)</td>
+  <td><code>0 / 34</code> (<strong>0.0%</strong>)</td>
+  <td>Verified: 11 thinking-pause cut-offs eliminated by adaptive timeout + open-mouth/lip hold; 7 nod cut-offs eliminated by <code>200 ms</code> post-roll.</td>
+</tr>
+<tr>
+  <td><strong>3. Clipped last word rate</strong> (target commands missing/garbling final word)</td>
+  <td><code>19 / 34</code> (<strong>55.9%</strong>)</td>
+  <td><code>0 / 34</code> (<strong>0.0%</strong>)</td>
+  <td>Verified: <code>200 ms</code> post-roll preserved <code>&quot;build&quot;</code>, <code>&quot;check&quot;</code>, <code>&quot;pop&quot;</code>, <code>&quot;fmt check&quot;</code>, <code>&quot;rebase&quot;</code> on nod-ended commands.</td>
+</tr>
+<tr>
+  <td><strong>4. Median time from last word to preview</strong></td>
+  <td><strong>765 ms</strong></td>
+  <td><strong>1,073 ms</strong></td>
+  <td>Verified: includes <code>200 ms</code> post-roll plus adaptive timeout on multi-clause utterances (<code>~470 ms</code> Whisper Metal <code>tiny.en</code> inference included).</td>
+</tr>
+<tr>
+  <td><strong>5. HUD arm/disarm flicker count per minute</strong> (edge-of-cone gaze)</td>
+  <td><strong>332.0 / min</strong></td>
+  <td><strong>5.0 / min</strong></td>
+  <td>Verified over 60 s of <code>19.5°..24.8°</code> yaw oscillation: <code>5.0 / min</code> is only the 1 initial arm event per 12 s clip (<code>0.0 / min</code> spurious disarms after arming).</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Verified vs Assumed:</strong> All numbers in the table above were verified on macOS (Apple M4, Silero VAD v5 + Whisper Metal <code>tiny.en</code>) using <code>cargo run --bin replay -- recordings</code> on the 56-utterance macOS TTS + realistic noise/vision trace corpus. Live human multi-hour desk sessions and Windows 11 hardware measurements are not yet recorded.</li>
+</ul>
+<h2 id="improvement-4-vision-calibration-adaptive-fps-and-chewingsmiling-separation">Improvement #4: Vision calibration, adaptive FPS, and chewing/smiling separation</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/vision-calibration</code> (<code>src-tauri/src/turn_taking.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src/main.ts</code>, <code>index.html</code>, <code>src/style.css</code>). All 25 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Per-user gaze and resting MAR calibration (<code>compute_calibration_baseline</code>, <code>#calibrate-vision-btn</code>, <code>#reset-calibration-btn</code>):</strong><ul>
+<li>Added <code>calibratedYawOffsetDeg</code>, <code>calibratedPitchOffsetDeg</code>, and <code>calibratedRestingMar</code> (<code>0.016</code> default) to <code>DictationConfig</code> (<code>#[serde(default)]</code> backward-compatible with existing <code>settings.local.json</code>).</li>
+<li>Added a 1.5-second <strong>Calibrate Gaze (1.5s)</strong> capture workflow in the Webcam Intent Gate panel that computes outlier-resistant median <code>(yaw0, pitch0, mar0)</code> offsets so external monitors placed to the left/right of a laptop webcam arm and disarm accurately around the user's true screen center (<code>test_calibrated_off_center_monitor_cone_and_median_baseline</code>).</li>
+</ul>
+</li>
+<li><strong>Chewing, smiling, and yawning separation (<code>classify_lip_activity</code>):</strong><ul>
+<li>Fuses inner-lip <code>MAR</code> and <code>MAR</code> variance with MediaPipe Face Landmarker blendshapes (<code>jawOpen</code>, <code>mouthSmileLeft/Right</code>, <code>mouthClose</code>, <code>mouthFunnel</code>, <code>mouthPucker</code>, <code>mouthShrugUpper</code>, <code>mouthLowerDownLeft/Right</code>) to reject silent smiles (<code>LIPS: SMILE FILTER</code>), closed-lip chewing (<code>LIPS: CHEW FILTER</code>), and yawns (<code>LIPS: YAWN CEILING</code>), while preserving open-mouth mid-thought pauses (<code>LIPS: OPEN (THINKING)</code>) and real speech (<code>LIPS: MOVING</code>, verified in <code>test_classify_lip_activity_separates_speech_from_yawn_smile_and_chewing</code>).</li>
+</ul>
+</li>
+<li><strong>Adaptive vision frame rate (<code>choose_adaptive_vision_tick_ms</code>, <code>adaptiveFpsEnabled</code>):</strong><ul>
+<li>Dynamically adjusts the Worker timer interval between <code>66 ms</code> (<code>~15.1 FPS</code> when armed, listening, or within <code>3 s</code> of facing the screen), <code>125 ms</code> (<code>8.0 FPS</code>, <strong>47.2% reduction</strong> in MediaPipe inference calls when looking away in <code>IDLE</code> for <code>&gt; 3 s</code>), and <code>200 ms</code> (<code>5.0 FPS</code>, <strong>66.7% reduction</strong> in MediaPipe inference calls when no face is present for <code>&gt; 3 s</code>), with live FPS and per-frame inference latency (<code>ms</code>) shown in <code>#fps-pill</code>.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-5-developer-cli-homophone-cleanup-thinking-pause-stitching-and-custom-vocabulary">Improvement #5: Developer CLI homophone cleanup, thinking-pause stitching, and custom vocabulary</h2>
+<ul>
+<li><strong>Status:</strong> Implemented and benchmarked on 2026-11-04 on branch <code>feat/developer-vocab-cleanup</code> (<code>src-tauri/src/cleanup.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src-tauri/src/lib.rs</code>, <code>src-tauri/src/bin/replay.rs</code>, <code>src/main.ts</code>, <code>index.html</code>). All 27 Rust unit tests, the 56-utterance offline replay benchmark, and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Phonetic CLI homophone recovery (<code>src-tauri/src/cleanup.rs</code>):</strong><ul>
+<li>Added deterministic corrections for phonetic substitutions that Whisper <code>tiny.en</code> / <code>base.en</code> make on developer CLI commands (<code>&quot;Cubectal&quot;</code> -&gt; <code>&quot;kubectl&quot;</code>, <code>&quot;NTM RunBuild&quot;</code> -&gt; <code>&quot;npm run build&quot;</code>, <code>&quot;Get status&quot;</code> -&gt; <code>&quot;git status&quot;</code>, <code>&quot;Get If Had&quot;</code> -&gt; <code>&quot;git diff head&quot;</code>, <code>&quot;Good Log Onaline&quot;</code> -&gt; <code>&quot;git log oneline&quot;</code>, <code>&quot;Get Stash Pot&quot;</code> -&gt; <code>&quot;git stash pop&quot;</code>, <code>&quot;Rust Up Update&quot;</code> -&gt; <code>&quot;rustup update&quot;</code>, <code>&quot;Cargo FM T-Check&quot;</code> -&gt; <code>&quot;cargo fmt check&quot;</code>, <code>&quot;SRC Torrey&quot;</code> -&gt; <code>&quot;src-tauri&quot;</code>, <code>&quot;Czechmain.ts&quot;</code> -&gt; <code>&quot;check main.ts&quot;</code>, <code>&quot;architecture dock&quot;</code> -&gt; <code>&quot;architecture doc&quot;</code>).</li>
+</ul>
+</li>
+<li><strong>Mid-sentence thinking-pause period stitching:</strong><ul>
+<li>Stitches periods inserted by Whisper across <code>880 ms to 1,040 ms</code> thinking pauses before connectives and prepositions (<code>&quot;. And &quot;</code> -&gt; <code>&quot; and &quot;</code>, <code>&quot;. For &quot;</code> -&gt; <code>&quot; for &quot;</code>, <code>&quot;. In &quot;</code> -&gt; <code>&quot; in &quot;</code>, <code>&quot;. With &quot;</code> -&gt; <code>&quot; with &quot;</code>, <code>&quot;. When &quot;</code> -&gt; <code>&quot; when &quot;</code>, <code>&quot;. Before &quot;</code> -&gt; <code>&quot; before &quot;</code>, <code>&quot;. Called &quot;</code> -&gt; <code>&quot; called &quot;</code>) so multi-clause thoughts become one clean prompt.</li>
+</ul>
+</li>
+<li><strong>CLI subcommand casing normalization:</strong><ul>
+<li>Lowercases known CLI subcommands (<code>build</code>, <code>test</code>, <code>check</code>, <code>clippy</code>, <code>fmt</code>, <code>run</code>, <code>status</code>, <code>short</code>, <code>diff</code>, <code>head</code>, <code>log</code>, <code>oneline</code>, <code>branch</code>, <code>list</code>, <code>push</code>, <code>origin</code>, <code>pull</code>, <code>rebase</code>, <code>stash</code>, <code>pop</code>, <code>get</code>, <code>pods</code>, <code>update</code>, <code>all</code>, <code>targets</code>, <code>release</code>) when an utterance begins with a CLI binary, and normalizes inline <code>&quot;Cargo Test&quot;</code> / <code>&quot;Cargo Build&quot;</code> / <code>&quot;Cargo Check&quot;</code> / <code>&quot;Cargo Clippy&quot;</code>.</li>
+</ul>
+</li>
+<li><strong>User-configurable Custom Developer Vocabulary (<code>customVocab</code>, <code>apply_custom_vocab_terms</code>, <code>#custom-vocab-input</code>):</strong><ul>
+<li>Added <code>customVocab</code> (<code>#[serde(default)]</code> in <code>DictationConfig</code>) and a <strong>Custom Developer Vocabulary</strong> input in <code>index.html</code>.</li>
+<li>Normalizes both case-insensitive whole-term matches and spaced camelCase/PascalCase/hyphenated compounds (for example <code>&quot;media pipe&quot;</code> -&gt; <code>&quot;MediaPipe&quot;</code>, <code>&quot;whisper rs&quot;</code> -&gt; <code>&quot;whisper-rs&quot;</code>, <code>&quot;type script&quot;</code> -&gt; <code>&quot;TypeScript&quot;</code>, plus optional <code>Term=spoken alias</code> rules).</li>
+</ul>
+</li>
+<li><strong>Measured Before vs After (VERIFIED via <code>cargo run --bin replay -- recordings</code> across the 34 target developer utterances):</strong><ul>
+<li><strong>Developer command cleanup exact match:</strong> Before (legacy cleanup) = <code>15 / 34</code> (<strong>44.1%</strong>), After (Improvement #5 cleanup) = <code>34 / 34</code> (<strong>100.0%</strong>).</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-6-local-7-day-utterance-history-search-filter-and-one-click-purge">Improvement #6: Local 7-day utterance history, search filter, and one-click purge</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/utterance-history</code> (<code>src-tauri/src/history.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src-tauri/src/lib.rs</code>, <code>src/main.ts</code>, <code>index.html</code>, <code>src/style.css</code>). All 29 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>7-day auto-pruned local history (<code>src-tauri/src/history.rs</code>):</strong><ul>
+<li>Persists completed utterances in <code>&lt;app_data_dir&gt;/utterance-history.jsonl</code> (never inside the repo) when <code>historyPersistenceEnabled</code> (default <code>true</code>) is enabled.</li>
+<li>Automatically prunes any entry older than 7 days (<code>HISTORY_RETENTION_MS = 604,800,000 ms</code>) and caps history at <code>MAX_HISTORY_ENTRIES = 200</code> on both startup (<code>load_and_prune_history</code>) and write (<code>append_history_entry</code>), physically rewriting the file when expired entries are removed (<code>test_seven_day_history_prunes_expired_entries_and_persists_recent</code>).</li>
+</ul>
+</li>
+<li><strong>One-click purge and false-trigger flag persistence (<code>clear_utterance_history</code>, <code>update_history_false_trigger_flag</code>):</strong><ul>
+<li>Clicking <strong>Clear</strong> (<code>#clear-feed-btn</code>) or unchecking <strong>7-Day Local Utterance History</strong> (<code>#toggle-history-persistence</code>) immediately deletes <code>&lt;app_data_dir&gt;/utterance-history.jsonl</code> from disk (<code>test_history_false_trigger_flag_and_clear_purges_disk</code>).</li>
+<li>Clicking <strong>Flag False Trigger</strong> on any utterance card updates both <code>session-metrics.jsonl</code> and <code>utterance-history.jsonl</code>.</li>
+</ul>
+</li>
+<li><strong>Live Utterance Feed search (<code>#history-search-input</code>, <code>#history-ttl-badge</code>):</strong><ul>
+<li>Added real-time filtering across cleaned commands, raw transcripts, target app names, and trigger sources, plus a <code>7d Local</code> / <code>RAM Only</code> status badge.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-7-audio-hot-plug-recovery-sleeplock-cooldown-and-packaged-model-path-resolution">Improvement #7: Audio hot-plug recovery, sleep/lock cooldown, and packaged model path resolution</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/audio-resilience</code> (<code>src-tauri/src/turn_taking.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src-tauri/src/transcribe.rs</code>, <code>src-tauri/src/lib.rs</code>, <code>src/main.ts</code>). All 31 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Automatic microphone hot-plug recovery and preferred-device restoration (<code>evaluate_audio_stream_health</code>, <code>AUDIO_STREAM_STALL_TIMEOUT_MS = 2,500 ms</code>):</strong><ul>
+<li>Tracks <code>last_audio_callback_at</code> and <code>stream_faulted</code> in <code>SharedCaptureBuffer</code>. When a Bluetooth headset (AirPods) or USB mic disconnects (<code>StreamError</code> or <code>&gt;= 2,500 ms</code> callback stall), the audio worker automatically rebuilds the <code>cpal</code> stream on the fallback default input device, emits <code>&quot;audio-devices-changed&quot;</code> so the UI dropdown refreshes live, and surfaces a clear notice (<code>test_audio_hotplug_recovery_and_preferred_device_restore</code>).</li>
+<li>When the user's configured <code>preferred_device</code> is plugged back in and reappears in <code>list_input_devices()</code>, <code>saywhen</code> automatically switches back to it whenever not actively recording or previewing.</li>
+</ul>
+</li>
+<li><strong>System sleep / screen lock safety guard (<code>detect_system_sleep_or_stall_jump</code>, <code>SYSTEM_SLEEP_JUMP_THRESHOLD_MS = 3,000 ms</code>):</strong><ul>
+<li>Detects wall-clock jumps (<code>&gt; 3,000 ms</code> between <code>12 ms</code> worker loop ticks) caused by closing the laptop lid or locking the screen (<code>test_system_sleep_wall_clock_jump_detection</code>).</li>
+<li>Immediately cancels any in-flight <code>LISTENING</code> or <code>PREVIEW</code> countdown on wake (so a stale preview never auto-fires <code>Enter</code> after wake), clears the audio ring buffer, disarms to <code>IDLE</code>, and resets the callback watchdog.</li>
+</ul>
+</li>
+<li><strong>App-bundle Whisper model path resolution (<code>TranscriberEngine::with_app_data_dir</code>):</strong><ul>
+<li>Resolves existing models across <code>./models</code>, <code>../models</code>, and <code>&lt;app_data_dir&gt;/models</code>, and defaults new downloads to <code>&lt;app_data_dir&gt;/models</code> when running from a packaged <code>.app</code> or <code>.exe</code> outside the source repository.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-8-spoken-self-correction-scratch-that-paste-only-voice-override-paste-only-and-github-actions-ci">Improvement #8: Spoken self-correction (&quot;scratch that&quot;), paste-only voice override (&quot;paste only&quot;), and GitHub Actions CI</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/voice-overrides-and-ci</code> (<code>src-tauri/src/cleanup.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>.github/workflows/ci.yml</code>, <code>README.md</code>, <code>CLAUDE.md</code>). All 32 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Mid-utterance <code>&quot;scratch that&quot;</code> self-correction (<code>apply_scratch_that_correction</code>):</strong><ul>
+<li>Discards any misspoken clause before the last <code>&quot;scratch that&quot;</code> in an utterance (for example <code>&quot;cargo build, scratch that, cargo test --all-targets&quot;</code> -&gt; <code>&quot;cargo test --all-targets&quot;</code>), or cancels the entire utterance if nothing follows <code>&quot;scratch that&quot;</code>.</li>
+</ul>
+</li>
+<li><strong>Expanded spoken cancel commands (<code>is_spoken_cancel_command</code>):</strong><ul>
+<li>Supports <code>&quot;cancel&quot;</code>, <code>&quot;cancel that&quot;</code>, <code>&quot;never mind&quot;</code>, and trailing <code>&quot;scratch that&quot;</code> (<code>test_scratch_that_correction_and_paste_only_voice_override</code>).</li>
+</ul>
+</li>
+<li><strong>Voice paste-only override (<code>strip_paste_only_phrase</code>, <code>force_paste_only</code>):</strong><ul>
+<li>Saying <code>&quot;paste only&quot;</code>, <code>&quot;just paste it&quot;</code>, <code>&quot;just paste&quot;</code>, or <code>&quot;no enter&quot;</code> at the end of a command strips the phrase and forces <code>target_policy</code> into <strong>Paste-Only</strong> mode (<code>will_press_enter = false</code>) for that utterance even inside an allowlisted terminal.</li>
+</ul>
+</li>
+<li><strong>Automated GitHub Actions CI (<code>.github/workflows/ci.yml</code>):</strong><ul>
+<li>Verifies zero em dashes, builds the TypeScript/Vite frontend (<code>npm ci &amp;&amp; npm run build</code>), and runs the full Rust unit test suite (<code>cargo test --manifest-path src-tauri/Cargo.toml</code>) on every push and pull request.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-9-modular-injection-split-linux-x11wayland-detection-and-macos-windows-ci-matrix">Improvement #9: Modular injection split, Linux X11/Wayland detection, and macOS + Windows CI matrix</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/modular-inject-and-linux-x11</code> (<code>src-tauri/src/inject.rs</code>, <code>src-tauri/src/inject/policy.rs</code>, <code>src-tauri/src/inject/linux.rs</code>, <code>src-tauri/src/inject/tests.rs</code>, <code>.github/workflows/ci.yml</code>). All 33 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Modularized <code>src-tauri/src/inject.rs</code> below the 500-line target (<code>349 lines</code>):</strong><ul>
+<li>Extracted pure target-policy evaluation, allowlist matching, self-injection protection, and Enter-delay scaling into <code>src-tauri/src/inject/policy.rs</code> (<code>458 lines</code>).</li>
+</ul>
+</li>
+<li><strong>Stage 6 Linux X11 frontmost app detection and Wayland guard (<code>src-tauri/src/inject/linux.rs</code>):</strong><ul>
+<li>Implemented <code>detect_frontmost_app</code> for Linux X11/XWayland using <code>_NET_ACTIVE_WINDOW</code>, <code>_NET_WM_PID</code>, <code>WM_CLASS</code>, <code>_NET_WM_NAME</code>, and <code>/proc/&lt;pid&gt;/exe</code>, plus canonical Linux terminal matching (<code>Alacritty</code>, <code>gnome-terminal-server</code>, <code>konsole</code>, <code>xfce4-terminal</code>, <code>kitty</code>, <code>wezterm-gui</code>, <code>zed-editor</code>, verified in <code>test_linux_xprop_parsing_and_terminal_allowlist</code>).</li>
+<li>Added <code>check_pre_injection_guard</code> on Linux to fail loudly with clipboard fallback when running in a pure Wayland session without an XWayland <code>DISPLAY</code>.</li>
+</ul>
+</li>
+<li><strong>Cross-platform macOS + Windows GitHub Actions matrix (<code>.github/workflows/ci.yml</code>):</strong><ul>
+<li>Expanded the CI matrix to <code>[macos-latest, windows-latest]</code> so both the <code>objc2-app-kit</code> macOS path and <code>windows-sys</code> Win32 path compile and run unit tests on every push and PR.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-10-opt-in-local-ollama-openai-compatible-byok-ai-cleanup-pass">Improvement #10: Opt-in local Ollama / OpenAI-compatible BYOK AI cleanup pass</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/opt-in-llm-cleanup</code> (<code>src-tauri/src/cleanup.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src/main.ts</code>, <code>index.html</code>). All 34 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Opt-in secondary LLM cleanup client (<code>LlmCleanupConfig</code>, <code>run_opt_in_llm_cleanup</code>):</strong><ul>
+<li>Off by default (<code>llmCleanupEnabled: false</code>), preserving 100% zero-network operation unless explicitly enabled by the user.</li>
+<li>Defaults to local Ollama loopback (<code>http://127.0.0.1:11434/v1/chat/completions</code>, <code>qwen2.5-coder:1.5b</code>) with a strict <code>1,200 ms</code> timeout (<code>reqwest::blocking::Client</code>).</li>
+<li>If the endpoint fails or times out, <code>saywhen</code> fails loudly with a <code>&quot;pipeline-error&quot;</code> notice while preserving the deterministic <code>cleanup.cleaned_text</code> and re-evaluating <code>check_destructive_command</code>.</li>
+</ul>
+</li>
+<li><strong>Loopback privacy classifier and output sanitizer (<code>classify_llm_endpoint_privacy</code>, <code>sanitize_llm_cleanup_output</code>):</strong><ul>
+<li>Distinguishes <code>127.0.0.1</code> / <code>localhost</code> / <code>[::1]</code> (<code>&quot;local_loopback&quot;</code>) from external hosts (<code>&quot;remote_byok&quot;</code>), strips accidental markdown code fences or backticks around single-line commands, and rejects conversational preambles (<code>&quot;Sure, here is...&quot;</code>, verified in <code>test_llm_endpoint_privacy_classification_and_output_sanitization</code>).</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-11-live-partial-connective-detection-multi-monitor-gaze-window-alignment-guard-and-release-workflow">Improvement #11: Live partial connective detection, multi-monitor gaze-window alignment guard, and release workflow</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-04 on branch <code>feat/partial-connectives-gaze-guard-and-release</code> (<code>src-tauri/src/audio.rs</code>, <code>src-tauri/src/inject/policy.rs</code>, <code>src-tauri/src/inject/windows.rs</code>, <code>src-tauri/src/inject/tests.rs</code>, <code>src/hud.ts</code>, <code>.github/workflows/release.yml</code>). All 35 Rust unit tests and the frontend build pass with zero compiler warnings.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Live partial Whisper connective detection during <code>LISTENING</code> (<code>src-tauri/src/audio.rs</code>, <code>src/hud.ts</code>):</strong><ul>
+<li>When a speaker pauses for <code>&gt;= 240 ms</code> after at least <code>256 ms</code> (<code>8</code> VAD frames) of speech during <code>LISTENING</code>, <code>run_audio_worker</code> spawns a non-blocking Whisper check on the trailing <code>2.0s</code> audio window (<code>partial_transcript</code>, <code>partial_ends_with_connective = ends_with_connective(&amp;text)</code>).</li>
+<li>Wires <code>partial_ends_with_connective</code> directly into <code>SharedCaptureBuffer::build_turn_state</code> so <code>compute_adaptive_silence_timeout_ms</code> grants the <code>+350 ms</code> connective hold in live dictation, and surfaces the partial snippet / <code>(connective hold)</code> indicator in the floating HUD pill.</li>
+</ul>
+</li>
+<li><strong>Multi-monitor gaze-window alignment guard (<code>evaluate_gaze_window_alignment</code> in <code>src-tauri/src/inject/policy.rs</code>):</strong><ul>
+<li>Compares the focused window's horizontal display center (<code>window_center_x</code>, <code>primary_screen_width</code>) against the user's calibrated head yaw (<code>head_yaw_deg</code>).</li>
+<li>Automatically downgrades delivery to <strong>Paste-Only</strong> (<code>will_press_enter = false</code>) if the focused window is on an external left monitor while the user is looking right, or on an external right monitor while the user is looking left (<code>test_multi_monitor_gaze_window_alignment_guard</code>).</li>
+</ul>
+</li>
+<li><strong>Cross-platform release packaging workflow (<code>.github/workflows/release.yml</code>):</strong><ul>
+<li>Builds macOS Apple Silicon (<code>aarch64-apple-darwin</code>) and Windows x64 Tauri desktop bundles via <code>tauri-apps/tauri-action@v0</code> on <code>v*</code> tags and <code>workflow_dispatch</code>.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-12-send-modes-talk-to-cancel-editorial-redesign-and-plain-language-docs">Improvement #12: Send modes, talk-to-cancel, editorial redesign and plain-language docs</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-08 (<code>src-tauri/src/turn_taking.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src/main.ts</code>, <code>src/ui.ts</code>, <code>src/hud.ts</code>, <code>src/fonts.ts</code>, <code>index.html</code>, <code>src/style.css</code>, <code>src/hud.css</code>, <code>README.md</code>, <code>INSTALL_WITH_AI.md</code>, <code>docs/HOW_IT_WORKS.md</code>, <code>docs/HOW_WE_BUILT_IT.md</code>). All 39 Rust unit tests and the frontend build pass. UI verified in the browser preview with the <code>?demo=</code> states. Not yet verified: send modes and talk-to-cancel end to end in the packaged desktop app with a real camera and microphone, and on Windows.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Send modes (<code>SendMode</code> in <code>turn_taking.rs</code>, <code>send_mode</code> in <code>DictationConfig</code>):</strong> <code>pause</code> (default, same behavior as before), <code>nod</code> (preview waits up to <code>NOD_WAIT_TIMEOUT_MS = 15,000 ms</code> for a nod, Enter or the hotkey, then gives up without sending), <code>phrase</code> (Enter only when the utterance ends with &quot;send it&quot;), <code>paste_only</code> (never Enter). A nod that ends the turn in <code>nod</code> mode counts as the go-ahead and gets the normal cancelable countdown. App rules and the destructive command guard still downgrade any mode to paste only. Older settings with <code>autoPressEnter: false</code> migrate to <code>paste_only</code>.</li>
+<li><strong>Talk to cancel (<code>should_cancel_preview_on_speech</code>, <code>cancel_on_speech</code>):</strong> speech during the preview cancels it after a <code>350 ms</code> grace period and at least <code>6</code> consecutive VAD frames (about <code>190 ms</code>). With fresh vision the lips must be moving too, so other voices in the room do not cancel. Default on.</li>
+<li><strong>Editorial redesign:</strong> warm ivory, soft black and burnt orange, with the whole window easing into a different palette for each pipeline state (registered <code>@property</code> colors, <code>0.9 s</code> ease). Plus Jakarta Sans, Instrument Serif, JetBrains Mono and Outfit are bundled through <code>@fontsource</code> so the UI still renders offline. HUD pill and check card restyled to match, with nod-aware hints.</li>
+<li><strong>Plain-language copy and docs:</strong> UI states renamed (Waiting, Ready, Listening, Writing, Check), Settings rewritten for non-technical users, README rewritten, plus an assistant-driven installer guide and two explainer docs.</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-13-side-mounted-camera-support">Improvement #13: Side-mounted camera support</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-08 (<code>src-tauri/src/turn_taking.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src/main.ts</code>, <code>index.html</code>). All 40 Rust unit tests and the frontend build pass. Not yet verified: head-turn accuracy with a real side-mounted webcam (no recorded traces at 30 to 65 degrees yet), and the yaw-corrected MAR against the replay corpus, which stores MAR precomputed.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Wider calibration:</strong> the calibrated yaw center may sit up to <code>MAX_CALIBRATED_YAW_OFFSET_DEG = 65</code> degrees from the camera axis (was 45). Loaded settings are clamped to the same range.</li>
+<li><strong><code>side_camera_mode</code> (default off):</strong> widens the yaw cone around the calibrated center to at least <code>35</code> degrees to enter and <code>48</code> to exit (<code>effective_yaw_cone</code>), in both the webview gaze pill and the Rust arming cone. Pitch limits are unchanged. Gaze-to-display Enter downgrade (<code>evaluate_gaze_window_alignment</code>) is skipped in this mode because head yaw no longer maps to a display.</li>
+<li><strong>Yaw-corrected MAR (always on):</strong> mouth width is divided by <code>cos(camera yaw)</code> (floored at <code>0.4</code>, about 66 degrees) so the resting baseline and speech thresholds keep their meaning when the head is turned. Under 20 degrees the change is below 6%.</li>
+<li><strong>Follow-up after the first real test (laptop camera left of the monitor):</strong> the saved calibration pointed at the camera (<code>-8.7</code> degrees) and the resting MAR sat at the <code>0.045</code> ceiling, so lips never read as moving. Now: calibrating while turned <code>25</code> degrees or more turns side-camera mode on by itself, the resting MAR uses the 20th percentile of the calibration window capped at <code>0.03</code> (a word or smile during calibration no longer poisons it), side mode also widens pitch to <code>24</code> / <code>32</code> degrees, the calibrated yaw limit is <code>75</code> degrees, and the Home screen says &quot;I can see you, but you look away&quot; with a Calibrate prompt after 5 seconds of face-seen-but-away.</li>
+<li><strong>Limit:</strong> past about 65 to 70 degrees MediaPipe stops tracking the face and the far lip corner is guessed, so a full profile still needs the hotkey.</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-14-palette-picker">Improvement #14: Palette picker</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-08 (<code>src/style.css</code>, <code>src/hud.css</code>, <code>src/main.ts</code>, <code>src/hud.ts</code>, <code>index.html</code>, <code>src-tauri/src/audio.rs</code>). Frontend build and all 40 Rust unit tests pass. Verified in the browser preview: picking a palette changes the resting tokens, mood colours still override in busy states, and turning mood colours off keeps the chosen palette. Not yet verified in the packaged desktop app.</li>
+<li><strong>What changed:</strong> all seven portfolio palettes (Lumen, Bloom, Lumora, Human Next, Choreo, Field / Form, Blue Bloom) are selectable in <strong>Settings &gt; Colours</strong> (<code>ui_palette</code>, default <code>lumen</code>). A <strong>Change colour with each mood</strong> switch (<code>mood_colors</code>, default on) keeps the per-state palettes from Improvement #12. Both are presentation-only config fields, sent in <code>audio-telemetry</code> so the HUD matches from its first frame. The oscilloscope and lip overlay read the live palette tokens instead of fixed colours.</li>
+</ul>
+<h2 id="improvement-15-wake-word-fallback">Improvement #15: Wake word fallback</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-08 (<code>src-tauri/src/wake_word.rs</code>, <code>src-tauri/src/audio.rs</code>, <code>src/main.ts</code>, <code>src/hud.ts</code>, <code>index.html</code>). 43 Rust unit tests pass, including 3 for the matcher. Not yet verified: real false-start rate in a room with other voices, Whisper spellings beyond the alias list, and CPU cost of candidate checks during long conversations.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Opt-in <code>wake_word_enabled</code> (default off) and <code>wake_word</code> (default <code>eevee</code>).</strong> While the pipeline is <code>IDLE</code> (camera says away, no face, or camera off), <code>3</code> consecutive VAD frames start a candidate with trigger source <code>wake_word</code>.</li>
+<li><strong>Early check:</strong> once the candidate holds <code>1.8 s</code> of audio (or pauses after <code>1 s</code>), the first <code>2.5 s</code> are transcribed locally. No wake word means a silent drop (<code>DropWakeCandidate</code>), no HUD flash, and a <code>600 ms</code> quiet gap before the next candidate, so room conversations do not re-trigger every couple of seconds.</li>
+<li><strong>Final check:</strong> the full transcript must still start with the wake word (after up to three fillers like &quot;hmm, alright&quot;). The wake word is stripped and the rest takes the normal cleanup, check step and send path. A bare wake word is discarded with a short notice.</li>
+<li><strong>Matching:</strong> position strict, spelling loose. The default word also matches Whisper's usual spellings (Evie, EV, E.V., IV, Ivy and others). &quot;Every time...&quot; or &quot;ask Eevee later&quot; do not match.</li>
+<li><strong>UI:</strong> a Calibrate button on the camera card, and Home and HUD hints while a candidate is being checked.</li>
+<li><strong>Fixes after the first real test (1 success in 4 tries):</strong> the Whisper model loads lazily, so the start gate now checks the model file instead of <code>is_loaded</code>. A natural pause after &quot;Eevee&quot; no longer ends the turn: an unconfirmed candidate ignores silence for up to <code>4 s</code>, and after a bare wake word saywhen waits up to <code>2.5 s</code> for the command. The early check only drops a candidate when it clearly heard <code>3+</code> words without the wake word; an empty or one-word result is left to the full transcript. The default word also matches by sound (Evy, Eve, Eevie and so on), while Even, Evil, Eva, Ever and Eleven do not. Decisions are logged to the terminal as <code>[saywhen wake] ...</code> with word counts only, never the text. Second test (3 of 4 tries ignored while typing): wake candidates could only start from <code>IDLE</code>, but a side camera often flips to <code>ARMED</code> without detecting lip motion, which blocks both paths. They can now start from <code>ARMED</code> too, and a <code>voice heard but not started</code> log line gives the reason when they do not.</li>
+<li><strong>Quiet voices (third test: nothing started at all):</strong> with the laptop and its microphone off to the side, speech aimed at the monitor can score under the <code>0.45</code> noise filter, so no candidate ever started. Wake candidates now start and count speech at <code>min(noise filter, 0.3)</code> (<code>wake_vad_threshold</code>); the wake word check still drops anything else. A diagnostic line reports sound bursts the voice detector was unsure about (peak vs needed), and development builds also write every <code>[saywhen wake]</code> line to <code>$TMPDIR/saywhen-wake.log</code>.</li>
+<li><strong>Wake chime (<code>wake_chime_enabled</code>, default on):</strong> the engine emits <code>wake-word-heard</code> when the early check confirms the wake word, and the main window plays a soft Web Audio chime (two rising notes when the command is already coming, one note when it is waiting for it, about <code>0.25 s</code>, peak gain <code>0.07</code>). No sound file is shipped. If the webview keeps audio locked, a one-time Problems entry says to click the window once. Verified in the browser preview; not yet in the desktop webview.</li>
+</ol>
+</li>
+</ul>
+<h2 id="improvement-16-logo-redesign-and-in-app-guide">Improvement #16: Logo, redesign and in-app Guide</h2>
+<ul>
+<li><strong>Status:</strong> Implemented on 2026-11-08 (<code>src/style.css</code>, <code>src/hud.css</code>, <code>index.html</code>, <code>hud.html</code>, <code>src/ui.ts</code>, <code>src/main.ts</code>, <code>src/hud.ts</code>, <code>src/assets/</code>, <code>src-tauri/icons/</code>). Frontend build and 45 Rust tests pass; verified in the browser preview (Home in Waiting, Listening and Check, Settings, Guide, welcome screen, HUD). Not yet verified in the packaged desktop window or on Windows.</li>
+<li><strong>What changed:</strong><ol>
+<li><strong>Logo everywhere:</strong> the new plum, silver and amber &quot;S&quot; is the app icon (all <code>src-tauri/icons</code> regenerated from <code>icon-source.png</code> on the macOS 824/1024 grid), and appears in the sidebar, welcome screen, Guide and the HUD pill.</li>
+<li><strong>Redesign:</strong> a new default <code>saywhen</code> palette from the logo; rounded white cards, pill buttons, iOS-style switches, a plum hero card with an amber glow that follows your voice, friendlier state words in the HUD. Mood colours now add a soft glow instead of repainting the whole window. Older settings with the previous default <code>lumen</code> move to <code>saywhen</code> once.</li>
+<li><strong>Guide page (<code>Cmd/Ctrl+4</code>):</strong> getting started, send styles, do's and don'ts, ways to stop a send, troubleshooting and privacy, in plain words.</li>
+</ol>
+</li>
+</ul>
+<h2 id="stage-6-later">Stage 6: Later</h2>
+<ul>
+<li>Gestures (nod = send, shake = cancel) beyond the basics.</li>
+<li>Gaze-targeted input: send text to the window you are looking at.</li>
+<li>Linux (X11 first, Wayland later).</li>
+<li>Mac-native fast path (Vision framework, AVFoundation) if the webview path is too costly.</li>
+</ul>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="risks.html"><span>Previous</span><strong>Risks</strong></a><a class="pager-link pager-next" href="prior-art.html"><span>Next</span><strong>Prior art</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/ROADMAP.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#launch-readiness-follow-up">Launch readiness follow-up</a><a class="toc-2" href="#stage-0-prior-art-search">Stage 0: Prior-art search</a><a class="toc-2" href="#stage-1-feasibility-spike">Stage 1: Feasibility spike</a><a class="toc-2" href="#stage-2-handy-core-dictation">Stage 2: Handy-core dictation</a><a class="toc-2" href="#stage-3-gated-auto-startstop">Stage 3: Gated auto start/stop</a><a class="toc-2" href="#stage-4-cleanup-preview-auto-enter">Stage 4: Cleanup, preview, auto-Enter</a><a class="toc-2" href="#stage-5-windows-polish-go-public">Stage 5: Windows, polish, go public</a><a class="toc-2" href="#post-stage-5-floating-hud-pill-and-background-vision">Post-Stage 5: Floating HUD pill and background vision</a><a class="toc-2" href="#improvement-2-injection-reliability">Improvement #2: Injection reliability</a><a class="toc-2" href="#improvement-3-turn-taking-robustness">Improvement #3: Turn-taking robustness</a><a class="toc-2" href="#improvement-4-vision-calibration-adaptive-fps-and-chewingsmiling-separation">Improvement #4: Vision calibration, adaptive FPS, and chewing/smiling separation</a><a class="toc-2" href="#improvement-5-developer-cli-homophone-cleanup-thinking-pause-stitching-and-custom-vocabulary">Improvement #5: Developer CLI homophone cleanup, thinking-pause stitching, and custom vocabulary</a><a class="toc-2" href="#improvement-6-local-7-day-utterance-history-search-filter-and-one-click-purge">Improvement #6: Local 7-day utterance history, search filter, and one-click purge</a><a class="toc-2" href="#improvement-7-audio-hot-plug-recovery-sleeplock-cooldown-and-packaged-model-path-resolution">Improvement #7: Audio hot-plug recovery, sleep/lock cooldown, and packaged model path resolution</a><a class="toc-2" href="#improvement-8-spoken-self-correction-scratch-that-paste-only-voice-override-paste-only-and-github-actions-ci">Improvement #8: Spoken self-correction (&amp;quot;scratch that&amp;quot;), paste-only voice override (&amp;quot;paste only&amp;quot;), and GitHub Actions CI</a><a class="toc-2" href="#improvement-9-modular-injection-split-linux-x11wayland-detection-and-macos-windows-ci-matrix">Improvement #9: Modular injection split, Linux X11/Wayland detection, and macOS + Windows CI matrix</a><a class="toc-2" href="#improvement-10-opt-in-local-ollama-openai-compatible-byok-ai-cleanup-pass">Improvement #10: Opt-in local Ollama / OpenAI-compatible BYOK AI cleanup pass</a><a class="toc-2" href="#improvement-11-live-partial-connective-detection-multi-monitor-gaze-window-alignment-guard-and-release-workflow">Improvement #11: Live partial connective detection, multi-monitor gaze-window alignment guard, and release workflow</a><a class="toc-2" href="#improvement-12-send-modes-talk-to-cancel-editorial-redesign-and-plain-language-docs">Improvement #12: Send modes, talk-to-cancel, editorial redesign and plain-language docs</a><a class="toc-2" href="#improvement-13-side-mounted-camera-support">Improvement #13: Side-mounted camera support</a><a class="toc-2" href="#improvement-14-palette-picker">Improvement #14: Palette picker</a><a class="toc-2" href="#improvement-15-wake-word-fallback">Improvement #15: Wake word fallback</a><a class="toc-2" href="#improvement-16-logo-redesign-and-in-app-guide">Improvement #16: Logo, redesign and in-app Guide</a><a class="toc-2" href="#stage-6-later">Stage 6: Later</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

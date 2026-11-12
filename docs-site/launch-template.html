@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Launch template · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link is-active" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Project</span></div>
+      <article class="prose">
+        <h1 id="launch-template">Launch template</h1>
+<p>Copy for the day you tell people about saywhen. Fill the blanks, then paste. This file does not replace the <a href="launch-checklist.html">launch checklist</a>. The checklist still has to pass before you call a build stable or signed.</p>
+<h2 id="fill-these-in-first">Fill these in first</h2>
+<table>
+<thead>
+<tr>
+  <th>Blank</th>
+  <th>Write this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>[VERSION]</code></td>
+  <td>The tag you are actually shipping, such as <code>v0.2.0</code></td>
+</tr>
+<tr>
+  <td><code>[DATE]</code></td>
+  <td>The day you post</td>
+</tr>
+<tr>
+  <td><code>[ONE_USE]</code></td>
+  <td>One real thing you did with it this week, in your own words. One sentence.</td>
+</tr>
+<tr>
+  <td><code>[MAC_STATUS]</code></td>
+  <td><code>unsigned beta</code> until Apple signing and notarization are verified</td>
+</tr>
+<tr>
+  <td><code>[WINDOWS_STATUS]</code></td>
+  <td><code>unsigned beta</code> until SmartScreen signing is verified</td>
+</tr>
+<tr>
+  <td><code>[ASK]</code></td>
+  <td>The one thing you want back: a home-day try, a missed first word, a false start</td>
+</tr>
+</tbody>
+</table>
+<p>Links, already live:</p>
+<ul>
+<li>Repo: https://github.com/ansarbuilds/saywhen</li>
+<li>This release: https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0</li>
+<li>Project page: https://ansarbuilds.dev/p/saywhen/</li>
+<li>60-second film: https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-demo.mp4</li>
+<li>12-second teaser: https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-announce.mp4</li>
+</ul>
+<h2 id="the-line">The line</h2>
+<p>Use this as the first sentence everywhere.</p>
+<p>Look at the screen. Say the command. saywhen types it, and can press Enter.</p>
+<h2 id="short-post">Short post</h2>
+<p>For X, Bluesky, Mastodon, or a LinkedIn opener. Stay under 280 characters after you fill <code>[ONE_USE]</code>.</p>
+<pre><code class="language-text">Look at the screen. Say the command. saywhen types it, and can press Enter.
+
+No hotkey. The camera picture is never saved. Speech stays on your computer. You see the words before they go anywhere.
+
+[ONE_USE]
+
+Beta for Mac and Windows. Not signed yet.
+https://github.com/ansarbuilds/saywhen
+</code></pre>
+<p>A longer post, for LinkedIn or a blog intro:</p>
+<pre><code class="language-text">I made saywhen, a free desktop app for talking to the terminal or coding agent in front of you.
+
+You look at the screen and talk. The camera checks that a face is there, facing the screen, with lips moving. The microphone checks for speech. Those have to agree before it listens, so there is no key to hold. The words are written on your computer. A short preview appears. Esc, a head shake, or talking again throws them away. If you let it go, saywhen types them and can press Enter.
+
+[ONE_USE]
+
+It is a beta for Mac and Windows. This build is not signed by Apple or Microsoft yet. After the speech model is downloaded, it works offline. The picture from the camera is never saved.
+
+https://ansarbuilds.dev/p/saywhen/
+</code></pre>
+<h2 id="show-hn">Show HN</h2>
+<p>Title:</p>
+<pre><code class="language-text">Show HN: saywhen – look at the screen and say the command
+</code></pre>
+<p>Body:</p>
+<pre><code class="language-text">saywhen is a free, open-source desktop app for Mac and Windows. You look at the screen and talk. It types the command into the focused app and can press Enter. You can stop it.
+
+I built it because dictation tools made me hold a key, and then press Enter after I had already said the thing. For a short prompt to a coding agent, that was most of the work.
+
+How it starts: a face is in frame, the head is turned toward the screen, the lips are moving, and the microphone hears speech. All four have to be true. The camera picture stays in memory for a moment and is thrown away. Speech is transcribed on the machine with Whisper. A preview shows the cleaned text. Esc, a head shake, or speaking again cancels it.
+
+[ONE_USE]
+
+What is honest about this beta:
+
+- [MAC_STATUS] on Mac, [WINDOWS_STATUS] on Windows. macOS may say the app is damaged until you clear the quarantine flag. Windows SmartScreen asks an extra question. The README has the one step. You can also build it from the repo.
+- Enter is pressed only in apps you mark as trusted. Risky commands such as rm -rf are typed with a warning. You press Enter yourself. That check is a heuristic, not a guarantee.
+- If you switch apps during the preview, it does not type into the new app.
+- The turn-taking numbers in the README are from generated clips and simulated camera traces, not from a study of live users.
+- Real-device checks for a signed Mac build, Intel Macs, and Windows are still open: https://github.com/ansarbuilds/saywhen/blob/main/docs/LAUNCH_CHECKLIST.md
+
+Try Type only first, so Enter is never pressed. The manual shortcut is Option+Space on Mac and Alt+Space on Windows.
+
+Repo: https://github.com/ansarbuilds/saywhen
+Project page, with the film: https://ansarbuilds.dev/p/saywhen/
+Release [VERSION]: https://github.com/ansarbuilds/saywhen/releases/tag/[VERSION]
+
+[ASK]
+</code></pre>
+<h2 id="reddit">Reddit</h2>
+<p>r/programming, r/rust, r/sideproject, or r/macapps. Drop the &quot;Show HN&quot; framing. Keep the limits.</p>
+<p>Title:</p>
+<pre><code class="language-text">saywhen: look at the screen, say the command, it can press Enter
+</code></pre>
+<p>Use the Show HN body. Add this first line if the subreddit wants a personal lead:</p>
+<pre><code class="language-text">I have been using this on home days to talk to the agent in the terminal. [ONE_USE]
+</code></pre>
+<h2 id="release-notes">Release notes</h2>
+<p>Paste under the GitHub release. Replace the draft if the tag already has notes that overclaim.</p>
+<pre><code class="language-text">## saywhen [VERSION]
+
+Look at the screen. Say the command. saywhen types it, and can press Enter.
+
+Beta for Mac and Windows. [MAC_STATUS]. [WINDOWS_STATUS].
+
+### Try it
+
+1. Install from the assets below, or build from the repo.
+2. Download the Tiny speech model in Settings.
+3. Allow the microphone, the camera, and Accessibility on Mac.
+4. Pick Type only for the first try.
+5. Calibrate while looking at the screen with your mouth closed.
+6. Say &quot;git status&quot; to a terminal you chose.
+
+### This build
+
+- [DATE]
+- [ONE_USE]
+
+### Still true
+
+- Camera pictures are not saved and are not sent.
+- Audio is discarded after transcription unless you opt in to local tuning recordings.
+- Optional cloud cleanup stays off until you turn it on.
+- After the speech model download, dictation works offline.
+
+Known limits and the open device gates are in docs/LAUNCH_CHECKLIST.md.
+</code></pre>
+<h2 id="one-stat-if-you-want-one">One stat, if you want one</h2>
+<p>Use at most one of these, with the source in the same sentence. Do not stack them.</p>
+<ul>
+<li>In the 2026 Stack Overflow Developer Survey, 34.8% of the 24,602 people who described their current work situation said it was remote.</li>
+<li>That survey's analysis says remote work was 48% in the United States.</li>
+<li>Of the 17,464 people who answered Stack Overflow's 2026 question about AI at work, 65.9% said they use an AI coding assistant or coding agent.</li>
+</ul>
+<p>Follow any of those with: Those numbers describe the survey. They do not count who wants voice input.</p>
+<h2 id="do-not-say">Do not say</h2>
+<ul>
+<li>Most developers want this, or any share of developers who dictate while coding. No survey here measured that.</li>
+<li>Most developers work from home. Remote was 34.8% in that 2026 table. Hybrid and flexible are not the same as home.</li>
+<li>A count of vibe coders.</li>
+<li>A measured time saving from skipping a hotkey or Enter.</li>
+<li>Signed, notarized, or &quot;no security prompt&quot; until that exact installer has been checked.</li>
+<li>Stable, for Intel Macs or for Windows, while those rows in the launch checklist are still pending.</li>
+<li>The film or the GIFs as proof of speed. They are illustrations. The measured numbers already live in the README table.</li>
+</ul>
+<h2 id="before-you-hit-post">Before you hit post</h2>
+<ul>
+<li>The link in the post is the release you tested, not an older asset.</li>
+<li>The project page plays the film.</li>
+<li>The README install steps match what you just did on a machine.</li>
+<li>The post says the build is unsigned, if it is.</li>
+<li>You can cancel a send, and the post says so.</li>
+<li><code>[ONE_USE]</code> is something that happened, not a slogan.</li>
+</ul>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="launch-checklist.html"><span>Previous</span><strong>Launch checklist</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/LAUNCH_TEMPLATE.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#fill-these-in-first">Fill these in first</a><a class="toc-2" href="#the-line">The line</a><a class="toc-2" href="#short-post">Short post</a><a class="toc-2" href="#show-hn">Show HN</a><a class="toc-2" href="#reddit">Reddit</a><a class="toc-2" href="#release-notes">Release notes</a><a class="toc-2" href="#one-stat-if-you-want-one">One stat, if you want one</a><a class="toc-2" href="#do-not-say">Do not say</a><a class="toc-2" href="#before-you-hit-post">Before you hit post</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

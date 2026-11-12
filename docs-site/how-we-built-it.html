@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>How we built saywhen · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link is-active" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Engineering</span></div>
+      <article class="prose">
+        <h1 id="how-we-built-saywhen">How we built saywhen</h1>
+<p>This is the story of saywhen, told simply. Measurements below come from specific prototype sessions and synthetic replay tests, not a broad user study. The full technical log lives in <a href="roadmap.html">ROADMAP.md</a>.</p>
+<p><img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/visuals/intent-and-privacy.png" alt="How camera and microphone signals combine before local transcription and a cancelable preview." /></p>
+<h2 id="the-itch">The itch</h2>
+<p>Talking to a coding assistant should feel like talking to a colleague. But every voice tool had the same two annoyances:</p>
+<ol>
+<li><strong>You had to press a key to start.</strong> Your hands had to come back to the keyboard just to talk, which misses the point of using your voice.</li>
+<li><strong>You had to press Enter at the end.</strong> The tool typed your words and then waited. For a short command, that last key press is most of the work.</li>
+</ol>
+<p>And tools that listened all the time without a key started recording every podcast, phone call and chat in the room.</p>
+<p>The idea: <strong>use the webcam as a second pair of ears.</strong> If you are looking at the screen and your lips are moving while the microphone hears a voice, you are almost certainly talking to the computer.</p>
+<h2 id="stage-1-can-a-webcam-even-tell-1-november-2026">Stage 1: Can a webcam even tell? (1 November 2026)</h2>
+<p>Before building an app, we built a tiny test page to answer one question: can a normal laptop webcam tell, reliably and quickly, whether someone is facing the screen and talking?</p>
+<p>We used Google's free MediaPipe face tracker, which finds about 470 points on a face. From those points we worked out the head angle and how open the mouth is.</p>
+<p>What we learned:</p>
+<ul>
+<li>It is <strong>fast</strong>: 12 to 15 milliseconds per frame, in the prototype sessions. That does not yet establish whole-app CPU or battery cost.</li>
+<li>&quot;Facing the screen or not&quot; was separated <strong>100%</strong> of the time in our test sessions.</li>
+<li>&quot;Mouth still&quot; was correctly ignored <strong>96.2%</strong> of the time.</li>
+<li>But <strong>the camera alone cannot tell chewing or smiling from talking.</strong> That proved we needed the microphone too. Neither sensor is enough on its own; together they are.</li>
+</ul>
+<h2 id="stage-2-a-plain-voice-typer-2-november-2026">Stage 2: A plain voice typer (2 November 2026)</h2>
+<p>Next we built the boring but essential part: a desktop app (Tauri, with a Rust engine) that records your voice, turns it into text with Whisper on your own computer, and types it into your terminal when you press a hotkey.</p>
+<p>Two important tricks went in here:</p>
+<ul>
+<li><strong>A half-second rewind buffer.</strong> The microphone always keeps the last 0.5 seconds of sound, so the first word is never lost while the app decides you are talking.</li>
+<li><strong>Whisper on the graphics chip.</strong> On an Apple Silicon Mac, 1.5 seconds of speech turns into text in 87 to 473 milliseconds.</li>
+</ul>
+<h2 id="stage-3-no-more-hotkey-2-november-2026">Stage 3: No more hotkey (2 November 2026)</h2>
+<p>Then we joined the camera and the microphone together. saywhen got its five moods: <strong>Waiting, Ready, Listening, Writing, Check.</strong> It starts listening only when your face, your lips and your voice all agree, and it stops when you go quiet. A nod finishes early, a head shake cancels.</p>
+<h2 id="stage-4-tidy-words-and-safe-sending-2-november-2026">Stage 4: Tidy words and safe sending (2 November 2026)</h2>
+<p>Speech-to-text is bad at developer words. &quot;cargo test dash dash release&quot; is not what you want in a terminal. We wrote a clean-up step that turns spoken commands into real ones, and taught it the common mistakes Whisper makes (&quot;cubectal&quot; means <code>kubectl</code>).</p>
+<p>We also made sending safe:</p>
+<ul>
+<li>A <strong>countdown</strong> before every send, so you can read and cancel.</li>
+<li>Enter is only pressed in <strong>trusted apps</strong> (terminals, editors). Chat apps and email only get typed text.</li>
+<li><strong>Risky commands</strong> like <code>rm -rf</code> are never sent automatically.</li>
+</ul>
+<h2 id="stage-5-windows-and-a-first-welcome-screen-2-november-2026">Stage 5: Windows and a first welcome screen (2 November 2026)</h2>
+<p>saywhen learned to run on Windows, got a welcome screen explaining permissions, and remembered your settings between launches.</p>
+<h2 id="making-it-really-good-3-and-4-november-2026">Making it really good (3 and 4 November 2026)</h2>
+<p>With the basics working, we spent two days on the hard details. A few highlights:</p>
+<ul>
+<li><strong>Starting and stopping at the right moment.</strong> We built 56 test clips (computer-generated speech with simulated camera traces, so not live users yet) and replayed them through the old and new logic. Starting by mistake went from <strong>36.4% to 0%</strong>, and cutting people off mid-sentence went from <strong>52.9% to 0%</strong>.</li>
+<li><strong>Developer words.</strong> On 34 spoken commands, exact matches went from <strong>44.1% to 100%</strong>.</li>
+<li><strong>Typing reliably.</strong> saywhen checks which app is in front before it pastes, waits a little longer for long text, puts your clipboard back afterwards, and refuses to type into the wrong window. Finding the front app on macOS went from about 8 milliseconds to about 0.002.</li>
+<li><strong>Real life.</strong> Unplugging headphones, closing the laptop lid and locking the screen are all handled without sending anything by accident.</li>
+<li><strong>Spoken fixes.</strong> &quot;scratch that&quot;, &quot;paste only&quot; and &quot;never mind&quot; work while you talk.</li>
+<li><strong>History.</strong> The last 7 days of what you said, searchable, on your computer only.</li>
+</ul>
+<h2 id="choosing-how-you-send-and-a-new-look-8-november-2026">Choosing how you send, and a new look (8 November 2026)</h2>
+<p>People asked for different ways to send. Some love nodding, some never want Enter pressed for them. So saywhen now has four <strong>send styles</strong> you pick with one click: Just pause, Nod to send, Say &quot;send it&quot;, and Type only. You can also cancel a countdown just by talking again (saying &quot;cancel&quot; or &quot;wait&quot;).</p>
+<p>At the same time the app got a complete makeover. It now uses a warm, magazine-like design with bundled fonts that work offline, and the window gently changes colour with each mood so you can tell what saywhen is doing from across the room.</p>
+<h2 id="cameras-off-to-the-side-8-november-2026">Cameras off to the side (8 November 2026)</h2>
+<p>The first tester to try the new look had a laptop camera beside a big monitor, so the camera saw the side of their face. saywhen said &quot;looking away&quot; and &quot;lips still&quot; even while they were talking. Three fixes: calibration can now point up to 65 degrees away from the camera (it stopped at 45), a <strong>Camera is off to the side</strong> switch widens the allowed head turn, and the lip measurement now corrects for how a turned head makes the mouth look narrower.</p>
+<h2 id="a-logo-and-a-calmer-look-8-november-2026">A logo and a calmer look (8 November 2026)</h2>
+<p><img src="screenshots/stage4-cleanup-preview.png" alt="saywhen preview screen with plum and amber styling and four send modes, captured with demo data." /></p>
+<p>saywhen got its own logo: a ribbon &quot;S&quot; in silver and amber on deep plum. The app was redesigned around it, aiming for the calm, rounded feel of the best voice tools: soft white cards, rounded buttons, one strong colour (plum) and amber only for &quot;live&quot; moments like listening and the send countdown. The logo now sits in the sidebar, the welcome screen, the floating pill and the app icon, and a new <strong>Guide</strong> page inside the app explains what to do and what to avoid in plain words.</p>
+<h2 id="what-is-next">What is next</h2>
+<ul>
+<li>Sending text to the window you are <em>looking at</em>, not just the one in front.</li>
+<li>Linux support beyond the basics.</li>
+<li>Signed, one-click installers so nobody needs to build from source.</li>
+</ul>
+<h2 id="the-rules-we-kept-the-whole-way">The rules we kept the whole way</h2>
+<ul>
+<li><strong>Local first.</strong> Your voice and face never leave your computer.</li>
+<li><strong>Always cancelable.</strong> Nothing is sent without a chance to stop it.</li>
+<li><strong>Fail loudly.</strong> If something breaks, saywhen tells you instead of quietly doing something else.</li>
+<li><strong>Measure everything.</strong> If we claim it is better, there is a number.</li>
+</ul>
+<p><a href="overview.html">Back to documentation</a> · <a href="roadmap.html">Detailed roadmap</a> · <a href="launch-checklist.html">Launch checklist</a></p>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="architecture.html"><span>Previous</span><strong>Architecture</strong></a><a class="pager-link pager-next" href="measurements.html"><span>Next</span><strong>What has been measured</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/HOW_WE_BUILT_IT.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#the-itch">The itch</a><a class="toc-2" href="#stage-1-can-a-webcam-even-tell-1-november-2026">Stage 1: Can a webcam even tell? (1 November 2026)</a><a class="toc-2" href="#stage-2-a-plain-voice-typer-2-november-2026">Stage 2: A plain voice typer (2 November 2026)</a><a class="toc-2" href="#stage-3-no-more-hotkey-2-november-2026">Stage 3: No more hotkey (2 November 2026)</a><a class="toc-2" href="#stage-4-tidy-words-and-safe-sending-2-november-2026">Stage 4: Tidy words and safe sending (2 November 2026)</a><a class="toc-2" href="#stage-5-windows-and-a-first-welcome-screen-2-november-2026">Stage 5: Windows and a first welcome screen (2 November 2026)</a><a class="toc-2" href="#making-it-really-good-3-and-4-november-2026">Making it really good (3 and 4 November 2026)</a><a class="toc-2" href="#choosing-how-you-send-and-a-new-look-8-november-2026">Choosing how you send, and a new look (8 November 2026)</a><a class="toc-2" href="#cameras-off-to-the-side-8-november-2026">Cameras off to the side (8 November 2026)</a><a class="toc-2" href="#a-logo-and-a-calmer-look-8-november-2026">A logo and a calmer look (8 November 2026)</a><a class="toc-2" href="#what-is-next">What is next</a><a class="toc-2" href="#the-rules-we-kept-the-whole-way">The rules we kept the whole way</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

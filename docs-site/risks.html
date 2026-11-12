@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Risks · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link is-active" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Engineering</span></div>
+      <article class="prose">
+        <h1 id="risks">Risks</h1>
+<table>
+<thead>
+<tr>
+  <th>Risk</th>
+  <th>Why it matters</th>
+  <th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Unreliable lip signal</td>
+  <td>Glasses, beards, masks, bad lighting, side angles or low-res webcams may make MAR noisy. The whole idea depends on it.</td>
+  <td>Stage 1 spike with real-desk tests and a hard 90% separation exit. Combine multiple features. Per-user calibration. Kill or pivot the idea if it fails.</td>
+</tr>
+<tr>
+  <td>Auto-Enter sends the wrong thing</td>
+  <td>A misheard shell command could do real damage.</td>
+  <td>Cancelable preview with countdown. Per-app rules (paste-only by default for risky apps). Never auto-send in apps not on the allow list. Optional confirm for destructive-looking commands.</td>
+</tr>
+<tr>
+  <td>Always-on camera trust</td>
+  <td>Users are rightly wary of an app that watches them.</td>
+  <td>Frames in memory only, never saved or sent. Visible indicator, one-click pause. Open source code. Clear privacy doc.</td>
+</tr>
+<tr>
+  <td>Webview throttling</td>
+  <td>A hidden webview may throttle camera, timers or WebGL, killing the visual gate.</td>
+  <td>Test in Stage 1. Mitigated (unverified on hardware): Worker-timer vision loop, <code>backgroundThrottling: disabled</code> on macOS 14+, WebView2 anti-throttling args and Web Lock on Windows. The HUD pill flags a stalled gate. Remaining fallbacks: move vision into the always-visible HUD window, or native vision fast path.</td>
+</tr>
+<tr>
+  <td>CPU and battery</td>
+  <td>Continuous vision at 10 to 15 FPS could drain laptops.</td>
+  <td>Measure early. Adaptive frame rate (low FPS in IDLE, higher in ARMED). Pause on battery saver or when the screen locks.</td>
+</tr>
+<tr>
+  <td>Linux / Wayland</td>
+  <td>Wayland restricts global input injection and window focus info.</td>
+  <td>Defer Linux to Stage 6. X11 first. Investigate portals and ydotool-style approaches later.</td>
+</tr>
+<tr>
+  <td>Crowded market</td>
+  <td>Many free offline dictation apps already exist.</td>
+  <td>Position narrowly: hands-free voice for coding agents and terminals. Compete on no-hotkey intent and safe auto-submit, not on transcription.</td>
+</tr>
+<tr>
+  <td>Scope creep</td>
+  <td>Gestures, gaze targeting, cleanup tuning and multi-platform could swallow the project.</td>
+  <td>Strict staged roadmap with exit criteria. Park ideas in IDEA_LOG.md.</td>
+</tr>
+<tr>
+  <td>Accessibility and fairness</td>
+  <td>Lip-movement detection may work worse for some faces, speech patterns, disabilities or cultural differences.</td>
+  <td>A manual hotkey fallback is always available. Test with varied people before going public. Make thresholds tunable and calibration easy.</td>
+</tr>
+</tbody>
+</table>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="measurements.html"><span>Previous</span><strong>What has been measured</strong></a><a class="pager-link pager-next" href="roadmap.html"><span>Next</span><strong>Roadmap</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/RISKS.md">Edit this page on GitHub</a></footer>
+    </main>
+    
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

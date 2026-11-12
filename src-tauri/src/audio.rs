@@ -134,6 +134,9 @@ pub struct DictationConfig {
     /// Show the floating always-on-top HUD pill. Defaulted so older settings files still load.
     #[serde(default = "default_true")]
     pub hud_enabled: bool,
+    /// Global push-to-talk / hands-free shortcut, in global-hotkey syntax (for example "Alt+Space").
+    #[serde(default = "default_hotkey_accelerator")]
+    pub hotkey_accelerator: String,
     /// Action when the focused app changes during the preview countdown ("abort" | "paste_only").
     #[serde(default)]
     pub on_target_changed: TargetChangePolicy,
@@ -231,6 +234,10 @@ pub struct DictationConfig {
     pub llm_api_key: String,
 }
 
+fn default_hotkey_accelerator() -> String {
+    "Alt+Space".to_string()
+}
+
 fn default_llm_endpoint_url() -> String {
     "http://127.0.0.1:11434/v1/chat/completions".to_string()
 }
@@ -324,6 +331,7 @@ impl Default for DictationConfig {
             use_clipboard_paste: true,
             preferred_device: None,
             hud_enabled: true,
+            hotkey_accelerator: default_hotkey_accelerator(),
             on_target_changed: TargetChangePolicy::Abort,
             enter_delay_ms: DEFAULT_ENTER_DELAY_MS,
             per_app_enter_delay_ms: HashMap::new(),
@@ -553,6 +561,13 @@ pub struct UtteranceCompleteEvent {
     pub timestamp_ms: u64,
     #[serde(default)]
     pub flagged_false_trigger: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PracticeCompleteEvent {
+    pub transcription: TranscriptionResult,
+    pub cleanup: CleanupResult,
 }
 
 #[derive(Debug, Clone)]
@@ -1937,6 +1952,23 @@ fn run_audio_worker(
                                         tuning_capture,
                                     );
                                     let _ = app_for_tx.emit("utterance-discarded", reason);
+                                    return;
+                                }
+
+                                // Onboarding practice speaks for the review only. It never
+                                // inspects a target app, previews, injects or writes history.
+                                if captured.trigger_source == "practice" {
+                                    {
+                                        let mut guard = shared_after.lock().unwrap();
+                                        guard.state = guard.resting_state(&turn_cfg_snapshot);
+                                    }
+                                    let _ = app_for_tx.emit(
+                                        "practice-complete",
+                                        PracticeCompleteEvent {
+                                            transcription,
+                                            cleanup,
+                                        },
+                                    );
                                     return;
                                 }
 

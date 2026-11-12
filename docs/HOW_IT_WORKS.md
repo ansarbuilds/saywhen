@@ -68,7 +68,7 @@ How it decides to send depends on the **send style** you picked:
 | **Say "send it"** | Only presses Enter if your sentence ended with "send it" |
 | **Type only** | Never presses Enter, only types |
 
-And you can always stop it: shake your head, press Esc, or (in the countdown) just start talking again.
+And you can always stop it: shake your head, press Esc, or (in the countdown) just start talking again. The manual shortcut can be changed in **Settings > Sending**; the default is Option + Space on a Mac and Alt + Space on Windows.
 
 ## The five moods of saywhen
 
@@ -77,7 +77,7 @@ And you can always stop it: shake your head, press Esc, or (in the countdown) ju
 *Concept animation with simplified timing.* [Static alternative](visuals/workflow-still.png).
 
 
-You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults, taken from the saywhen logo (plum, silver and amber). In **Settings > Colours** you can pick another palette and choose whether the glow changes with each mood. There is also a **Guide** page inside the app with the do's and don'ts.
+You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults, taken from the saywhen logo (plum, silver and amber). In **Settings > Appearance** you can choose System, Light or Dark, pick another palette, and choose whether the glow changes with each mood. There is also a **Guide** page inside the app with the do's and don'ts.
 
 | Mood | What it means | Colour |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ saywhen is careful about pressing Enter, because Enter makes things happen.
 | Thing | Kept? |
 | --- | --- |
 | Camera pictures | **Never.** Thrown away a split second after they are looked at. |
-| Your voice recordings | **No.** Deleted right after they become text. (Unless you switch on "Save recordings" in the Lab to help improve saywhen.) |
+| Your voice recordings | **No.** Deleted right after they become text. (Unless you switch on "Save recordings" in Diagnostics to help improve saywhen.) |
 | The text you said | **7 days**, on your computer only, so you can search and copy it. You can turn this off or clear it. |
 | Internet access | Setup downloads model/runtime files. After setup, local dictation works offline. Optional remote AI cleanup sends text to the endpoint you choose. |
 

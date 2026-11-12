@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>What is saywhen · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link is-active" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Start here</span></div>
+      <article class="prose">
+        <p align="center">
+  <a href="https://ansarbuilds.dev/p/saywhen/"><img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/page-top.jpg" alt="BETA v0.2 for Mac and Windows. Look. Talk. Sent. Hands-free voice for your terminal and coding agent. Look at the screen, say what you want, and saywhen types it after a preview you can cancel. No hotkey to hold." width="100%"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
+  &nbsp;
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f6f1ea?labelColor=22061c" alt="License: MIT"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#the-real-thing">See it for real</a> ·
+  <a href="#private-by-design">Privacy</a> ·
+  <a href="#install">Install</a> ·
+  <a href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/scene.gif" alt="One command, start to finish. A Facing the screen tag lights up. The saywhen pill goes from Waiting to Listening while the words cargo test dash dash release appear in a speech bubble. A preview of cargo test --release counts down, then the command is typed into the terminal and the tests pass." width="100%">
+</p>
+<p align="center"><sub>A live illustration of the interface. The real, unedited recording is <a href="#the-real-thing">further down</a>.</sub></p>
+
+<br>
+
+<h2 id="how-it-works">How it works</h2>
+<img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/page-how.jpg" alt="No hotkey. Just look and talk. 01 Look: face the screen; saywhen keeps a few numbers, like head angle, and throws the picture away. 02 Talk: speak normally; the last half second is already kept, so your first word is never clipped. 03 Check, then sent: read it in a short preview; Esc, a head shake, or talking again cancels." width="100%">
+
+<p>The camera and the microphone both have to agree before saywhen listens. A camera alone cannot tell chewing from talking, and a microphone alone cannot tell who you are talking to. No camera? <strong>Option + Space</strong> on Mac or <strong>Alt + Space</strong> on Windows starts listening by hand. More in <a href="how-it-works.html">How saywhen works</a>.</p>
+<h2 id="speaks-developer">Speaks developer</h2>
+<img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/page-dev.jpg" alt="Whisper mishears. saywhen fixes it. What was heard, then what gets typed: Cubectal Get Pods becomes kubectl get pods. NTM RunBuild becomes npm run build. Get If Had becomes git diff head. Get Stash Pot becomes git stash pop. cargo test dash dash release becomes cargo test --release." width="100%">
+
+<p>Every row is a real case from the test suite in <a href="https://github.com/ansarbuilds/saywhen/blob/main/src-tauri/src/cleanup.rs"><code>cleanup.rs</code></a>. Add your own words for project names in Settings.</p>
+<h2 id="the-real-thing">The real thing</h2>
+<img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/real-run.gif" alt="A real screen recording. The saywhen pill goes from Ready to Listening, a preview of the spoken request counts down, and the request is typed into Cursor and sent." width="100%">
+
+<p>Unedited and in real time: a spoken request goes into Cursor and gets sent with no keys pressed. One run on an Apple Silicon Mac, not a benchmark.</p>
+<p><strong>The 60-second film, with sound:</strong></p>
+<p>https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520</p>
+<h2 id="you-stay-in-control">You stay in control</h2>
+<img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/page-modes.jpg" alt="Four ways to send, all cancelable. Just pause (default): stop talking and a short countdown runs, then it sends. Nod to send: nothing goes until you nod. Say send it: end with send it to press Enter. Type only (best first try): your words are typed and Enter is never pressed." width="100%">
+
+<ul>
+<li>Cancel with <strong>Esc</strong>, a head shake, or by talking again during the countdown. Or say &quot;scratch that&quot;.</li>
+<li>Enter is pressed only in apps you trust. Terminals and code editors are trusted by default. In chat, email and browsers, saywhen only types.</li>
+<li>If the app in front changes during the countdown, saywhen stops and types nothing.</li>
+</ul>
+<h2 id="private-by-design">Private by design</h2>
+<img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/page-safe.jpg" alt="Private by design. It sees a few numbers, never a picture. The camera: each frame is read for a moment, then thrown away. Your voice: speech becomes text on this computer, then the audio is discarded. The Enter key: pressed only in apps you trust; commands like rm -rf are typed with a warning and left for you." width="100%">
+
+<p>After the speech model downloads, saywhen works with the internet off. History keeps the last 7 days of text on your computer, and you can turn it off or clear it. Optional cloud clean-up stays off until you turn it on. The risky-command check is a heuristic, not a guarantee.</p>
+<h2 id="measured-with-the-caveats">Measured, with the caveats</h2>
+<img src="https://raw.githubusercontent.com/ansarbuilds/saywhen/main/docs/visuals/page-numbers.jpg" alt="What the numbers say, and what they don't. 34 of 34 spoken developer commands cleaned to the exact text. 0% false starts on 56 replay clips, down from 36.4%. 12 to 15 ms face tracking per camera frame. 87 to 473 ms to turn 1.5 s of speech into text." width="100%">
+
+<p>Replay clips are generated speech with simulated camera traces, not live users. Real-user accuracy, CPU and battery are not measured yet. Details in <a href="measurements.html">what has been measured</a> and the <a href="launch-checklist.html">launch checklist</a>.</p>
+<h2 id="install">Install</h2>
+<h3 id="point-claude-or-cursor-at-this-repo">Point Claude or Cursor at this repo</h3>
+<p>Open this folder and paste:</p>
+<pre><code class="language-text">Set up saywhen on my computer.
+
+This repository is already open. Follow INSTALL_WITH_AI.md from the top.
+Do not clone it again.
+Ask me before you install anything. Explain each step in one plain sentence.
+On a Mac, do not start the app yourself. Tell me the command to run in the Terminal app.
+When the window is open, walk me through First launch in the README, one step at a time.
+</code></pre>
+<p>You only have the link? Paste this instead:</p>
+<pre><code class="language-text">Clone https://github.com/ansarbuilds/saywhen and open that folder.
+Then follow INSTALL_WITH_AI.md from the top.
+Ask me before you install anything. Explain each step in one plain sentence.
+On a Mac, do not start the app yourself. Tell me the command to run in the Terminal app.
+</code></pre>
+<p>The full checklist is <a href="install-with-ai.html">INSTALL_WITH_AI.md</a>.</p>
+<h3 id="download-the-app">Download the app</h3>
+<p>Get the beta installer from the <strong><a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0">v0.2.0 release</a></strong>:</p>
+<ul>
+<li><strong>Mac:</strong> the <code>.dmg</code> file (<code>aarch64</code> is Apple Silicon, <code>x64</code> is Intel when that build is included). Drag saywhen into Applications.</li>
+<li><strong>Windows:</strong> the <code>-setup.exe</code> file.</li>
+</ul>
+<p>If your Mac says saywhen &quot;is damaged&quot; or &quot;cannot be opened&quot;, this beta is not signed by Apple yet. Run this once, then open the app again:</p>
+<pre><code class="language-bash">xattr -cr /Applications/saywhen.app
+</code></pre>
+<p>On Windows, SmartScreen appears for the same reason. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+<h3 id="build-it-yourself">Build it yourself</h3>
+<p>You need Node.js 20 or newer, Rust, and CMake. On Windows, also install Visual Studio Build Tools 2022 with the &quot;Desktop development with C++&quot; workload.</p>
+<pre><code class="language-bash">git clone https://github.com/ansarbuilds/saywhen.git
+cd saywhen
+npm ci
+npx tauri dev
+</code></pre>
+<p>The first run downloads the camera model (about 4 MB) and can take 5 to 15 minutes to compile. On a Mac, run that last command in the <strong>Terminal</strong> app. A background shell usually cannot get camera permission. The development app is named <strong>saywhen-dev</strong>.</p>
+<h3 id="first-launch">First launch</h3>
+<ol>
+<li><strong>Download a speech model.</strong> Settings, then Speech model, then Download. Tiny is about 75 MB and the fastest. Base is more accurate.</li>
+<li><strong>Allow the microphone and camera</strong> when your computer asks.</li>
+<li><strong>Allow Accessibility (Mac only).</strong> Setup guide in the sidebar, then the orange badge. Turn on <strong>saywhen</strong>, or <strong>saywhen-dev</strong> if you built it. Remove old saywhen entries first if macOS is confused.</li>
+<li><strong>Pick Type only</strong> on Home for a first try, so Enter is never pressed.</li>
+<li><strong>Turn on the camera.</strong> Look at the screen with your mouth closed and click <strong>Calibrate</strong>.</li>
+<li>Open a terminal, look at it, and say &quot;git status&quot;.</li>
+</ol>
+<h2 id="beta-honestly">Beta, honestly</h2>
+<p>saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. Something not working? See <a href="troubleshooting.html">when something goes wrong</a>, the <a href="faq.html">FAQ</a>, or <a href="https://github.com/ansarbuilds/saywhen/issues/new/choose">open an issue</a>.</p>
+<h2 id="for-coding-assistants">For coding assistants</h2>
+<p>A person opened this repository in Claude, Cursor, or a similar tool. Read this before you install, run, or change anything.</p>
+<p><strong>They want it running.</strong> Follow <a href="install-with-ai.html">INSTALL_WITH_AI.md</a> from the top. That file is the procedure. Do not invent a shorter one.</p>
+<ul>
+<li>If you can read this file, the code is already here. Do not clone a second copy. Run commands from this folder.</li>
+<li>Ask before installing anything system-wide: Homebrew, Rust, Node.js, CMake, or Visual Studio Build Tools. Say what it is, why saywhen needs it, and roughly how big it is.</li>
+<li>Explain each step in one plain sentence before you run it. Say &quot;the tool that builds the app&quot; rather than &quot;the Rust toolchain&quot;.</li>
+<li>Never type their password. If a prompt will appear, tell them and wait.</li>
+<li>If a step fails, stop. Show the last few lines of the error. Do not skip it.</li>
+<li>Do not change System Settings yourself. Tell them which switch to click.</li>
+<li>On a Mac, do not run <code>npx tauri dev</code> from your own background shell. macOS gives the camera and microphone to the program that started saywhen, and a background shell is usually blocked (<code>NotAllowedError</code>). Ask them to open the <strong>Terminal</strong> app and run the command there. The dev app is named <strong>saywhen-dev</strong>.</li>
+<li>When the window opens, walk them through <a href="#first-launch">First launch</a>, one step at a time, and wait for each answer.</li>
+<li>You are done when a speech model is downloaded, the camera and microphone are allowed, and a short phrase such as &quot;git status&quot; shows up in a terminal they chose.</li>
+</ul>
+<p><strong>They want you to change the code.</strong> Read <a href="https://github.com/ansarbuilds/saywhen/blob/main/AGENTS.md">AGENTS.md</a> (same guidance as <a href="https://github.com/ansarbuilds/saywhen/blob/main/CLAUDE.md">CLAUDE.md</a>), <a href="architecture.html">docs/ARCHITECTURE.md</a>, and <a href="roadmap.html">docs/ROADMAP.md</a> first. Keep the app local-first and private. Every automatic send must stay cancelable. If the camera, microphone, model, or typing fails, say so. Claims about speed or accuracy need a measurement. Do not commit model files (<code>*.bin</code>, <code>*.gguf</code>, <code>*.onnx</code>), recordings, or <code>settings.local.json</code>.</p>
+<p><strong>They want to understand it.</strong> Explain <a href="how-it-works.html">How it works</a> in plain language. The longer version is <a href="how-it-works.html">docs/HOW_IT_WORKS.md</a>.</p>
+<h2 id="for-developers">For developers</h2>
+<p>saywhen is a <a href="https://tauri.app">Tauri v2</a> app. Rust runs the engine. TypeScript draws the window.</p>
+<pre><code class="language-bash">npm run build
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+</code></pre>
+<table>
+<thead>
+<tr>
+  <th>Path</th>
+  <th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><a href="https://github.com/ansarbuilds/saywhen/blob/main/src-tauri/src/audio.rs">src-tauri/src/audio.rs</a></td>
+  <td>Microphone, 500 ms pre-roll, voice detection, the 5-state machine, settings</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/ansarbuilds/saywhen/blob/main/src-tauri/src/turn_taking.rs">src-tauri/src/turn_taking.rs</a></td>
+  <td>When to start, when you are done, send modes, speech-cancel</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/ansarbuilds/saywhen/blob/main/src-tauri/src/transcribe.rs">src-tauri/src/transcribe.rs</a></td>
+  <td>Whisper on the GPU, model download, &quot;send it&quot; detection</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/ansarbuilds/saywhen/blob/main/src-tauri/src/cleanup.rs">src-tauri/src/cleanup.rs</a></td>
+  <td>Developer word clean-up, &quot;scratch that&quot;, custom words, risky-command guard</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/ansarbuilds/saywhen/blob/main/src-tauri/src/inject.rs">src-tauri/src/inject.rs</a></td>
+  <td>Typing into other apps, per-app rules, front-app detection</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/ansarbuilds/saywhen/blob/main/src/main.ts">src/main.ts</a></td>
+  <td>Camera, head gestures, main window</td>
+</tr>
+</tbody>
+</table>
+<p><strong><a href="how-it-works.html">How it works</a></strong> · <strong><a href="how-we-built-it.html">How we built it</a></strong> · <strong><a href="architecture.html">Architecture</a></strong> · <strong><a href="measurements.html">Measurements</a></strong> · <strong><a href="roadmap.html">Roadmap</a></strong> · <strong><a href="contributing.html">Contributing</a></strong> · <strong><a href="code-of-conduct.html">Code of Conduct</a></strong> · <strong><a href="security.html">Security</a></strong></p>
+
+      </article>
+      <nav class="pager"><a class="pager-link pager-next" href="faq.html"><span>Next</span><strong>Questions people ask</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/README.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#how-it-works">How it works</a><a class="toc-2" href="#speaks-developer">Speaks developer</a><a class="toc-2" href="#the-real-thing">The real thing</a><a class="toc-2" href="#you-stay-in-control">You stay in control</a><a class="toc-2" href="#private-by-design">Private by design</a><a class="toc-2" href="#measured-with-the-caveats">Measured, with the caveats</a><a class="toc-2" href="#install">Install</a><a class="toc-3" href="#point-claude-or-cursor-at-this-repo">Point Claude or Cursor at this repo</a><a class="toc-3" href="#download-the-app">Download the app</a><a class="toc-3" href="#build-it-yourself">Build it yourself</a><a class="toc-3" href="#first-launch">First launch</a><a class="toc-2" href="#beta-honestly">Beta, honestly</a><a class="toc-2" href="#for-coding-assistants">For coding assistants</a><a class="toc-2" href="#for-developers">For developers</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

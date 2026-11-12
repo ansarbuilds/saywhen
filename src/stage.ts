@@ -80,6 +80,7 @@ window.addEventListener('keydown', (event) => {
 function motionAllowed(): boolean {
   return (
     !window.matchMedia('(prefers-reduced-motion: reduce)').matches &&
+    document.documentElement.dataset.motion !== 'reduced' &&
     !document.documentElement.classList.contains('no-motion')
   );
 }

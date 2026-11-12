@@ -30,6 +30,9 @@ jobs:
             exit 1
           fi
 
+      - name: Check documentation links and anchors
+        run: node scripts/check-docs.mjs
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

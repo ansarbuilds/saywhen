@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Changelog · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link is-active" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Using saywhen</span></div>
+      <article class="prose">
+        <h1 id="changelog">Changelog</h1>
+<h2 id="unreleased">Unreleased</h2>
+<ul>
+<li>The onboarding window keeps <strong>Start talking</strong> visible at the default window size, traps focus, closes with Escape and restores focus when it closes.</li>
+<li>The onboarding microphone and camera badges now reflect the device list and the camera state instead of being hard-coded.</li>
+<li>Model downloads show a real progress bar and percentage in Settings and on the setup checklist.</li>
+<li>The &quot;Say something&quot; setup step is only marked done after text is successfully injected.</li>
+<li>The check step scrolls into view when it appears, so it is visible at the minimum window size.</li>
+<li>The check step can no longer be turned off. Every automatic send goes through a cancelable review.</li>
+<li>Send-style cards support arrow-key navigation.</li>
+<li>Renamed Lab to Diagnostics and moved the practice box and live numbers under that name.</li>
+<li>Removed the marketing demo button from Home and hid the Problems panel until there is a real problem.</li>
+<li>The HUD now appears on the display under the pointer, and the tray has a &quot;Move HUD to This Display&quot; action. It stays click-through on purpose so it can never steal focus; send and cancel remain on the keyboard and in the main window.</li>
+<li>Added a searchable static docs hub in <code>docs-site/</code> (build with <code>npm run docs:build</code>).</li>
+<li>Added a command palette on Cmd+K / Ctrl+K for navigation, listening, camera, theme, contrast, text size and help actions.</li>
+<li>Added a skippable first-run intro, with a Replay the intro command.</li>
+<li>Added high contrast mode, an in-app reduce-motion switch and four text-size steps that scale the window through the webview.</li>
+<li>The dark theme now uses brighter text, stronger surfaces and contrast-checked labels; sent, cancel and error actions have short motion cues.</li>
+<li>The push-to-talk shortcut can be recorded and reset in Settings &gt; Sending. The HUD and the in-app Guide follow the new binding. If the combination is already taken, the old shortcut is restored and the error is shown.</li>
+<li>Onboarding now has a Try it now practice box: record a short command and see the raw and cleaned text without typing into another app or needing Accessibility.</li>
+<li>Recent has a Paste last button, and Cmd+Ctrl+V on Mac or Ctrl+Alt+V on Windows types the last transcript again without pressing Enter.</li>
+<li>Settings now has a section navigation bar, a search field, an app picker for the trusted-apps list, and an About section with a privacy-safe diagnostics copy.</li>
+<li>Added a System, Light or Dark theme. The choice is remembered and follows the system when set to System.</li>
+<li>Moved the custom vocabulary into its own Words section and renamed Colours to Appearance.</li>
+<li>Added a user <a href="faq.html">FAQ</a> and expanded <a href="troubleshooting.html">troubleshooting</a> for permissions, camera stalls, microphone loss, secure input, elevation and model downloads.</li>
+<li>Fixed the broken <code>#see-it-work</code> link in the documentation index.</li>
+</ul>
+<h2 id="v020-beta">v0.2.0 beta</h2>
+<ul>
+<li>First public beta for Apple Silicon macOS and 64-bit Windows.</li>
+<li>Local Whisper transcription, camera-gated hands-free listening, pre-roll, preview, send styles, 7-day history and the in-app Guide.</li>
+<li>Developer cleanup for CLI commands, custom vocabulary, &quot;scratch that&quot;, &quot;paste only&quot;, and a destructive-command guard.</li>
+</ul>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="how-it-works.html"><span>Previous</span><strong>How saywhen works</strong></a><a class="pager-link pager-next" href="architecture.html"><span>Next</span><strong>Architecture</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/CHANGELOG.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#unreleased">Unreleased</a><a class="toc-2" href="#v020-beta">v0.2.0 beta</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

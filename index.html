@@ -3,8 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
     <title>saywhen</title>
+    <script>
+      try {
+        var themeChoice = localStorage.getItem('saywhen-theme') || 'system';
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var dark = themeChoice === 'dark' || (themeChoice === 'system' && prefersDark);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        document.documentElement.dataset.themeChoice = themeChoice;
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        var contrast = localStorage.getItem('saywhen-contrast') === 'high' ? 'high' : 'normal';
+        document.documentElement.dataset.contrast = contrast;
+        var motion = localStorage.getItem('saywhen-motion') === 'reduced' ? 'reduced' : 'full';
+        document.documentElement.dataset.motion = motion;
+      } catch (error) {}
+    </script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body data-state="IDLE" data-send-mode="pause" data-palette="saywhen" data-mood-colors="on">
@@ -35,7 +49,7 @@
           </button>
           <button class="nav-item" data-tab="lab">
             <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h2.5l2-5 3 9 2-6 1.5 2H17" /></svg>
-            <span>Lab</span>
+            <span>Diagnostics</span>
             <kbd class="nav-kbd" data-mod>3</kbd>
           </button>
           <button class="nav-item" data-tab="guide">
@@ -55,6 +69,11 @@
             <span class="dot dot-emerald"></span>
             <span>Pre-roll <strong id="preroll-val">500 ms</strong></span>
           </div>
+          <button class="status-row" id="command-open-btn" title="Open the command palette (Cmd+K)">
+            <svg class="status-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6.5h12M4 10h12M4 13.5h12" /></svg>
+            <span>Commands</span>
+            <kbd class="status-kbd" id="command-key-label">⌘K</kbd>
+          </button>
           <button class="status-row" id="onboarding-open-btn" title="Setup and permissions checklist">
             <svg class="status-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" /><path d="M10 9.2v4M10 6.6v.1" /></svg>
             <span>Setup guide</span>
@@ -180,10 +199,6 @@
                     <li>Every send can cancel</li>
                     <li>Enter only in trusted apps</li>
                   </ul>
-                  <button type="button" class="btn btn-premiere" id="play-premiere-btn" data-premiere-open>
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.2 5.2v9.6L15.2 10z" /></svg>
-                    <span>Play the 7 seconds</span>
-                  </button>
                 </div>
 
                 <div class="hero-actions">
@@ -396,6 +411,7 @@
                         spellcheck="false"
                       />
                     </label>
+                    <button id="paste-last-btn" class="btn-xs btn-quiet" title="Type the last transcript again, without pressing Enter">Paste last</button>
                     <button id="clear-feed-btn" class="btn-xs btn-quiet" title="Clear the list and delete saved history">Clear</button>
                   </div>
                 </div>
@@ -438,8 +454,24 @@
 
           <!-- SETTINGS -->
           <section class="view" data-view="preferences" id="view-preferences">
-            <div class="prefs">
-              <section class="pref-section">
+            <div class="settings-toolbar">
+              <label class="settings-search">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5" /><path d="m13 13 3.5 3.5" /></svg>
+                <input type="search" id="settings-search" placeholder="Search settings" autocomplete="off" spellcheck="false" aria-label="Search settings" />
+              </label>
+              <span class="settings-save-hint">Changes save by themselves</span>
+            </div>
+            <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
+              <button type="button" class="settings-nav-item is-active" data-settings-target="pref-listening" aria-current="location">Listening</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-sending">Sending</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-words">Words</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-privacy">Privacy</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-appearance">Appearance</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-about">About</button>
+            </nav>
+            <p class="settings-empty hidden" id="settings-empty">No setting matches that search.</p>
+            <div class="prefs" id="prefs-content">
+              <section class="pref-section" id="pref-listening">
                 <header class="pref-section-head">
                   <span class="pref-num" aria-hidden="true">01</span>
                   <div>
@@ -465,6 +497,10 @@
                       <button id="download-model-btn" class="btn-xs btn-accent hidden">Download</button>
                       <select id="model-select" class="select-control"></select>
                     </div>
+                  </div>
+                  <div class="model-download hidden" id="model-download" aria-live="polite">
+                    <div class="model-download-track" aria-hidden="true"><i id="model-download-fill"></i></div>
+                    <span id="model-download-label">Starting download...</span>
                   </div>
                   <div class="pref-row pref-row-slider">
                     <div class="pref-text">
@@ -523,7 +559,7 @@
                 </div>
               </section>
 
-              <section class="pref-section">
+              <section class="pref-section" id="pref-sending">
                 <header class="pref-section-head">
                   <span class="pref-num" aria-hidden="true">02</span>
                   <div>
@@ -532,6 +568,16 @@
                   </div>
                 </header>
                 <div class="pref-group">
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Push-to-talk shortcut</label>
+                      <span class="pref-desc">Starts and stops listening by hand. Click the shortcut to record a new one.</span>
+                    </div>
+                    <div class="pref-control pref-control-inline">
+                      <button type="button" id="hotkey-record-btn" class="btn-xs btn-accent">Option + Space</button>
+                      <button type="button" id="hotkey-reset-btn" class="btn-xs btn-quiet">Reset</button>
+                    </div>
+                  </div>
                   <div class="pref-row pref-row-slider">
                     <div class="pref-text">
                       <label class="field-label" for="preview-countdown-slider">Countdown</label>
@@ -548,13 +594,6 @@
                       <div class="toggle-desc">Say &ldquo;cancel&rdquo; or &ldquo;wait&rdquo; while it counts down and nothing is sent.</div>
                     </div>
                     <input type="checkbox" id="toggle-cancel-on-speech" checked />
-                  </label>
-                  <label class="toggle-row">
-                    <div>
-                      <div class="toggle-title">Show the check step</div>
-                      <div class="toggle-desc">Shows your text before sending. Turning this off sends straight away (not in Nod mode).</div>
-                    </div>
-                    <input type="checkbox" id="toggle-preview" checked />
                   </label>
                   <label class="toggle-row">
                     <div>
@@ -581,11 +620,27 @@
                       class="text-control"
                       value="Terminal, iTerm2, Warp, Ghostty, Cursor, Code, Zed, Antigravity, Claude"
                     />
+                    <div class="allowlist-editor">
+                      <div class="allowlist-chips" id="allowlist-chips"></div>
+                      <button type="button" class="btn-xs btn-accent" id="add-frontmost-app-btn">Add the app in front</button>
+                    </div>
                   </div>
+                </div>
+              </section>
+
+              <section class="pref-section" id="pref-words">
+                <header class="pref-section-head">
+                  <span class="pref-num" aria-hidden="true">03</span>
+                  <div>
+                    <h3>Words</h3>
+                    <p>Names, tools and project words that should always be spelled your way.</p>
+                  </div>
+                </header>
+                <div class="pref-group">
                   <div class="pref-row pref-row-stack">
                     <div class="pref-text">
                       <label class="field-label" for="custom-vocab-input">Words to always spell right</label>
-                      <span class="pref-desc">Project names and tools, written exactly how you want them.</span>
+                      <span class="pref-desc">Separate entries with commas. Spaced versions also match, so &ldquo;media pipe&rdquo; becomes MediaPipe.</span>
                     </div>
                     <input
                       type="text"
@@ -595,12 +650,13 @@
                       value=""
                     />
                   </div>
+                  <p class="pref-footnote">This list is applied after the local clean-up pass, before the check step.</p>
                 </div>
               </section>
 
-              <section class="pref-section">
+              <section class="pref-section" id="pref-privacy">
                 <header class="pref-section-head">
-                  <span class="pref-num" aria-hidden="true">03</span>
+                  <span class="pref-num" aria-hidden="true">04</span>
                   <div>
                     <h3>Clean-up &amp; privacy</h3>
                     <p>How your words get tidied and what is kept.</p>
@@ -641,15 +697,52 @@
                 </div>
               </section>
 
-              <section class="pref-section">
+              <section class="pref-section" id="pref-appearance">
                 <header class="pref-section-head">
-                  <span class="pref-num" aria-hidden="true">04</span>
+                  <span class="pref-num" aria-hidden="true">05</span>
                   <div>
-                    <h3>Colours</h3>
-                    <p>Pick the look you like. It also colours the floating pill.</p>
+                    <h3>Appearance</h3>
+                    <p>Theme and accent. It also colours the floating pill.</p>
                   </div>
                 </header>
                 <div class="pref-group">
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Theme</label>
+                      <span class="pref-desc">Follow your computer, or keep saywhen light or dark at all times.</span>
+                    </div>
+                    <div class="theme-choice" role="group" aria-label="Theme">
+                      <button type="button" class="theme-choice-btn is-selected" data-theme-choice="system" aria-pressed="true">System</button>
+                      <button type="button" class="theme-choice-btn" data-theme-choice="light" aria-pressed="false">Light</button>
+                      <button type="button" class="theme-choice-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
+                    </div>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Text size</label>
+                      <span class="pref-desc">Scale the whole window. Useful on a large monitor or when the labels feel small.</span>
+                    </div>
+                    <div class="theme-choice" role="group" aria-label="Text size">
+                      <button type="button" class="theme-choice-btn" data-ui-zoom="0.9">Small</button>
+                      <button type="button" class="theme-choice-btn is-selected" data-ui-zoom="1" aria-pressed="true">Default</button>
+                      <button type="button" class="theme-choice-btn" data-ui-zoom="1.1">Large</button>
+                      <button type="button" class="theme-choice-btn" data-ui-zoom="1.2">Extra large</button>
+                    </div>
+                  </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Reduce motion</div>
+                      <div class="toggle-desc">Fewer transitions, no intro animation and no drifting glow. The app also follows your system setting.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-reduce-motion" />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">High contrast</div>
+                      <div class="toggle-desc">Pure black, white text and amber accents. Overrides the palette for maximum clarity.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-high-contrast" />
+                  </label>
                   <div class="palette-grid" role="group" aria-label="Colour palette">
                     <button type="button" class="palette-card" data-palette="saywhen" style="--sw-paper: #f7f4f7; --sw-ink: #2a0823; --sw-accent: #4a0b3e; --sw-on-dark: #fbb303;" aria-pressed="false">
                       <span class="palette-swatches" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -701,6 +794,39 @@
                   </label>
                 </div>
                 <p class="pref-footnote">Changes save by themselves.</p>
+              </section>
+              <section class="pref-section" id="pref-about">
+                <header class="pref-section-head">
+                  <span class="pref-num" aria-hidden="true">06</span>
+                  <div>
+                    <h3>About</h3>
+                    <p>Version, support and the diagnostics to copy when something fails.</p>
+                  </div>
+                </header>
+                <div class="pref-group">
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">saywhen</label>
+                      <span class="pref-desc" id="about-version">Beta</span>
+                    </div>
+                    <span class="gauge-tag tag-ok">Local-first</span>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Diagnostics</label>
+                      <span class="pref-desc">Copies the app state, permissions, model and recent Problems messages. It never includes your transcript text.</span>
+                    </div>
+                    <button type="button" class="btn-xs btn-accent" id="copy-diagnostics-btn">Copy diagnostics</button>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Help</label>
+                      <span class="pref-desc">Copy a link to the FAQ, or open Problems on Home for the exact error.</span>
+                    </div>
+                    <button type="button" class="btn-xs" id="copy-docs-link-btn">Copy FAQ link</button>
+                  </div>
+                </div>
+                <p class="pref-footnote" id="about-status" aria-live="polite"></p>
               </section>
             </div>
           </section>
@@ -885,9 +1011,10 @@
 
               <section class="guide-card">
                 <h4><span class="guide-num">3</span> Ways to stop or fix a send</h4>
+                <p class="guide-note">Need an action fast? Press <kbd>⌘</kbd> <kbd>K</kbd> on a Mac or <kbd>Ctrl</kbd> <kbd>K</kbd> on Windows, or click <strong>Commands</strong> in the sidebar.</p>
                 <div class="guide-keys">
                   <div><kbd>Esc</kbd><span>Cancel the countdown</span></div>
-                  <div><kbd data-guide-mod>Option</kbd> <kbd>Space</kbd><span>Start or stop by hand, no camera needed</span></div>
+                  <div id="guide-hotkey-row"><kbd data-guide-mod>Option</kbd> <kbd>Space</kbd><span>Start or stop by hand, no camera needed</span></div>
                   <div><span class="guide-say">&ldquo;scratch that&rdquo;</span><span>Throw away what you just said</span></div>
                   <div><span class="guide-say">&ldquo;paste only&rdquo;</span><span>Type it without pressing Enter</span></div>
                   <div><span class="guide-say">Shake your head</span><span>Cancel, hands free</span></div>
@@ -931,12 +1058,13 @@
     </div>
 
     <div class="modal-backdrop hidden" id="onboarding-modal">
-      <div class="modal-card" role="dialog" aria-labelledby="onboarding-title">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" aria-describedby="onboarding-sub" tabindex="-1">
+        <div class="modal-body">
         <div class="modal-header">
           <img class="modal-logo" src="/src/assets/logo.png" alt="" width="56" height="56" draggable="false" />
           <span class="modal-kicker">Welcome to saywhen</span>
           <h2 class="modal-title" id="onboarding-title">Look. Talk. <em>Sent.</em></h2>
-          <p class="modal-sub">saywhen types what you say into your terminal or coding assistant. No buttons, no hotkeys. It only listens while you are looking at the screen and talking.</p>
+          <p class="modal-sub" id="onboarding-sub">saywhen types what you say into your terminal or coding assistant. No buttons, no hotkeys. It only listens while you are looking at the screen and talking.</p>
           <button id="onboarding-close-btn" class="modal-close" aria-label="Close">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8" /></svg>
           </button>
@@ -968,14 +1096,40 @@
           </button>
         </div>
 
+        <div class="ob-practice" id="ob-practice">
+          <div class="ob-practice-top">
+            <span class="ob-practice-kicker">Try it now</span>
+            <span id="ob-practice-status" aria-live="polite">Say a short command. Nothing is typed into another app.</span>
+          </div>
+          <p class="ob-practice-script">Say &ldquo;git status&rdquo;</p>
+          <div class="ob-practice-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="ob-practice-start">Start listening</button>
+            <button type="button" class="btn btn-secondary btn-sm hidden" id="ob-practice-download">Download model</button>
+            <button type="button" class="btn btn-secondary btn-sm hidden" id="ob-practice-stop">Stop</button>
+            <button type="button" class="btn btn-ghost btn-sm hidden" id="ob-practice-again">Try again</button>
+          </div>
+          <div class="ob-practice-result hidden" id="ob-practice-result" aria-live="polite">
+            <span>Heard</span><code id="ob-practice-raw"></code>
+            <span>Cleaned</span><code id="ob-practice-cleaned"></code>
+          </div>
+        </div>
+
         <div class="onboarding-steps">
+          <div class="ob-step">
+            <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="5" y="5" width="10" height="10" rx="2" /><path d="M8 2v3M12 2v3M8 15v3M12 15v3M2 8h3M2 12h3M15 8h3M15 12h3" /></svg></div>
+            <div>
+              <div class="ob-title">Speech model</div>
+              <div class="ob-desc">Tiny is about 75 MB and runs on this computer. Download it before your first command.</div>
+            </div>
+            <button type="button" class="ob-badge" id="ob-model-badge">Check</button>
+          </div>
           <div class="ob-step">
             <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="7.5" y="3" width="5" height="9" rx="2.5" /><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5V17" /></svg></div>
             <div>
               <div class="ob-title">Microphone</div>
               <div class="ob-desc">Speech is turned into text on this computer. Audio is thrown away right after.</div>
             </div>
-            <div class="ob-badge ob-ok">Ready</div>
+            <div class="ob-badge ob-ok" id="ob-mic-badge">Checking...</div>
           </div>
           <div class="ob-step">
             <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z" /><circle cx="10" cy="10" r="2.2" /></svg></div>
@@ -983,7 +1137,7 @@
               <div class="ob-title">Camera</div>
               <div class="ob-desc">Only checks if you are facing the screen and your lips are moving. Pictures are never saved or sent.</div>
             </div>
-            <div class="ob-badge ob-ok">Private</div>
+            <div class="ob-badge" id="ob-camera-badge">Off</div>
           </div>
           <div class="ob-step">
             <div class="ob-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="11" rx="2" /><path d="m6.5 8.5 2 1.5-2 1.5M10.5 12h3" /></svg></div>
@@ -994,12 +1148,41 @@
             <div class="ob-badge ob-ok" id="ob-ax-badge">TRUSTED</div>
           </div>
         </div>
+        </div>
 
         <div class="modal-footer">
           <span class="card-hint">Open this again from Setup guide in the sidebar.</span>
           <button type="button" id="setup-reopen-btn" class="btn-xs">Show the setup checklist</button>
           <button id="onboarding-done-btn" class="btn btn-primary">Start talking</button>
         </div>
+      </div>
+    </div>
+
+    <div class="intro hidden" id="intro" role="dialog" aria-modal="true" aria-label="Welcome to saywhen" aria-hidden="true">
+      <div class="intro-glow" aria-hidden="true"></div>
+      <div class="intro-stage">
+        <div class="intro-orb" aria-hidden="true">
+          <span class="intro-ring"></span>
+          <span class="intro-ring intro-ring-2"></span>
+          <img src="/src/assets/logo.png" alt="" width="72" height="72" draggable="false" />
+        </div>
+        <span class="intro-kicker">saywhen</span>
+        <h2 class="intro-title">Look. Talk. <em>Sent.</em></h2>
+        <p class="intro-sub">No hotkey. No cloud. Just look at the screen and talk.</p>
+        <div class="intro-beats" aria-hidden="true"><span>Look</span><span>Talk</span><span>Sent</span></div>
+        <button type="button" id="intro-skip" class="btn btn-ghost btn-sm">Skip</button>
+      </div>
+    </div>
+
+    <div class="command-palette hidden" id="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="command-card">
+        <div class="command-input-row">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5" /><path d="m13 13 3.5 3.5" /></svg>
+          <input id="command-input" type="text" placeholder="Type a command or search..." role="combobox" aria-expanded="true" aria-controls="command-list" aria-autocomplete="list" aria-haspopup="listbox" aria-label="Search commands" autocomplete="off" spellcheck="false" />
+          <kbd>Esc</kbd>
+        </div>
+        <div class="command-list" id="command-list" role="listbox" aria-label="Commands"></div>
+        <div class="command-footer"><span>↑↓ to move</span><span>↵ to run</span><span>Esc to close</span></div>
       </div>
     </div>
 

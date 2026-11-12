@@ -17,10 +17,12 @@ use history::{
 };
 use inject::{
     check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
-    inject_text_into_focused_app, open_accessibility_settings, InjectionOutcome,
+    inject_text_into_focused_app, open_accessibility_settings, FrontmostApp, InjectionOutcome,
 };
 use serde::Serialize;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use transcribe::{ModelInfo, TranscriberEngine};
@@ -29,6 +31,7 @@ use turn_taking::{update_false_trigger_flag_in_metrics, EndReason};
 pub struct AppState {
     pub audio: Arc<AudioPipelineController>,
     pub transcriber: Arc<TranscriberEngine>,
+    pub hotkey: Arc<Mutex<Shortcut>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,6 +51,7 @@ pub struct SystemStatusSnapshot {
 #[tauri::command]
 fn get_system_status(app: AppHandle, state: State<'_, AppState>) -> SystemStatusSnapshot {
     let config = state.audio.get_config();
+    let hotkey_label = config.hotkey_accelerator.clone();
     let recent_history = if config.history_persistence_enabled {
         app.path()
             .app_data_dir()
@@ -65,7 +69,7 @@ fn get_system_status(app: AppHandle, state: State<'_, AppState>) -> SystemStatus
         accessibility_trusted: check_accessibility_permission(),
         models: state.transcriber.list_models(),
         selected_model_id: state.transcriber.get_selected_model_id(),
-        hotkey_label: "Option + Space".to_string(),
+        hotkey_label,
         frontmost_app: detect_frontmost_app().name,
         recent_history,
     }
@@ -138,7 +142,29 @@ fn update_dictation_config(
     state: State<'_, AppState>,
     config: DictationConfig,
 ) -> Result<DictationConfig, String> {
+    let previous = state.audio.get_config();
+    let requested_hotkey = config
+        .hotkey_accelerator
+        .parse::<Shortcut>()
+        .map_err(|err| format!("That shortcut is not valid: {}", err))?;
     let updated = state.audio.update_config(config)?;
+    if previous.hotkey_accelerator != updated.hotkey_accelerator {
+        let old_hotkey = state
+            .hotkey
+            .lock()
+            .map_err(|_| "Shortcut lock failed".to_string())?
+            .clone();
+        if let Err(err) = app.global_shortcut().unregister(old_hotkey) {
+            let _ = state.audio.update_config(previous);
+            return Err(format!("Could not release the old shortcut: {}", err));
+        }
+        if let Err(err) = app.global_shortcut().register(requested_hotkey) {
+            let _ = app.global_shortcut().register(old_hotkey);
+            let _ = state.audio.update_config(previous);
+            return Err(format!("That shortcut is already taken: {}", err));
+        }
+        *state.hotkey.lock().map_err(|_| "Shortcut lock failed".to_string())? = requested_hotkey;
+    }
     if !updated.history_persistence_enabled {
         if let Ok(app_data_dir) = app.path().app_data_dir() {
             let _ = clear_utterance_history_file(&app_data_dir);
@@ -171,14 +197,86 @@ fn select_whisper_model(state: State<'_, AppState>, model_id: String) -> Result<
 }
 
 #[tauri::command]
+fn get_frontmost_app() -> FrontmostApp {
+    detect_frontmost_app()
+}
+
+#[tauri::command]
+fn set_ui_zoom(app: AppHandle, scale: f64) -> Result<(), String> {
+    let scale = scale.clamp(0.8, 1.5);
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is not available".to_string())?;
+    window
+        .set_zoom(scale)
+        .map_err(|err| format!("Could not set the window size: {}", err))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelDownloadProgress {
+    model_id: String,
+    downloaded_bytes: u64,
+    total_bytes: u64,
+}
+
+#[tauri::command]
 async fn download_whisper_model(
+    app: AppHandle,
     state: State<'_, AppState>,
     model_id: String,
 ) -> Result<ModelInfo, String> {
     let transcriber = Arc::clone(&state.transcriber);
-    tokio::task::spawn_blocking(move || transcriber.download_model(&model_id))
+    let total_bytes = transcriber
+        .list_models()
+        .iter()
+        .find(|model| model.id == model_id)
+        .map(|model| model.size_mb.saturating_mul(1024 * 1024))
+        .unwrap_or(0);
+    let part_path = transcriber.model_download_path(&model_id);
+    let stop = Arc::new(AtomicBool::new(false));
+    let progress_app = app.clone();
+    let progress_model = model_id.clone();
+    let progress_stop = Arc::clone(&stop);
+    let poller = std::thread::spawn(move || {
+        let mut reported = u64::MAX;
+        while !progress_stop.load(Ordering::Relaxed) {
+            let downloaded = part_path
+                .as_ref()
+                .and_then(|path| std::fs::metadata(path).ok())
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            if downloaded != reported {
+                reported = downloaded;
+                let _ = progress_app.emit(
+                    "model-download-progress",
+                    ModelDownloadProgress {
+                        model_id: progress_model.clone(),
+                        downloaded_bytes: downloaded,
+                        total_bytes,
+                    },
+                );
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    });
+
+    let download_model = model_id.clone();
+    let result = tokio::task::spawn_blocking(move || transcriber.download_model(&download_model))
         .await
-        .map_err(|e| format!("Download worker panic: {}", e))?
+        .map_err(|e| format!("Download worker panic: {}", e));
+    stop.store(true, Ordering::Relaxed);
+    let _ = poller.join();
+    let model = result??;
+    let _ = app.emit(
+        "model-download-progress",
+        ModelDownloadProgress {
+            model_id,
+            downloaded_bytes: total_bytes,
+            total_bytes,
+        },
+    );
+    Ok(model)
 }
 
 #[tauri::command]
@@ -237,31 +335,52 @@ pub fn run() {
             ));
 
             let audio_for_shortcut = Arc::clone(&audio_controller);
-            let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+            let initial_hotkey = audio_controller
+                .get_config()
+                .hotkey_accelerator
+                .parse::<Shortcut>()
+                .unwrap_or_else(|_| Shortcut::new(Some(Modifiers::ALT), Code::Space));
+            let current_hotkey = Arc::new(Mutex::new(initial_hotkey));
+            let hotkey_for_handler = Arc::clone(&current_hotkey);
             let escape = hud::escape_shortcut();
+            #[cfg(target_os = "macos")]
+            let paste_last =
+                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyV);
+            #[cfg(not(target_os = "macos"))]
+            let paste_last = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyV);
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |_app, sc, event| {
+                    .with_handler(move |app, sc, event| {
                         if event.state() != ShortcutState::Pressed {
                             return;
                         }
-                        if sc == &shortcut {
+                        let is_hotkey = {
+                            let hotkey = hotkey_for_handler.lock().unwrap();
+                            sc == &*hotkey
+                        };
+                        if is_hotkey {
                             let _ = audio_for_shortcut.send_command(AudioCommand::ToggleListening(
-                                "hotkey (Option+Space)".to_string(),
+                                "hotkey".to_string(),
                             ));
                         } else if sc == &escape {
                             // Only registered while in PREVIEW (see hud::spawn_preview_escape_guard).
                             let _ = audio_for_shortcut.send_command(AudioCommand::CancelPreview(
                                 "Esc pressed (global)".to_string(),
                             ));
+                        } else if sc == &paste_last {
+                            let _ = app.emit("paste-last-requested", ());
                         }
                     })
                     .build(),
             )?;
 
-            if let Err(err) = app.global_shortcut().register(shortcut) {
-                eprintln!("Warning: could not register Option+Space shortcut: {}", err);
+            let initial_hotkey = current_hotkey.lock().unwrap().clone();
+            if let Err(err) = app.global_shortcut().register(initial_hotkey) {
+                eprintln!("Warning: could not register the push-to-talk shortcut: {}", err);
+            }
+            if let Err(err) = app.global_shortcut().register(paste_last) {
+                eprintln!("Warning: could not register the paste-last shortcut: {}", err);
             }
 
             hud::spawn_preview_escape_guard(app_handle.clone(), Arc::clone(&audio_controller));
@@ -281,6 +400,7 @@ pub fn run() {
             app.manage(AppState {
                 audio: audio_controller,
                 transcriber,
+                hotkey: current_hotkey,
             });
 
             Ok(())
@@ -312,6 +432,8 @@ pub fn run() {
             update_vision_telemetry,
             set_camera_gate_enabled,
             select_whisper_model,
+            get_frontmost_app,
+            set_ui_zoom,
             download_whisper_model,
             manual_inject_text,
             request_accessibility_settings,

@@ -1,10 +1,13 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
 import { playWakeChime, unlockChimeOnFirstInteraction } from './chime';
 import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
 import { initSetupChecklist, reopenSetupChecklist, updateSetupChecklist } from './setup';
+import { initCommandPalette } from './commands';
+import { initIntro } from './intro';
 
 type SendMode = 'pause' | 'nod' | 'phrase' | 'paste_only';
 
@@ -27,6 +30,7 @@ interface DictationConfig {
   useClipboardPaste: boolean;
   preferredDevice: string | null;
   hudEnabled: boolean;
+  hotkeyAccelerator: string;
   onTargetChanged: 'abort' | 'paste_only';
   enterDelayMs: number;
   perAppEnterDelayMs: Record<string, number>;
@@ -162,6 +166,17 @@ interface InjectionOutcome {
   message: string;
 }
 
+interface PracticeCompleteEvent {
+  transcription: TranscriptionResult;
+  cleanup: CleanupResult;
+}
+
+interface ModelDownloadProgressEvent {
+  modelId: string;
+  downloadedBytes: number;
+  totalBytes: number;
+}
+
 interface UtteranceCompleteEvent {
   utteranceId?: number;
   transcription: TranscriptionResult;
@@ -204,6 +219,7 @@ let currentConfig: DictationConfig = {
   useClipboardPaste: true,
   preferredDevice: null,
   hudEnabled: true,
+  hotkeyAccelerator: 'Alt+Space',
   onTargetChanged: 'abort',
   enterDelayMs: 120,
   perAppEnterDelayMs: {},
@@ -238,6 +254,7 @@ let currentConfig: DictationConfig = {
 
 let modelsCatalog: ModelInfo[] = [];
 let selectedModelId = 'tiny.en';
+let lastTranscriptText = '';
 let activePreviewTotalMs = 1800;
 let activePreviewWaitsForNod = false;
 let simulatedPreviewTimer: number | null = null;
@@ -413,16 +430,33 @@ const clearTerminalBtn = document.getElementById('clear-terminal-btn') as HTMLBu
 const deviceSelect = document.getElementById('device-select') as HTMLSelectElement;
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
 const downloadModelBtn = document.getElementById('download-model-btn') as HTMLButtonElement;
+const modelDownload = document.getElementById('model-download') as HTMLElement;
+const modelDownloadFill = document.getElementById('model-download-fill') as HTMLElement;
+const modelDownloadLabel = document.getElementById('model-download-label') as HTMLElement;
 
 const vadThreshSlider = document.getElementById('vad-thresh-slider') as HTMLInputElement;
 const vadThreshDisplay = document.getElementById('vad-thresh-display') as HTMLElement;
 const previewCountdownSlider = document.getElementById('preview-countdown-slider') as HTMLInputElement;
 const previewCountdownDisplay = document.getElementById('preview-countdown-display') as HTMLElement;
 const allowlistInput = document.getElementById('allowlist-input') as HTMLInputElement;
+const allowlistChips = document.getElementById('allowlist-chips') as HTMLElement;
+const addFrontmostAppBtn = document.getElementById('add-frontmost-app-btn') as HTMLButtonElement;
 const customVocabInput = document.getElementById('custom-vocab-input') as HTMLInputElement;
+const settingsSearch = document.getElementById('settings-search') as HTMLInputElement | null;
+const settingsView = document.getElementById('view-preferences') as HTMLElement;
+const settingsNav = document.getElementById('settings-nav') as HTMLElement | null;
+const themeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]'));
+const toggleHighContrast = document.getElementById('toggle-high-contrast') as HTMLInputElement | null;
+const toggleReduceMotion = document.getElementById('toggle-reduce-motion') as HTMLInputElement | null;
+const zoomButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-ui-zoom]'));
+const hotkeyRecordBtn = document.getElementById('hotkey-record-btn') as HTMLButtonElement | null;
+const hotkeyResetBtn = document.getElementById('hotkey-reset-btn') as HTMLButtonElement | null;
+const aboutVersion = document.getElementById('about-version');
+const aboutStatus = document.getElementById('about-status');
+const copyDiagnosticsBtn = document.getElementById('copy-diagnostics-btn') as HTMLButtonElement | null;
+const copyDocsLinkBtn = document.getElementById('copy-docs-link-btn') as HTMLButtonElement | null;
 
 const toggleCleanup = document.getElementById('toggle-cleanup') as HTMLInputElement;
-const togglePreview = document.getElementById('toggle-preview') as HTMLInputElement;
 const togglePerApp = document.getElementById('toggle-per-app') as HTMLInputElement;
 const toggleHandsFree = document.getElementById('toggle-hands-free') as HTMLInputElement;
 const toggleCancelOnSpeech = document.getElementById('toggle-cancel-on-speech') as HTMLInputElement;
@@ -460,6 +494,7 @@ function updateCalibrationDisplay() {
 const transcriptList = document.getElementById('transcript-list') as HTMLElement;
 const emptyFeed = document.getElementById('empty-feed') as HTMLElement;
 const clearFeedBtn = document.getElementById('clear-feed-btn') as HTMLButtonElement;
+const pasteLastBtn = document.getElementById('paste-last-btn') as HTMLButtonElement;
 const historySearchInput = document.getElementById('history-search-input') as HTMLInputElement;
 const historyTtlBadge = document.getElementById('history-ttl-badge') as HTMLElement;
 const issuesList = document.getElementById('issues-list') as HTMLElement;
@@ -483,6 +518,9 @@ function renderIssuesList() {
   }
   if (clearIssuesBtn) {
     clearIssuesBtn.disabled = sessionIssues.length === 0;
+  }
+  if (issuesPanel) {
+    issuesPanel.classList.toggle('hidden', sessionIssues.length === 0);
   }
 
   issuesList.querySelectorAll('.issue-row').forEach((row) => row.remove());
@@ -560,6 +598,615 @@ const onboardingModal = document.getElementById('onboarding-modal') as HTMLEleme
 const onboardingCloseBtn = document.getElementById('onboarding-close-btn') as HTMLButtonElement;
 const onboardingDoneBtn = document.getElementById('onboarding-done-btn') as HTMLButtonElement;
 const obAxBadge = document.getElementById('ob-ax-badge') as HTMLElement;
+const obMicBadge = document.getElementById('ob-mic-badge') as HTMLElement | null;
+const obModelBadge = document.getElementById('ob-model-badge') as HTMLButtonElement | null;
+const obPracticeStatus = document.getElementById('ob-practice-status') as HTMLElement | null;
+const obPracticeStart = document.getElementById('ob-practice-start') as HTMLButtonElement | null;
+const obPracticeStop = document.getElementById('ob-practice-stop') as HTMLButtonElement | null;
+const obPracticeDownload = document.getElementById('ob-practice-download') as HTMLButtonElement | null;
+const obPracticeAgain = document.getElementById('ob-practice-again') as HTMLButtonElement | null;
+const obPracticeResult = document.getElementById('ob-practice-result') as HTMLElement | null;
+const obPracticeRaw = document.getElementById('ob-practice-raw') as HTMLElement | null;
+const obPracticeCleaned = document.getElementById('ob-practice-cleaned') as HTMLElement | null;
+let practiceListening = false;
+const obCameraBadge = document.getElementById('ob-camera-badge') as HTMLElement | null;
+let onboardingReturnFocus: HTMLElement | null = null;
+
+function focusableIn(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]):not([tabindex="-1"]), [href]:not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+}
+
+function openOnboardingModal() {
+  onboardingReturnFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  onboardingModal.classList.remove('hidden');
+  resetPractice();
+  const card = onboardingModal.querySelector<HTMLElement>('.modal-card');
+  window.requestAnimationFrame(() => card?.focus());
+}
+
+function closeOnboardingModal() {
+  onboardingModal.classList.add('hidden');
+  if (practiceListening) {
+    practiceListening = false;
+    void invoke('cancel_listening').catch(() => undefined);
+  }
+  resetPractice();
+  const back = onboardingReturnFocus;
+  onboardingReturnFocus = null;
+  if (back && document.contains(back)) back.focus();
+}
+
+function handleOnboardingKeydown(event: KeyboardEvent) {
+  if (onboardingModal.classList.contains('hidden')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeOnboardingModal();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const card = onboardingModal.querySelector<HTMLElement>('.modal-card');
+  if (!card) return;
+  const items = focusableIn(card);
+  if (items.length === 0) {
+    event.preventDefault();
+    card.focus();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+  if (event.shiftKey && (active === first || active === card)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function syncOnboardingBadges() {
+  if (obModelBadge) {
+    const installed = Boolean(modelsCatalog.find((model) => model.id === selectedModelId)?.installed);
+    obModelBadge.textContent = installed ? 'Ready' : 'Download';
+    obModelBadge.classList.toggle('ob-ok', installed);
+    obModelBadge.disabled = installed;
+  }
+  if (obMicBadge) {
+    const hasMic = Array.from(deviceSelect.options).some((option) => option.value !== '');
+    obMicBadge.textContent = hasMic ? 'Ready' : 'No microphone';
+    obMicBadge.classList.toggle('ob-ok', hasMic);
+  }
+  if (obCameraBadge) {
+    obCameraBadge.textContent = cameraRunning ? 'On' : 'Off';
+    obCameraBadge.classList.toggle('ob-ok', cameraRunning);
+  }
+  syncPracticeControls();
+}
+
+function selectedModelInstalled(): boolean {
+  return Boolean(modelsCatalog.find((model) => model.id === selectedModelId)?.installed);
+}
+
+function syncPracticeControls() {
+  if (!obPracticeStart) return;
+  const installed = selectedModelInstalled();
+  if (practiceListening || !obPracticeResult?.classList.contains('hidden')) {
+    obPracticeStart.classList.add('hidden');
+    obPracticeDownload?.classList.add('hidden');
+    return;
+  }
+  obPracticeStart.disabled = !installed;
+  obPracticeStart.textContent = 'Start listening';
+  obPracticeStart.classList.toggle('hidden', !installed);
+  obPracticeDownload?.classList.toggle('hidden', installed);
+  if (obPracticeDownload) obPracticeDownload.disabled = false;
+  if (obPracticeStatus) {
+    obPracticeStatus.textContent = installed
+      ? 'Say a short command. Nothing is typed into another app.'
+      : 'Download the speech model first, then try it here.';
+  }
+}
+
+function resetPractice() {
+  practiceListening = false;
+  obPracticeResult?.classList.add('hidden');
+  obPracticeStart?.classList.remove('hidden');
+  obPracticeStop?.classList.add('hidden');
+  obPracticeAgain?.classList.add('hidden');
+  if (obPracticeStop) obPracticeStop.disabled = false;
+  syncPracticeControls();
+}
+
+async function startPractice() {
+  if (!selectedModelInstalled()) {
+    if (obPracticeStatus) obPracticeStatus.textContent = 'Download the speech model first.';
+    return;
+  }
+  practiceListening = true;
+  obPracticeResult?.classList.add('hidden');
+  obPracticeStart?.classList.add('hidden');
+  obPracticeDownload?.classList.add('hidden');
+  obPracticeStop?.classList.remove('hidden');
+  obPracticeAgain?.classList.add('hidden');
+  if (obPracticeStatus) obPracticeStatus.textContent = 'Listening. Say a short command, then stop.';
+  try {
+    await invoke('start_listening', { source: 'practice' });
+  } catch (err) {
+    practiceListening = false;
+    resetPractice();
+    showError(`Could not start the practice: ${String(err)}`);
+  }
+}
+
+async function stopPractice() {
+  if (!practiceListening) return;
+  if (obPracticeStop) obPracticeStop.disabled = true;
+  if (obPracticeStatus) obPracticeStatus.textContent = 'Writing...';
+  try {
+    await invoke('stop_and_transcribe');
+  } catch (err) {
+    practiceListening = false;
+    resetPractice();
+    showError(`Could not stop the practice: ${String(err)}`);
+  } finally {
+    if (obPracticeStop) obPracticeStop.disabled = false;
+  }
+}
+
+function showPracticeResult(event: PracticeCompleteEvent) {
+  practiceListening = false;
+  if (obPracticeStatus) {
+    obPracticeStatus.textContent = 'That is the loop. Nothing was typed into another app.';
+  }
+  if (obPracticeRaw) obPracticeRaw.textContent = event.cleanup.rawText || event.transcription.text;
+  if (obPracticeCleaned) obPracticeCleaned.textContent = event.cleanup.cleanedText;
+  obPracticeResult?.classList.remove('hidden');
+  obPracticeStart?.classList.add('hidden');
+  obPracticeDownload?.classList.add('hidden');
+  obPracticeStop?.classList.add('hidden');
+  obPracticeAgain?.classList.remove('hidden');
+}
+
+type ThemeChoice = 'system' | 'light' | 'dark';
+
+function readThemeChoice(): ThemeChoice {
+  try {
+    const saved = localStorage.getItem('saywhen-theme');
+    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+  } catch {
+    // Storage can be unavailable; fall through to the system choice.
+  }
+  return 'system';
+}
+
+function applyTheme(choice: ThemeChoice, persist: boolean) {
+  const dark =
+    choice === 'dark' ||
+    (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.themeChoice = choice;
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  for (const button of themeButtons) {
+    const on = button.dataset.themeChoice === choice;
+    button.classList.toggle('is-selected', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  if (persist) {
+    try {
+      localStorage.setItem('saywhen-theme', choice);
+    } catch {
+      // Storage can be unavailable; the choice still applies for this session.
+    }
+  }
+}
+
+function applyMotion(reduced: boolean, persist = true) {
+  document.documentElement.dataset.motion = reduced ? 'reduced' : 'full';
+  if (toggleReduceMotion) toggleReduceMotion.checked = reduced;
+  if (persist) {
+    try {
+      localStorage.setItem('saywhen-motion', reduced ? 'reduced' : 'full');
+    } catch {
+      // Storage can be unavailable; the choice still applies for this session.
+    }
+  }
+}
+
+function applyContrast(high: boolean, persist = true) {
+  document.documentElement.dataset.contrast = high ? 'high' : 'normal';
+  if (toggleHighContrast) toggleHighContrast.checked = high;
+  if (persist) {
+    try {
+      localStorage.setItem('saywhen-contrast', high ? 'high' : 'normal');
+    } catch {
+      // Storage can be unavailable; the choice still applies for this session.
+    }
+  }
+}
+
+function readZoomChoice(): number {
+  try {
+    const saved = Number(localStorage.getItem('saywhen-zoom'));
+    if ([0.9, 1, 1.1, 1.2].includes(saved)) return saved;
+  } catch {
+    // Storage can be unavailable; use the default.
+  }
+  return 1;
+}
+
+async function applyUiZoom(value: number, persist = true) {
+  for (const button of zoomButtons) {
+    const on = Number(button.dataset.uiZoom) === value;
+    button.classList.toggle('is-selected', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  document.documentElement.dataset.uiZoom = String(value);
+  try {
+    await invoke('set_ui_zoom', { scale: value });
+    document.body.style.zoom = '';
+  } catch {
+    // Browser preview has no Tauri window; CSS zoom keeps the demo usable.
+    document.body.style.zoom = String(value);
+  }
+  if (persist) {
+    try {
+      localStorage.setItem('saywhen-zoom', String(value));
+    } catch {
+      // Storage can be unavailable; the size still applies for this session.
+    }
+  }
+}
+
+function initZoom() {
+  const value = readZoomChoice();
+  void applyUiZoom(value, false);
+  for (const button of zoomButtons) {
+    button.addEventListener('click', () => {
+      void applyUiZoom(Number(button.dataset.uiZoom), true);
+    });
+  }
+}
+
+function initTheme() {
+  applyTheme(readThemeChoice(), false);
+  applyContrast(localStorage.getItem('saywhen-contrast') === 'high', false);
+  applyMotion(localStorage.getItem('saywhen-motion') === 'reduced', false);
+  toggleHighContrast?.addEventListener('change', () => {
+    applyContrast(toggleHighContrast.checked);
+  });
+  toggleReduceMotion?.addEventListener('change', () => {
+    applyMotion(toggleReduceMotion.checked);
+  });
+  for (const button of themeButtons) {
+    button.addEventListener('click', () => {
+      applyTheme(button.dataset.themeChoice as ThemeChoice, true);
+    });
+  }
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (readThemeChoice() === 'system') applyTheme('system', false);
+  });
+}
+
+function splitAllowlist(value: string): string[] {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  for (const raw of value.split(',')) {
+    const name = raw.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(name);
+  }
+  return items;
+}
+
+function renderAllowlistChips() {
+  const items = splitAllowlist(allowlistInput.value);
+  allowlistChips.replaceChildren();
+  for (const name of items) {
+    const chip = document.createElement('span');
+    chip.className = 'allowlist-chip';
+    chip.append(document.createTextNode(name));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `Remove ${name} from the trusted apps list`);
+    remove.addEventListener('click', () => {
+      const next = splitAllowlist(allowlistInput.value).filter(
+        (item) => item.toLowerCase() !== name.toLowerCase()
+      );
+      allowlistInput.value = next.join(', ');
+      renderAllowlistChips();
+      void syncConfigToBackend();
+    });
+    chip.appendChild(remove);
+    allowlistChips.appendChild(chip);
+  }
+}
+
+function commitAllowlist(items: string[]) {
+  allowlistInput.value = items.join(', ');
+  renderAllowlistChips();
+  void syncConfigToBackend();
+}
+
+async function addFrontmostApp() {
+  addFrontmostAppBtn.disabled = true;
+  addFrontmostAppBtn.textContent = 'Checking the front app...';
+  try {
+    const app = await invoke<{ name: string }>('get_frontmost_app');
+    if (!app.name || /^saywhen/i.test(app.name)) {
+      throw new Error('Focus the app you want to add, not saywhen itself.');
+    }
+    const items = splitAllowlist(allowlistInput.value);
+    if (items.some((item) => item.toLowerCase() === app.name.toLowerCase())) {
+      addFrontmostAppBtn.textContent = 'Already on the list';
+    } else {
+      items.push(app.name);
+      commitAllowlist(items);
+      addFrontmostAppBtn.textContent = `Added ${app.name}`;
+    }
+  } catch (err) {
+    showError(`Could not read the front app: ${String(err)}`);
+    addFrontmostAppBtn.textContent = 'Add the app in front';
+  } finally {
+    addFrontmostAppBtn.disabled = false;
+    window.setTimeout(() => {
+      addFrontmostAppBtn.textContent = 'Add the app in front';
+    }, 2200);
+  }
+}
+
+let settingsFilterFrame = 0;
+
+function applySettingsFilter() {
+  const query = (settingsSearch?.value || '').trim().toLowerCase();
+  const sections = Array.from(settingsView.querySelectorAll<HTMLElement>('.pref-section'));
+  let visibleSections = 0;
+  for (const section of sections) {
+    const rows = Array.from(
+      section.querySelectorAll<HTMLElement>(
+        '.pref-row, .toggle-row, .palette-grid, .allowlist-editor, .pref-footnote'
+      )
+    );
+    const heading = section.querySelector('.pref-section-head')?.textContent?.toLowerCase() || '';
+    const headingMatch = Boolean(query) && heading.includes(query);
+    let any = false;
+    for (const row of rows) {
+      const match = !query || headingMatch || (row.textContent || '').toLowerCase().includes(query);
+      row.classList.toggle('settings-filtered', !match);
+      if (match) any = true;
+    }
+    const show = !query || headingMatch || any;
+    section.classList.toggle('settings-filtered', !show);
+    if (show) visibleSections += 1;
+  }
+  const empty = document.getElementById('settings-empty');
+  empty?.classList.toggle('hidden', visibleSections > 0);
+}
+
+function updateSettingsNav() {
+  if (!settingsNav) return;
+  const sections = Array.from(settingsView.querySelectorAll<HTMLElement>('.pref-section'));
+  const viewTop = settingsView.getBoundingClientRect().top;
+  let current = sections[0]?.id || '';
+  for (const section of sections) {
+    if (section.getBoundingClientRect().top - viewTop <= 90) current = section.id;
+  }
+  if (settingsView.scrollTop + settingsView.clientHeight >= settingsView.scrollHeight - 8) {
+    current = sections[sections.length - 1]?.id || current;
+  }
+  for (const button of settingsNav.querySelectorAll<HTMLButtonElement>('[data-settings-target]')) {
+    const on = button.dataset.settingsTarget === current;
+    button.classList.toggle('is-active', on);
+    if (on) button.setAttribute('aria-current', 'location');
+    else button.removeAttribute('aria-current');
+  }
+}
+
+let recordingHotkey = false;
+let hotkeyKeyHandler: ((event: KeyboardEvent) => void) | null = null;
+
+function formatAccelerator(accelerator: string): string {
+  const parts = (accelerator || 'Alt+Space').split('+');
+  const labels: Record<string, string> = isMac
+    ? { Cmd: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧' }
+    : { Cmd: 'Win', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+  return parts
+    .map((part) => labels[part] ?? (part === 'Space' ? 'Space' : part.replace(/^Key/, '')))
+    .join(' + ');
+}
+
+function renderHotkeyButton() {
+  if (!hotkeyRecordBtn) return;
+  hotkeyRecordBtn.textContent = recordingHotkey
+    ? 'Press keys...'
+    : formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space');
+  hotkeyRecordBtn.classList.toggle('is-recording', recordingHotkey);
+  try {
+    localStorage.setItem('saywhen-hotkey', currentConfig.hotkeyAccelerator || 'Alt+Space');
+  } catch {
+    // Storage can be unavailable; the HUD keeps its default hint.
+  }
+}
+
+function stopHotkeyRecording() {
+  if (hotkeyKeyHandler) {
+    window.removeEventListener('keydown', hotkeyKeyHandler, true);
+    hotkeyKeyHandler = null;
+  }
+  recordingHotkey = false;
+  renderHotkeyButton();
+}
+
+function acceleratorFromEvent(event: KeyboardEvent): string | null {
+  const modifiers: string[] = [];
+  if (event.metaKey) modifiers.push('Cmd');
+  if (event.ctrlKey) modifiers.push('Ctrl');
+  if (event.altKey) modifiers.push('Alt');
+  if (event.shiftKey) modifiers.push('Shift');
+  if (modifiers.length === 0) return null;
+  if (/^(Meta|Control|Alt|Shift)/.test(event.code)) return null;
+  return [...modifiers, event.code].join('+');
+}
+
+function beginHotkeyRecording() {
+  if (recordingHotkey) return;
+  recordingHotkey = true;
+  renderHotkeyButton();
+  hotkeyKeyHandler = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      stopHotkeyRecording();
+      return;
+    }
+    if (['Meta', 'Control', 'Alt', 'Shift'].includes(event.key)) return;
+    const accelerator = acceleratorFromEvent(event);
+    if (!accelerator) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stopHotkeyRecording();
+    void saveHotkey(accelerator);
+  };
+  window.addEventListener('keydown', hotkeyKeyHandler, true);
+}
+
+async function saveHotkey(accelerator: string) {
+  const previous = currentConfig.hotkeyAccelerator;
+  currentConfig = { ...currentConfig, hotkeyAccelerator: accelerator };
+  renderHotkeyButton();
+  try {
+    const updated = await invoke<DictationConfig>('update_dictation_config', {
+      config: currentConfig,
+    });
+    currentConfig = updated;
+    renderHotkeyButton();
+    renderGuideHotkey();
+  } catch (err) {
+    currentConfig = { ...currentConfig, hotkeyAccelerator: previous };
+    renderHotkeyButton();
+    showError(`Could not set that shortcut: ${String(err)}`);
+  }
+}
+
+function renderGuideHotkey() {
+  const row = document.getElementById('guide-hotkey-row');
+  if (!row) return;
+  const keys = formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space')
+    .split(' + ')
+    .map((part) => `<kbd>${escapeHtml(part)}</kbd>`)
+    .join(' ');
+  row.innerHTML = `${keys}<span>Start or stop by hand, no camera needed</span>`;
+}
+
+function initSettingsUi() {
+  initTheme();
+  initZoom();
+  renderAllowlistChips();
+  renderHotkeyButton();
+  renderGuideHotkey();
+  hotkeyRecordBtn?.addEventListener('click', beginHotkeyRecording);
+  hotkeyRecordBtn?.addEventListener('blur', stopHotkeyRecording);
+  hotkeyResetBtn?.addEventListener('click', () => void saveHotkey('Alt+Space'));
+  addFrontmostAppBtn.addEventListener('click', () => void addFrontmostApp());
+  allowlistInput.addEventListener('input', renderAllowlistChips);
+  settingsSearch?.addEventListener('input', applySettingsFilter);
+  settingsSearch?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      settingsSearch.value = '';
+      applySettingsFilter();
+    }
+  });
+  settingsNav?.querySelectorAll<HTMLButtonElement>('[data-settings-target]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = document.getElementById(button.dataset.settingsTarget || '');
+      target?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
+      settingsNav
+        .querySelectorAll<HTMLButtonElement>('[data-settings-target]')
+        .forEach((item) => {
+          const on = item === button;
+          item.classList.toggle('is-active', on);
+          if (on) item.setAttribute('aria-current', 'location');
+          else item.removeAttribute('aria-current');
+        });
+    });
+  });
+  settingsView.addEventListener(
+    'scroll',
+    () => {
+      if (settingsFilterFrame) return;
+      settingsFilterFrame = window.requestAnimationFrame(() => {
+        settingsFilterFrame = 0;
+        updateSettingsNav();
+      });
+    },
+    { passive: true }
+  );
+  void getVersion()
+    .then((version) => {
+      if (aboutVersion) aboutVersion.textContent = `Version ${version} beta`;
+    })
+    .catch(() => {
+      if (aboutVersion) aboutVersion.textContent = 'Version 0.2.0 beta';
+    });
+  copyDiagnosticsBtn?.addEventListener('click', () => {
+    const lines = [
+      'saywhen diagnostics',
+      `version: ${aboutVersion?.textContent || 'unknown'}`,
+      `platform: ${navigator.platform || navigator.userAgent}`,
+      `state: ${currentPipelineState}`,
+      `accessibility: ${accessibilityPermissionTrusted ? 'trusted' : 'not granted'}`,
+      `camera: ${cameraRunning ? 'on' : 'off'}`,
+      `model: ${selectedModelId}`,
+      `microphone: ${deviceSelect.value || 'system default'}`,
+      `send mode: ${currentConfig.sendMode}`,
+      `recent problems: ${sessionIssues.length}`,
+      ...sessionIssues.slice(-6).map((issue) => `- ${issue.message}`),
+    ];
+    void copyText(lines.join('\n'))
+      .then(() => {
+        if (aboutStatus) aboutStatus.textContent = 'Diagnostics copied. No transcript text is included.';
+      })
+      .catch((err) => {
+        if (aboutStatus) aboutStatus.textContent = `Could not copy: ${String(err)}`;
+      });
+  });
+  copyDocsLinkBtn?.addEventListener('click', () => {
+    void copyText('https://github.com/ansarbuilds/saywhen/blob/main/docs/FAQ.md')
+      .then(() => {
+        if (aboutStatus) aboutStatus.textContent = 'FAQ link copied.';
+      })
+      .catch((err) => {
+        if (aboutStatus) aboutStatus.textContent = `Could not copy: ${String(err)}`;
+      });
+  });
+}
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand('copy');
+  area.remove();
+  if (!copied) throw new Error('Clipboard is not available');
+}
 
 function formatDurationMs(ms: number): string {
   const totalTenths = Math.floor(ms / 100);
@@ -570,6 +1217,20 @@ function formatDurationMs(ms: number): string {
   const mm = String(minutes).padStart(2, '0');
   const ss = String(seconds).padStart(2, '0');
   return `${mm}:${ss}.${tenths}`;
+}
+
+let actionPulseTimer: number | null = null;
+
+function pulseAction(kind: 'sent' | 'cancel' | 'error') {
+  document.body.classList.remove('did-send', 'did-cancel', 'did-error');
+  // Restart the CSS animation even when the same action happens twice.
+  void document.body.offsetWidth;
+  document.body.classList.add(kind === 'sent' ? 'did-send' : kind === 'cancel' ? 'did-cancel' : 'did-error');
+  if (actionPulseTimer !== null) window.clearTimeout(actionPulseTimer);
+  actionPulseTimer = window.setTimeout(() => {
+    document.body.classList.remove('did-send', 'did-cancel', 'did-error');
+    actionPulseTimer = null;
+  }, 900);
 }
 
 function showError(msg: string) {
@@ -650,6 +1311,7 @@ function syncSetupChecklist() {
     calibrated: isVisionCalibrated(),
     spoke: setupHasSpoken,
   });
+  syncOnboardingBadges();
 }
 
 function renderModelsDropdown() {
@@ -710,6 +1372,16 @@ function showPreviewBanner(ev: PreviewStartedEvent) {
 
   previewCountdownText.textContent = previewCountdownLabel(activePreviewTotalMs);
   previewProgressFill.style.width = '100%';
+
+  // The preview is the most important thing on screen when it appears. At the
+  // minimum window size it used to sit below the fold. Keep it in view without
+  // stealing focus from the app the text will be typed into.
+  if (!document.hidden) {
+    const reduce =
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+      document.documentElement.dataset.motion === 'reduced';
+    previewHud.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }
 }
 
 function previewCountdownLabel(remainingMs: number): string {
@@ -786,6 +1458,7 @@ function renderSendMode() {
     const on = btn.dataset.sendMode === currentConfig.sendMode;
     btn.classList.toggle('is-selected', on);
     btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    btn.setAttribute('tabindex', on ? '0' : '-1');
   }
   setSendModeUi(currentConfig.sendMode);
 }
@@ -800,6 +1473,20 @@ for (const btn of sendModeButtons) {
   });
 }
 renderSendMode();
+
+document.querySelectorAll<HTMLElement>('.mode-picker').forEach((picker) => {
+  picker.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const buttons = Array.from(picker.querySelectorAll<HTMLButtonElement>('[data-send-mode]'));
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+    const next = buttons[(index + direction + buttons.length) % buttons.length];
+    next.focus();
+    next.click();
+  });
+});
 
 function hidePreviewBanner() {
   if (simulatedPreviewTimer !== null) {
@@ -896,7 +1583,10 @@ function updatePipelineUiState(
       ? `Look at your screen and start talking, or start with "${wakeWordLabel()}" from anywhere.`
       : cameraRunning
       ? 'Look at your screen and start talking. Look away and it stops listening.'
-      : `Turn on the camera to talk hands-free, or press <kbd>${isMac ? 'Option' : 'Alt'}</kbd> <kbd>Space</kbd>`;
+      : `Turn on the camera to talk hands-free, or press ${formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space')
+          .split(' + ')
+          .map((part) => `<kbd>${escapeHtml(part)}</kbd>`)
+          .join(' ')}`;
     if (deckSubtitle.innerHTML !== idleSubtitle) {
       deckSubtitle.innerHTML = idleSubtitle;
     }
@@ -1500,7 +2190,7 @@ function appendUtteranceCard(
   if (!options?.fromHistory) {
     hidePreviewBanner();
   }
-  if (!setupHasSpoken) {
+  if (!setupHasSpoken && ev.injection?.success) {
     setupHasSpoken = true;
     syncSetupChecklist();
   }
@@ -1512,6 +2202,9 @@ function appendUtteranceCard(
   updateStatsDisplay();
 
   const { transcription, cleanup, targetPolicy, injection, injectionError, triggerSource, timestampMs } = ev;
+  if (cleanup.cleanedText) lastTranscriptText = cleanup.cleanedText;
+  if (injection?.success) pulseAction('sent');
+  else if (injectionError) pulseAction('error');
   if (injectionError && !options?.fromHistory) {
     showError(injectionError);
   }
@@ -1633,7 +2326,7 @@ async function syncConfigToBackend() {
     vadThreshold: parseFloat(vadThreshSlider.value),
     previewCountdownMs: parseInt(previewCountdownSlider.value, 10),
     cleanupEnabled: toggleCleanup.checked,
-    previewEnabled: togglePreview.checked,
+    previewEnabled: true,
     perAppRulesEnabled: togglePerApp.checked,
     autoSendAllowlist: allowlist,
     customVocab: customVocabInput.value.trim(),
@@ -1648,6 +2341,7 @@ async function syncConfigToBackend() {
     uiPalette: currentConfig.uiPalette,
     moodColors: toggleMoodColors.checked,
     hudEnabled: toggleHud.checked,
+    hotkeyAccelerator: currentConfig.hotkeyAccelerator || 'Alt+Space',
     adaptiveFpsEnabled: toggleAdaptiveFps.checked,
     historyPersistenceEnabled: toggleHistoryPersistence.checked,
     llmCleanupEnabled: toggleLlmCleanup.checked,
@@ -1696,6 +2390,15 @@ async function initApp() {
     currentConfig = snapshot.config;
     modelsCatalog = snapshot.models;
     selectedModelId = snapshot.selectedModelId;
+    renderHotkeyButton();
+    renderGuideHotkey();
+
+    // The review step is the product's safety promise. Older settings could turn
+    // it off; always turn it back on and persist the correction once.
+    if (currentConfig.previewEnabled === false) {
+      currentConfig = { ...currentConfig, previewEnabled: true };
+      void invoke('update_dictation_config', { config: currentConfig }).catch(() => undefined);
+    }
 
     updateAccessibilityBadge(snapshot.accessibilityTrusted);
     startAccessibilityPoll();
@@ -1712,7 +2415,6 @@ async function initApp() {
     customVocabInput.value = currentConfig.customVocab || '';
 
     toggleCleanup.checked = currentConfig.cleanupEnabled;
-    togglePreview.checked = currentConfig.previewEnabled;
     togglePerApp.checked = currentConfig.perAppRulesEnabled;
     toggleHandsFree.checked = currentConfig.handsFreeEnabled;
     // Older settings files: "Auto-press Enter" off meant type only.
@@ -1828,6 +2530,18 @@ async function initApp() {
     appendUtteranceCard(event.payload);
   });
 
+  await listen<ModelDownloadProgressEvent>('model-download-progress', (event) => {
+    showModelDownloadProgress(event.payload);
+  });
+
+  await listen('paste-last-requested', () => {
+    void pasteLastTranscript();
+  });
+
+  await listen<PracticeCompleteEvent>('practice-complete', (event) => {
+    showPracticeResult(event.payload);
+  });
+
   await listen<string>('pipeline-error', (event) => {
     showError(event.payload);
   });
@@ -1838,6 +2552,8 @@ async function initApp() {
 
   await listen<DictationConfig>('dictation-config-updated', (event) => {
     currentConfig = event.payload;
+    renderHotkeyButton();
+    renderGuideHotkey();
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
@@ -1860,6 +2576,11 @@ async function initApp() {
 
   await listen<string>('utterance-discarded', (event) => {
     deckSubtitle.textContent = event.payload;
+    if (practiceListening) {
+      practiceListening = false;
+      resetPractice();
+      if (obPracticeStatus) obPracticeStatus.textContent = 'Did not catch that. Try again.';
+    }
   });
 }
 
@@ -2056,7 +2777,6 @@ previewCountdownSlider.addEventListener('input', syncConfigToBackend);
 allowlistInput.addEventListener('change', syncConfigToBackend);
 customVocabInput.addEventListener('change', syncConfigToBackend);
 toggleCleanup.addEventListener('change', syncConfigToBackend);
-togglePreview.addEventListener('change', syncConfigToBackend);
 togglePerApp.addEventListener('change', syncConfigToBackend);
 toggleHandsFree.addEventListener('change', syncConfigToBackend);
 toggleCancelOnSpeech.addEventListener('change', syncConfigToBackend);
@@ -2088,6 +2808,20 @@ llmModelInput.addEventListener('change', syncConfigToBackend);
 toggleSessionMetrics.addEventListener('change', syncConfigToBackend);
 toggleSaveAudio.addEventListener('change', syncConfigToBackend);
 
+document.querySelectorAll<HTMLElement>('.palette-grid, .theme-choice').forEach((group) => {
+  group.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('button'));
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+    const next = buttons[(index + direction + buttons.length) % buttons.length];
+    next.focus();
+    next.click();
+  });
+});
+
 modelSelect.addEventListener('change', async () => {
   const chosenId = modelSelect.value;
   updateModelDownloadButtonState();
@@ -2103,10 +2837,44 @@ modelSelect.addEventListener('change', async () => {
   }
 });
 
+function showModelDownloadProgress(event: ModelDownloadProgressEvent) {
+  const total = Math.max(1, event.totalBytes);
+  const percent = Math.min(100, Math.round((event.downloadedBytes / total) * 100));
+  modelDownload.classList.remove('hidden');
+  modelDownloadFill.style.width = `${percent}%`;
+  if (event.downloadedBytes <= 0) {
+    modelDownloadLabel.textContent = 'Starting download...';
+  } else {
+    const done = Math.round(event.downloadedBytes / (1024 * 1024));
+    const size = Math.max(1, Math.round(total / (1024 * 1024)));
+    modelDownloadLabel.textContent = `Downloading ${percent}% (${done} of ${size} MB)`;
+  }
+  const setupButton = document.querySelector<HTMLButtonElement>('[data-setup-action="model"]');
+  if (setupButton && !setupButton.classList.contains('hidden')) {
+    setupButton.textContent = `Downloading ${percent}%`;
+  }
+  if (!downloadModelBtn.classList.contains('hidden')) {
+    downloadModelBtn.textContent = `Downloading ${percent}%`;
+  }
+  if (obModelBadge && !obModelBadge.disabled) {
+    obModelBadge.textContent = `${percent}%`;
+  }
+  if (obPracticeDownload && !obPracticeDownload.classList.contains('hidden')) {
+    obPracticeDownload.textContent = `Downloading ${percent}%`;
+  }
+}
+
+function hideModelDownloadProgress() {
+  modelDownload.classList.add('hidden');
+  modelDownloadFill.style.width = '0%';
+  modelDownloadLabel.textContent = 'Starting download...';
+}
+
 async function downloadSelectedModel() {
   const chosenId = modelSelect.value;
   downloadModelBtn.disabled = true;
   downloadModelBtn.textContent = 'Downloading...';
+  showModelDownloadProgress({ modelId: chosenId, downloadedBytes: 0, totalBytes: 1 });
   try {
     const updated = await invoke<ModelInfo>('download_whisper_model', { modelId: chosenId });
     const idx = modelsCatalog.findIndex((m) => m.id === updated.id);
@@ -2120,9 +2888,30 @@ async function downloadSelectedModel() {
     showError(`Model download failed: ${String(err)}`);
   } finally {
     downloadModelBtn.disabled = false;
+    hideModelDownloadProgress();
     updateModelDownloadButtonState();
+    syncOnboardingBadges();
   }
 }
+
+async function pasteLastTranscript() {
+  if (!lastTranscriptText) {
+    showError('Nothing to paste yet. Say something first.');
+    return;
+  }
+  try {
+    await invoke('manual_inject_text', {
+      text: lastTranscriptText,
+      pressEnter: false,
+      useClipboardPaste: true,
+      delayMs: 120,
+    });
+  } catch (err) {
+    showError(`Could not paste the last transcript: ${String(err)}`);
+  }
+}
+
+pasteLastBtn.addEventListener('click', () => void pasteLastTranscript());
 
 downloadModelBtn.addEventListener('click', () => void downloadSelectedModel());
 
@@ -2157,20 +2946,35 @@ clearFeedBtn.addEventListener('click', () => {
   void invoke('clear_utterance_history').catch(() => undefined);
 });
 
-onboardingOpenBtn.addEventListener('click', () => {
-  onboardingModal.classList.remove('hidden');
+onboardingOpenBtn.addEventListener('click', openOnboardingModal);
+
+onboardingCloseBtn.addEventListener('click', closeOnboardingModal);
+
+onboardingDoneBtn.addEventListener('click', closeOnboardingModal);
+
+onboardingModal.addEventListener('click', (event) => {
+  if (event.target === onboardingModal) closeOnboardingModal();
 });
 
-onboardingCloseBtn.addEventListener('click', () => {
-  onboardingModal.classList.add('hidden');
+document.addEventListener('keydown', handleOnboardingKeydown);
+
+obModelBadge?.addEventListener('click', () => {
+  if (!obModelBadge.disabled) void downloadSelectedModel();
 });
 
-onboardingDoneBtn.addEventListener('click', () => {
-  onboardingModal.classList.add('hidden');
+obPracticeStart?.addEventListener('click', () => void startPractice());
+obPracticeDownload?.addEventListener('click', () => {
+  if (!obPracticeDownload.disabled) void downloadSelectedModel();
+});
+obPracticeStop?.addEventListener('click', () => void stopPractice());
+obPracticeAgain?.addEventListener('click', (event) => {
+  event.preventDefault();
+  resetPractice();
+  void startPractice();
 });
 
 document.getElementById('setup-reopen-btn')?.addEventListener('click', () => {
-  onboardingModal.classList.add('hidden');
+  closeOnboardingModal();
   (document.querySelector('[data-tab="home"]') as HTMLElement | null)?.click();
   reopenSetupChecklist();
 });
@@ -2404,9 +3208,14 @@ function applyDocumentationDemoState(demoMode: string) {
   } else if (demoMode === 'stage5') {
     if (stageTagEl) stageTagEl.textContent = 'STAGE 5: CROSS-PLATFORM POLISH & ONBOARDING';
     updatePipelineUiState('IDLE', 0, 0);
-    onboardingModal.classList.remove('hidden');
+    syncOnboardingBadges();
+    openOnboardingModal();
   }
 }
+
+initSettingsUi();
+initCommandPalette();
+initIntro();
 
 const urlParams = new URLSearchParams(window.location.search);
 const demoParam = urlParams.get('demo');

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Install saywhen with an AI assistant · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link is-active" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Start here</span></div>
+      <article class="prose">
+        <h1 id="install-saywhen-with-an-ai-assistant">Install saywhen with an AI assistant</h1>
+<p>This file is written for an AI coding assistant (Claude Code, Cursor, Codex, Windsurf and similar) to follow on behalf of a person who may not be technical. If you are a person, you can follow it too: every step is a command you can copy.</p>
+<p>If this repository is already open, you are in the right place. Do not clone it again. Start at Step 1 and run every command from this folder.</p>
+<h2 id="rules-for-the-assistant">Rules for the assistant</h2>
+<ul>
+<li><strong>Ask before installing anything system-wide</strong> (Homebrew, Rust, CMake, Node.js, Visual Studio Build Tools). Say what it is, why saywhen needs it, and roughly how big it is.</li>
+<li><strong>Explain each step in one plain sentence</strong> before running it. Avoid jargon. Say &quot;the tool that builds the app&quot; rather than &quot;the Rust toolchain&quot;.</li>
+<li><strong>Never type passwords for the person.</strong> If a step needs an admin password (for example the Homebrew installer), tell them a password prompt will appear in their terminal and wait for them.</li>
+<li><strong>Stop and explain if a step fails.</strong> Show the last few lines of the error and suggest the next thing to try. Do not skip a failed step silently.</li>
+<li><strong>Do not change system security settings yourself.</strong> Guide the person to click the right switches (camera, microphone, Accessibility).</li>
+</ul>
+<h2 id="step-1-check-the-computer">Step 1: Check the computer</h2>
+<p>Find out the operating system and which tools already exist:</p>
+<pre><code class="language-bash">uname -s; node --version; cargo --version; cmake --version; git --version
+</code></pre>
+<p>On Windows (PowerShell), use:</p>
+<pre><code class="language-powershell">node --version; cargo --version; cmake --version; git --version
+</code></pre>
+<p>saywhen needs:</p>
+<table>
+<thead>
+<tr>
+  <th>Tool</th>
+  <th>Version</th>
+  <th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Git</td>
+  <td>any</td>
+  <td>Downloads the saywhen code</td>
+</tr>
+<tr>
+  <td>Node.js</td>
+  <td>20 or newer</td>
+  <td>Builds the app window</td>
+</tr>
+<tr>
+  <td>Rust (cargo)</td>
+  <td>1.85 or newer</td>
+  <td>Builds the app engine</td>
+</tr>
+<tr>
+  <td>CMake</td>
+  <td>any recent</td>
+  <td>Builds the speech-to-text engine</td>
+</tr>
+<tr>
+  <td>Windows only: Visual Studio Build Tools with &quot;Desktop development with C++&quot;</td>
+  <td>2022</td>
+  <td>The C++ compiler Rust uses on Windows</td>
+</tr>
+</tbody>
+</table>
+<h2 id="step-2-install-what-is-missing-ask-first">Step 2: Install what is missing (ask first)</h2>
+<h3 id="macos">macOS</h3>
+<ol>
+<li>If <code>brew</code> is missing, ask, then install Homebrew from <a href="https://brew.sh">brew.sh</a>. The person will need to type their Mac password in the terminal.</li>
+<li>Then install the rest:</li>
+</ol>
+<pre><code class="language-bash">brew install node cmake git
+</code></pre>
+<pre><code class="language-bash">curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+</code></pre>
+<pre><code class="language-bash">source &quot;$HOME/.cargo/env&quot;
+</code></pre>
+<ol start="3">
+<li>Xcode Command Line Tools are needed. If <code>xcode-select -p</code> fails, run <code>xcode-select --install</code> and ask the person to click Install in the popup.</li>
+</ol>
+<h3 id="windows">Windows</h3>
+<p>Install, in this order, after asking:</p>
+<ol>
+<li><strong>Visual Studio Build Tools 2022</strong> from <a href="https://visualstudio.microsoft.com/downloads/">visualstudio.microsoft.com/downloads</a> with the &quot;Desktop development with C++&quot; workload.</li>
+<li><strong>Node.js LTS</strong> from <a href="https://nodejs.org">nodejs.org</a>.</li>
+<li><strong>Rust</strong> from <a href="https://rustup.rs">rustup.rs</a> (choose the default options).</li>
+<li><strong>CMake</strong> from <a href="https://cmake.org/download/">cmake.org/download</a> (tick &quot;Add CMake to the system PATH&quot;).</li>
+<li><strong>Git</strong> from <a href="https://git-scm.com/download/win">git-scm.com</a>.</li>
+</ol>
+<p>Close and reopen the terminal afterwards so the new tools are found. WebView2 is already part of Windows 10 and 11.</p>
+<h2 id="step-3-get-the-code">Step 3: Get the code</h2>
+<p>If <code>INSTALL_WITH_AI.md</code> is already in the current folder, the code is here. Stay in this folder.</p>
+<p>If it is not, download it:</p>
+<pre><code class="language-bash">git clone https://github.com/ansarbuilds/saywhen.git
+</code></pre>
+<pre><code class="language-bash">cd saywhen
+</code></pre>
+<p>Then install the app's own packages (this does not install system tools):</p>
+<pre><code class="language-bash">npm ci
+</code></pre>
+<h2 id="step-4-start-it">Step 4: Start it</h2>
+<pre><code class="language-bash">npx tauri dev
+</code></pre>
+<p>The first run downloads and verifies the camera model (about 4 MB) and prepares its runtime automatically. If this fails, check the connection and retry; do not skip asset preparation.</p>
+<p>The first build compiles everything and can take 5 to 15 minutes. Tell the person this is normal. When it finishes, the saywhen window opens, plus a small status pill near the bottom of the screen.</p>
+<p>On macOS the development build runs as <strong>saywhen-dev.app</strong>. That name is what will appear in permission prompts.</p>
+<p><strong>Important on macOS:</strong> macOS gives camera and microphone access to the app that <em>started</em> saywhen. If you (the assistant) start it from your own background shell, the camera is usually blocked with &quot;NotAllowedError&quot;. So do not start it yourself. Ask the person to open the <strong>Terminal</strong> app, then run <code>cd saywhen &amp;&amp; npx tauri dev</code> there, so the permission prompts appear for them.</p>
+<h2 id="step-5-walk-the-person-through-first-launch">Step 5: Walk the person through first launch</h2>
+<p>Say these steps out loud, one at a time, and wait for them to confirm each one:</p>
+<ol>
+<li><strong>Download a speech model:</strong> open <strong>Settings</strong> (the second item in the sidebar), find <strong>Speech model</strong> and click <strong>Download</strong>. &quot;Tiny&quot; (about 75 MB) is fastest. &quot;Base&quot; is more accurate.</li>
+<li><strong>Allow the microphone and camera</strong> when the computer asks.</li>
+<li><strong>macOS only, allow Accessibility:</strong> this lets saywhen type into other apps. Click <strong>Setup guide</strong> in the sidebar, then the orange badge next to Accessibility. In System Settings, turn on the switch for saywhen-dev. If there are old saywhen entries, remove them first.</li>
+<li><strong>Pick a send style</strong> on the Home screen. Suggest <strong>Type only</strong> for the very first try, so nothing is ever sent by accident.</li>
+<li><strong>Turn on the camera</strong> on Home, look at the screen with a closed mouth and click <strong>Calibrate</strong>.</li>
+<li><strong>Try it:</strong> open a terminal, look at it, say &quot;git status&quot;, and watch the text appear.</li>
+</ol>
+<h2 id="step-6-confirm-it-works">Step 6: Confirm it works</h2>
+<p>Ask the person:</p>
+<ul>
+<li>Did the status pill turn from &quot;Waiting&quot; to &quot;Ready&quot; when they looked at the screen?</li>
+<li>Did it show &quot;Listening&quot; when they talked?</li>
+<li>Did the words appear in the terminal?</li>
+</ul>
+<p>If something did not work, open the <strong>Problems</strong> list on the Home screen, read the message together, and use the table in <a href="troubleshooting.html">docs/TROUBLESHOOTING.md</a>.</p>
+<h2 id="updating-later">Updating later</h2>
+<pre><code class="language-bash">cd saywhen &amp;&amp; git pull &amp;&amp; npm ci &amp;&amp; npx tauri dev
+</code></pre>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="faq.html"><span>Previous</span><strong>Questions people ask</strong></a><a class="pager-link pager-next" href="troubleshooting.html"><span>Next</span><strong>When something goes wrong</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/INSTALL_WITH_AI.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#rules-for-the-assistant">Rules for the assistant</a><a class="toc-2" href="#step-1-check-the-computer">Step 1: Check the computer</a><a class="toc-2" href="#step-2-install-what-is-missing-ask-first">Step 2: Install what is missing (ask first)</a><a class="toc-3" href="#macos">macOS</a><a class="toc-3" href="#windows">Windows</a><a class="toc-2" href="#step-3-get-the-code">Step 3: Get the code</a><a class="toc-2" href="#step-4-start-it">Step 4: Start it</a><a class="toc-2" href="#step-5-walk-the-person-through-first-launch">Step 5: Walk the person through first launch</a><a class="toc-2" href="#step-6-confirm-it-works">Step 6: Confirm it works</a><a class="toc-2" href="#updating-later">Updating later</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>

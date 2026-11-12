@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Vision · saywhen docs</title>
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">S</span><span>saywhen <em>docs</em></span></a>
+    <div class="top-actions">
+      <label class="search"><span>Search</span><input id="docs-search" type="search" placeholder="Search the docs" autocomplete="off" spellcheck="false"></label>
+      <a class="top-link" href="https://ansarbuilds.dev/p/saywhen/">Download</a>
+    </div>
+  </header>
+  <div class="search-panel" id="search-panel" hidden></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-group"><span>Start here</span><a class="nav-link" href="overview.html">What is saywhen</a><a class="nav-link" href="faq.html">Questions people ask</a><a class="nav-link" href="install-with-ai.html">Install saywhen with an AI assistant</a><a class="nav-link" href="troubleshooting.html">When something goes wrong</a></div><div class="nav-group"><span>Using saywhen</span><a class="nav-link" href="how-it-works.html">How saywhen works</a><a class="nav-link" href="changelog.html">Changelog</a></div><div class="nav-group"><span>Engineering</span><a class="nav-link" href="architecture.html">Architecture</a><a class="nav-link" href="how-we-built-it.html">How we built saywhen</a><a class="nav-link" href="measurements.html">What has been measured</a><a class="nav-link" href="risks.html">Risks</a><a class="nav-link" href="roadmap.html">Roadmap</a><a class="nav-link" href="prior-art.html">Prior art</a><a class="nav-link" href="idea-log.html">Idea log</a></div><div class="nav-group"><span>Project</span><a class="nav-link is-active" href="vision.html">Vision</a><a class="nav-link" href="contributing.html">Contributing to saywhen</a><a class="nav-link" href="security.html">Security and privacy</a><a class="nav-link" href="code-of-conduct.html">Code of Conduct</a><a class="nav-link" href="launch-checklist.html">Launch checklist</a><a class="nav-link" href="launch-template.html">Launch template</a></div>
+      <div class="nav-group nav-meta">
+        <span>More</span>
+        <a class="nav-link" href="https://github.com/ansarbuilds/saywhen">GitHub</a>
+        <a class="nav-link" href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
+      </div>
+    </aside>
+    <main class="content">
+      <div class="breadcrumb"><a href="index.html">Docs</a><span>/</span><span>Project</span></div>
+      <article class="prose">
+        <h1 id="vision">Vision</h1>
+<h2 id="the-problem">The problem</h2>
+<p>Talking to a coding agent or a terminal should be as easy as talking to a colleague sitting next to you. Today it is not.</p>
+<ol>
+<li><strong>Hotkey friction.</strong> Every dictation tool wants you to press and hold (or toggle) a key. Your hands have to come back to the keyboard just to start talking, which defeats the point of voice.</li>
+<li><strong>Review-then-send friction.</strong> Most tools paste the text and stop. You read it, then reach for Enter. For short agent prompts and shell commands, that second step is most of the effort.</li>
+<li><strong>Audio-only VAD misfires.</strong> Voice activity detection on audio alone cannot tell the difference between you talking to the computer, you talking to someone in the room, a podcast, or a call. So tools either need a hotkey or they trigger on everything.</li>
+</ol>
+<h2 id="the-idea">The idea</h2>
+<p>Use the webcam as a second sensor for intent. If you are in front of the screen, facing it, your lips are moving and the mic hears speech, you are very likely talking to the computer. Combine those signals and you can skip the hotkey entirely.</p>
+<h2 id="trigger-start-listening">Trigger (start listening)</h2>
+<p>All of these must hold at the same time:</p>
+<ul>
+<li><strong>Face present</strong> in the camera frame.</li>
+<li><strong>Facing the screen</strong>: head yaw and pitch within a calibrated range.</li>
+<li><strong>Lips moving</strong>: mouth aspect ratio (MAR) shows variance over a sliding window of about 300ms. A static open mouth (yawn) or slow rhythmic motion (chewing) should not count.</li>
+<li><strong>Speech</strong>: audio VAD (Silero) reports speech in the same window.</li>
+</ul>
+<p>Audio is buffered in a short ring buffer, so the first syllable is not lost while the visual gate decides.</p>
+<h2 id="stop-end-of-utterance">Stop (end of utterance)</h2>
+<p>Any of:</p>
+<ul>
+<li><strong>Silence and closed mouth</strong> for about 500 to 800ms (tunable).</li>
+<li><strong>End phrase</strong>, for example &quot;send it&quot;, which is stripped from the final text.</li>
+<li><strong>Gesture</strong>: nod = send now, head shake = cancel.</li>
+</ul>
+<h2 id="user-flow">User flow</h2>
+<ol>
+<li>saywhen runs in the background. A small indicator shows the current state.</li>
+<li>You look at your terminal or agent and start talking. The indicator switches to &quot;listening&quot;.</li>
+<li>You stop talking. Audio is transcribed locally.</li>
+<li>The AI cleanup pass tidies the text (filler words, punctuation, code identifiers kept intact).</li>
+<li>A short preview appears near the cursor with a countdown. You can cancel by shaking your head, saying &quot;cancel&quot;, pressing Esc, or looking away.</li>
+<li>If not canceled, the text is typed into the focused app and Enter is pressed.</li>
+</ol>
+<h2 id="the-7-second-demo-gif">The 7-second demo GIF</h2>
+<p>The demo that sells it, with no narration needed:</p>
+<ol>
+<li>Hands visibly off the keyboard.</li>
+<li>The user looks at a terminal running Claude Code and says: &quot;run the tests and fix any failures&quot;.</li>
+<li>The preview pops up with the cleaned text.</li>
+<li>The user nods.</li>
+<li>The prompt is submitted and the agent starts running the tests.</li>
+</ol>
+<p>Seven seconds, zero keys pressed.</p>
+
+      </article>
+      <nav class="pager"><a class="pager-link" href="idea-log.html"><span>Previous</span><strong>Idea log</strong></a><a class="pager-link pager-next" href="contributing.html"><span>Next</span><strong>Contributing to saywhen</strong></a></nav>
+      <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/VISION.md">Edit this page on GitHub</a></footer>
+    </main>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#the-problem">The problem</a><a class="toc-2" href="#the-idea">The idea</a><a class="toc-2" href="#trigger-start-listening">Trigger (start listening)</a><a class="toc-2" href="#stop-end-of-utterance">Stop (end of utterance)</a><a class="toc-2" href="#user-flow">User flow</a><a class="toc-2" href="#the-7-second-demo-gif">The 7-second demo GIF</a></aside>
+  </div>
+  <script src="docs.js"></script>
+</body>
+</html>
