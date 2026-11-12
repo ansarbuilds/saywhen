@@ -47,8 +47,9 @@ jobs:
           cache: npm
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.1
           targets: ${{ matrix.target }}
 
       - name: Cache Cargo registry and target
