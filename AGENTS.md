@@ -6,6 +6,8 @@ saywhen is a Tauri v2 + Rust + TypeScript desktop app for hands-free, hotkey-fre
 
 Status: Stages 1 through 5 and Improvements #2 to #16 are implemented (see `docs/ROADMAP.md`). Read `README.md`, `docs/VISION.md`, `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before making changes.
 
+If the person asked you to install, run, or try saywhen, do that before any code change. Follow **For coding assistants** in `README.md`, then `INSTALL_WITH_AI.md` from the top. The repository is already open, so do not clone it again. On macOS, do not launch `npx tauri dev` from your own background shell. Ask them to run it in the Terminal app so the camera and microphone prompts appear for them.
+
 ## Architecture & Key Files
 
 - `src-tauri/src/audio.rs`: 16 kHz `cpal` capture worker thread, 500 ms (`8,000`-sample) circular pre-roll ring buffer, Silero VAD v5 ONNX (`voice_activity_detector`), 5-state multimodal machine (`IDLE -> ARMED -> LISTENING -> TRANSCRIBING -> PREVIEW`), head gesture handling (`nod` / `shake`), and `settings.local.json` persistence.
