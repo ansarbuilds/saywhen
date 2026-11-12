@@ -57,7 +57,7 @@ saywhen learned to run on Windows, got a welcome screen explaining permissions, 
 
 With the basics working, we spent two days on the hard details. A few highlights:
 
-- **Starting and stopping at the right moment.** We recorded 56 real sentences and replayed them through the old and new logic. Starting by mistake went from **36.4% to 0%**, and cutting people off mid-sentence went from **52.9% to 0%**.
+- **Starting and stopping at the right moment.** We built 56 test clips (computer-generated speech with simulated camera traces, so not live users yet) and replayed them through the old and new logic. Starting by mistake went from **36.4% to 0%**, and cutting people off mid-sentence went from **52.9% to 0%**.
 - **Developer words.** On 34 spoken commands, exact matches went from **44.1% to 100%**.
 - **Typing reliably.** saywhen checks which app is in front before it pastes, waits a little longer for long text, puts your clipboard back afterwards, and refuses to type into the wrong window. Finding the front app on macOS went from about 8 milliseconds to about 0.002.
 - **Real life.** Unplugging headphones, closing the laptop lid and locking the screen are all handled without sending anything by accident.

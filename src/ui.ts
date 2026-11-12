@@ -22,6 +22,12 @@ const STATE_WORDS: Record<string, string> = {
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
+// The "building from source" tip only helps people running `npx tauri dev`.
+// Installed release builds keep it hidden.
+if (import.meta.env.DEV) {
+  document.getElementById('dev-build-hint')?.removeAttribute('hidden');
+}
+
 let activeTab: TabId = 'home';
 let lastState = '';
 let smoothedLevel = 0;

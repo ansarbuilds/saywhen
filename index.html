@@ -84,6 +84,66 @@
         <div class="views">
           <!-- HOME -->
           <section class="view is-active" data-view="home" id="view-home">
+            <section class="setup-card hidden" id="setup-card" aria-labelledby="setup-title">
+              <div class="setup-head">
+                <div class="setup-heading">
+                  <h3 id="setup-title">Get set up</h3>
+                  <p id="setup-sub">Five quick steps, then you can talk to your terminal. Everything stays on this computer.</p>
+                </div>
+                <div class="setup-progress" aria-live="polite">
+                  <span id="setup-count">0 of 5 done</span>
+                  <div class="setup-bar" aria-hidden="true"><i id="setup-bar-fill"></i></div>
+                </div>
+                <button type="button" class="btn-xs btn-quiet" id="setup-hide-btn" title="Hide this checklist. Bring it back from Setup guide in the sidebar.">Hide</button>
+              </div>
+              <ol class="setup-steps">
+                <li class="setup-step" data-step="model">
+                  <span class="setup-mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 7" /></svg></span>
+                  <div class="setup-text">
+                    <strong>Download a speech model</strong>
+                    <span>This turns your voice into text on this computer. The smallest one is about 75 MB.</span>
+                  </div>
+                  <span class="setup-status">To do</span>
+                  <button type="button" class="btn-xs" data-setup-action="model">Download</button>
+                </li>
+                <li class="setup-step" data-step="typing">
+                  <span class="setup-mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 7" /></svg></span>
+                  <div class="setup-text">
+                    <strong>Let saywhen type for you</strong>
+                    <span id="setup-typing-desc">Allow saywhen under Accessibility so it can type into your terminal and editor.</span>
+                  </div>
+                  <span class="setup-status">To do</span>
+                  <button type="button" class="btn-xs" data-setup-action="typing">Open settings</button>
+                </li>
+                <li class="setup-step" data-step="camera">
+                  <span class="setup-mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 7" /></svg></span>
+                  <div class="setup-text">
+                    <strong>Turn on the camera</strong>
+                    <span>It only checks that you are facing the screen. Pictures are never saved or sent.</span>
+                  </div>
+                  <span class="setup-status">To do</span>
+                  <button type="button" class="btn-xs" data-setup-action="camera">Turn on</button>
+                </li>
+                <li class="setup-step" data-step="calibrate">
+                  <span class="setup-mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 7" /></svg></span>
+                  <div class="setup-text">
+                    <strong>Calibrate</strong>
+                    <span>Look at the screen you talk to with your mouth closed. It takes 1.5 seconds.</span>
+                  </div>
+                  <span class="setup-status">To do</span>
+                  <button type="button" class="btn-xs" data-setup-action="calibrate">Calibrate</button>
+                </li>
+                <li class="setup-step" data-step="speak">
+                  <span class="setup-mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10.5 3.2 3.2L15 7" /></svg></span>
+                  <div class="setup-text">
+                    <strong>Say something</strong>
+                    <span>Click into your terminal, look at the screen and say &ldquo;git status&rdquo;.</span>
+                  </div>
+                  <span class="setup-status">To do</span>
+                </li>
+              </ol>
+            </section>
+
             <section class="hero" id="command-deck">
               <div class="hero-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
               <div class="hero-grain" aria-hidden="true"></div>
@@ -361,7 +421,7 @@
                   Clear
                 </button>
               </div>
-              <p class="issues-panel-hint">
+              <p class="issues-panel-hint" id="dev-build-hint" hidden>
                 Building from source on a Mac? The dev build runs as <strong>saywhen-dev.app</strong>. In System Settings, Privacy and Security, remove old <strong>saywhen</strong> entries, quit, run <code class="mono-inline">npx tauri dev</code> again and allow the new entry.
               </p>
               <p class="issues-panel-hint issues-panel-hint-muted">
@@ -937,6 +997,7 @@
 
         <div class="modal-footer">
           <span class="card-hint">Open this again from Setup guide in the sidebar.</span>
+          <button type="button" id="setup-reopen-btn" class="btn-xs">Show the setup checklist</button>
           <button id="onboarding-done-btn" class="btn btn-primary">Start talking</button>
         </div>
       </div>

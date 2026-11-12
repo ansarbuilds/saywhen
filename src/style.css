@@ -677,6 +677,71 @@ body[data-state='LISTENING'] .state-step.active .step-num { background: var(--am
 .preview-hud .btn-primary kbd { background: var(--tint); color: var(--accent); border-color: transparent; }
 
 /* -------------------------------------------------------------- send mode */
+
+/* First-run setup checklist (Home) */
+.setup-card {
+  margin-bottom: 18px;
+  padding: 18px 20px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  animation: rise-in 0.5s var(--ease-out) both;
+}
+.setup-head { display: flex; align-items: center; gap: 18px; padding-bottom: 12px; }
+.setup-heading { flex: 1; min-width: 0; }
+.setup-heading h3 { font: 700 15px/1.3 var(--font-body); letter-spacing: -0.02em; color: var(--ink); }
+.setup-heading p { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.setup-progress { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.setup-progress span { font: 600 12px/1 var(--font-body); color: var(--muted); font-variant-numeric: tabular-nums; }
+.setup-bar { width: 120px; height: 5px; border-radius: 99px; background: var(--tint-2); overflow: hidden; }
+.setup-bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width 0.5s var(--ease-out); }
+
+.setup-steps { list-style: none; margin: 0; padding: 0; }
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 9px 10px;
+  margin: 0 -10px;
+  border-radius: var(--r-md);
+  border-top: 1px solid var(--rule);
+}
+.setup-step:first-child { border-top-color: transparent; }
+.setup-step.is-current { background: color-mix(in srgb, var(--tint-2) 55%, transparent); border-top-color: transparent; }
+.setup-step.is-current + .setup-step { border-top-color: transparent; }
+
+.setup-mark {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rule-strong);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+.setup-mark svg { width: 13px; height: 13px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.setup-step.is-current .setup-mark { border-color: var(--accent); }
+.setup-step.is-done .setup-mark { background: var(--ok); border-color: var(--ok); }
+.setup-step.is-done .setup-mark svg { opacity: 1; }
+
+.setup-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.setup-text strong { font: 600 13px/1.35 var(--font-body); color: var(--ink); }
+.setup-text span { font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.setup-step.is-done .setup-text strong { color: var(--muted); }
+.setup-step.is-done .setup-text span { display: none; }
+
+.setup-status { flex-shrink: 0; font: 600 12px/1 var(--font-body); color: var(--faint); }
+.setup-step.is-current .setup-status { color: var(--accent); }
+.setup-step.is-done .setup-status { color: var(--ok); }
+/* The button already says what to do, so the label only shows when there is no button. */
+.setup-step:not(.is-done):has([data-setup-action]) .setup-status { display: none; }
+
+.setup-card.is-complete .setup-bar i { background: var(--ok); }
+.setup-card.is-complete #setup-hide-btn { visibility: hidden; }
+
 .mode-section { padding: 30px 0 4px; }
 
 .section-label {
@@ -1428,7 +1493,8 @@ html.no-motion, html.no-motion *, html.no-motion *::before, html.no-motion *::af
   pointer-events: none;
 }
 
-.content { isolation: isolate; }
+/* Clip the decorative glow so it can never make the page scroll sideways. */
+.content { isolation: isolate; overflow: clip; }
 
 .spot {
   position: absolute;
