@@ -14,6 +14,14 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 
 The GIF is an explanatory animation, not an app recording. Its timing must not be presented as measured transcription latency. Existing screenshots in `../screenshots/` are browser demo captures, not proof of native permission or injection behavior.
 
+## Animated loops
+
+`animated/` holds seven short loops drawn from the app's interface: `hero-loop`, `five-states`, `cleanup`, `send-styles`, `cancel`, `safety` and `privacy`. Each comes as a GIF (used in the READMEs), a silent MP4 (used on the project page) and a still PNG. `animated/manifest.json` lists the alt text, caption and placement for each one.
+
+They are Remotion compositions in `film/src/AnimatedLoops.tsx`, with one npm script per loop in `film/package.json`. They are illustrations, not screen recordings.
+
+The two `brand-*.png` images are no longer shown in the READMEs. The loops replaced them.
+
 ## The film in the main README
 
 The player at the top of the main README is a GitHub attachment, not a file in this repository. GitHub only plays videos that were uploaded through its web editor, and the free limit is 10 MB. To replace it, encode the film under that size, drag the file into any issue or comment box on github.com (no need to submit), and paste the `https://github.com/user-attachments/assets/...` link it gives you on a line of its own in the README.
