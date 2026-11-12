@@ -1,0 +1,5 @@
+# Pinned because ort-sys 2.0.0-rc.10 fails to build on Windows with Rust 1.100.0
+# (its build script assumes the older target directory layout).
+# Raise this once the ort dependency is updated.
+[toolchain]
+channel = "1.99.1"
