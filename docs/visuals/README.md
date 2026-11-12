@@ -4,6 +4,8 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 
 | File | Purpose |
 | --- | --- |
+| `brand-hero.png` | AI-generated silver-and-amber editorial brand artwork |
+| `brand-features.png` | AI-generated intent, voice and control feature illustration |
 | `readme-hero.png` | Project introduction and three-step concept |
 | `workflow.gif` | 12-second illustrated pause-mode loop, approximately 1.1 MB |
 | `workflow-still.png` | Non-animated alternative showing the check step |
@@ -19,6 +21,8 @@ Install Pillow in your chosen Python environment, then run from the repository r
 ```bash
 python3 scripts/render-doc-visuals.py
 ```
+
+The two `brand-*.png` files are generated brand artwork, not product screenshots or technical diagrams. They are maintained separately and are not overwritten by the renderer.
 
 The renderer uses Arial/Menlo on macOS or DejaVu Sans/Mono on Linux. Font metrics can differ slightly; inspect the resulting images before committing. Images are rendered from text and geometry, without camera or microphone data.
 

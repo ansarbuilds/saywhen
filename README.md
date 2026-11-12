@@ -1,10 +1,10 @@
-![saywhen: Look. Talk. Sent. Voice input for terminals and coding assistants. Look and talk, check the preview, then send if allowed.](docs/visuals/readme-hero.png)
+![saywhen: Look. Talk. Sent. Hands-free voice input, illustrated with a silver and amber ribbon on plum.](docs/visuals/brand-hero.png)
 
 # saywhen
 
 **Talk to your terminal or coding assistant without touching the keyboard.**
 
-[Install](#install) · [See the workflow](#see-the-workflow) · [Documentation](docs/README.md) · [Contribute](CONTRIBUTING.md) · [Release status](docs/LAUNCH_CHECKLIST.md)
+[Watch the demo](#watch-the-demo) · [Install](#install) · [See the workflow](#see-the-workflow) · [Documentation](docs/README.md) · [Contribute](CONTRIBUTING.md) · [Release status](docs/LAUNCH_CHECKLIST.md)
 
 saywhen is a free, open source desktop app for macOS and Windows. You look at your screen, say what you want, and saywhen types it into the app you are using (Terminal, Cursor, VS Code, Claude Code and more). Then it presses Enter for you, unless you stop it.
 
@@ -12,13 +12,24 @@ saywhen is a free, open source desktop app for macOS and Windows. You look at yo
 
 No hotkey to hold. No "click Send". Speech and camera processing run on your own computer. Optional remote AI cleanup is off by default.
 
+## Watch the demo
+
+[![Watch the original 60-second saywhen launch film with voice and sound. Click to open the MP4.](docs/screenshots/demo-poster.png)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)
+
+**[▶ Watch the 60-second demo](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)** · [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4)
+
+*The original launch film, with voice and sound. Click the poster to open it.*
+
 ## See the workflow
+
+<details>
+<summary><strong>Open the animated step-by-step walkthrough</strong></summary>
 
 ![Illustrated workflow: look at the screen, speak a command, transcribe locally, review a cancelable preview, and paste into a trusted terminal with Enter.](docs/visuals/workflow.gif)
 
 *Illustrated pause-mode walkthrough, not a live screen recording. Timing is simplified.* [View the still image](docs/visuals/workflow-still.png).
 
-[Watch the 60-second launch film](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4) · [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4)
+</details>
 
 <details>
 <summary><strong>See the app interface</strong></summary>
@@ -72,6 +83,8 @@ In every style you can always stop a send:
 | "cancel that" / "never mind" | Throws away the whole thing |
 
 ### Safety built in
+
+![Intent, Voice, Control: a camera lens, amber audio waveform and silver Esc key. Decorative brand illustration.](docs/visuals/brand-features.png)
 
 - Enter is only pressed in apps you trust (terminals and code editors by default). In chat apps, email and browsers, saywhen only types.
 - Risky commands such as `rm -rf`, `git reset --hard` or `git push --force` are **never** sent automatically. They are only typed, with a warning.
