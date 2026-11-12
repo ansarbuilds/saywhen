@@ -25,6 +25,12 @@ https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 
 No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or [download the MP4](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-demo.mp4). There is also a [12-second teaser](https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-announce.mp4).
 
+### And the real thing
+
+![A real screen recording. The saywhen pill goes from Ready to Listening, a preview of the spoken request counts down, and the request is typed into Cursor and sent.](docs/visuals/real-run.gif)
+
+*A real screen recording, in real time, with no sound. A spoken request is typed into Cursor and sent. One run on an Apple Silicon Mac, not a benchmark.*
+
 ---
 
 ## How it works
@@ -221,7 +227,7 @@ On a Mac, if `cargo` is not on your PATH:
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH"
 ```
 
-The film and the animations on this page are illustrations of the interface, not screen recordings. Their timing is not a measurement. The numbers below are.
+The film and the animations on this page are illustrations of the interface. Only the clip under [Watch it](#watch-it) is a screen recording. Their timing is not a measurement. The numbers below are.
 
 | Part | What we measured | Result |
 | --- | --- | --- |
