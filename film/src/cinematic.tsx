@@ -1,101 +1,88 @@
 import React from "react";
 import { Audio, Easing, Sequence, interpolate, staticFile } from "remotion";
 
-const ease = Easing.inOut(Easing.cubic);
+export interface VoiceCue {
+  id: string;
+  start: number;
+  frames: number;
+  text: string;
+}
 
-const clamp = {
-  extrapolateLeft: "clamp",
-  extrapolateRight: "clamp",
-} as const;
-
-// Ava neural reads. Frame counts are the mp3 lengths at 30 fps.
-export const VOICE_CUES = [
+// Locked 60.0s (1800 frames @ 30fps) voiceover cue timeline synced to generate-audio.py
+export const VOICE_CUES: VoiceCue[] = [
   { id: "01", start: 14, frames: 92, text: "Voice input. Without a hotkey." },
-  { id: "02", start: 118, frames: 91, text: "Look. Talk. Sent." },
-  {
-    id: "03",
-    start: 230,
-    frames: 67,
-    text: "It can see you looking at the screen.",
-  },
-  {
-    id: "04",
-    start: 318,
-    frames: 101,
-    text: "So you just talk. No button to hold.",
-  },
-  {
-    id: "05",
-    start: 500,
-    frames: 99,
-    text: "It writes the real command, and lets you check.",
-  },
-  {
-    id: "06",
-    start: 604,
-    frames: 87,
-    text: "Then it types it in, and presses enter.",
-  },
-  {
-    id: "07",
-    start: 720,
-    frames: 119,
-    text: "You speak like a person. It writes like a developer.",
-  },
-  { id: "08", start: 990, frames: 109, text: "Pause. Nod. Or say send it." },
-  { id: "09", start: 1132, frames: 64, text: "And you can always stop it." },
-  {
-    id: "10",
-    start: 1288,
-    frames: 92,
-    text: "Risky commands never press enter for you.",
-  },
-  {
-    id: "11",
-    start: 1536,
-    frames: 65,
-    text: "Nothing leaves this computer.",
-  },
-  { id: "12", start: 1688, frames: 91, text: "Look. Talk. Sent." },
-] as const;
+  { id: "02", start: 120, frames: 91, text: "Look. Talk. Sent." },
+  { id: "03", start: 228, frames: 67, text: "It can see you looking at the screen." },
+  { id: "04", start: 318, frames: 101, text: "So you just talk. No button to hold." },
+  { id: "05", start: 498, frames: 99, text: "It writes the real command, and lets you check." },
+  { id: "06", start: 604, frames: 87, text: "Then it types it in, and presses enter." },
+  { id: "07", start: 718, frames: 119, text: "You speak like a person. It writes like a developer." },
+  { id: "08", start: 916, frames: 98, text: "Pause. Nod. Say send it. Or type only." },
+  { id: "09", start: 1130, frames: 64, text: "And you can always stop it." },
+  { id: "10", start: 1284, frames: 92, text: "Risky commands never press enter for you." },
+  { id: "11", start: 1498, frames: 65, text: "Nothing leaves this computer." },
+  { id: "12", start: 1682, frames: 91, text: "Look. Talk. Sent." },
+];
 
 export const FilmSubtitles: React.FC<{ frame: number }> = ({ frame }) => {
-  const cue = VOICE_CUES.find(
-    (item) => frame >= item.start && frame < item.start + item.frames,
+  const active = VOICE_CUES.find(
+    (c) => frame >= c.start - 4 && frame <= c.start + c.frames + 10
   );
-  if (!cue) return null;
-  const local = frame - cue.start;
-  const fadeIn = interpolate(local, [0, 7], [0, 1], { ...clamp, easing: ease });
-  const fadeOut = interpolate(local, [cue.frames - 8, cue.frames], [1, 0], {
-    ...clamp,
-    easing: ease,
+  if (!active) return null;
+
+  const enterOpacity = interpolate(frame, [active.start - 4, active.start + 5], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
   });
+  const exitOpacity = interpolate(
+    frame,
+    [active.start + active.frames - 2, active.start + active.frames + 10],
+    [1, 0],
+    {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    }
+  );
+  const y = interpolate(frame, [active.start - 4, active.start + 6], [10, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.out(Easing.cubic),
+  });
+
   return (
     <div
       style={{
         position: "absolute",
-        left: 160,
-        right: 160,
-        bottom: 28,
+        left: 0,
+        right: 0,
+        bottom: 34,
         display: "flex",
         justifyContent: "center",
-        opacity: fadeIn * fadeOut,
         pointerEvents: "none",
+        opacity: Math.min(enterOpacity, exitOpacity),
+        transform: `translateY(${y}px)`,
+        zIndex: 80,
       }}
     >
       <div
         style={{
+          padding: "10px 24px",
+          borderRadius: 999,
+          background: "rgba(14, 4, 14, 0.86)",
+          border: "1px solid rgba(251, 179, 3, 0.28)",
+          boxShadow: "0 14px 36px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(255,255,255,0.06) inset",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
+          color: "#faf7f4",
           fontFamily: "Plus Jakarta Sans",
-          fontWeight: 500,
-          fontSize: 26,
-          lineHeight: 1.2,
+          fontSize: 22,
+          fontWeight: 600,
           letterSpacing: "-0.01em",
-          color: "#f7f4f7",
+          lineHeight: 1.25,
           textAlign: "center",
-          textShadow: "0 2px 16px rgba(18, 2, 14, 0.95)",
         }}
       >
-        {cue.text}
+        {active.text}
       </div>
     </div>
   );
@@ -105,7 +92,7 @@ export const VoiceOver: React.FC = () => {
   return (
     <>
       {VOICE_CUES.map((cue) => (
-        <Sequence key={cue.id} from={cue.start} durationInFrames={cue.frames + 4}>
+        <Sequence key={cue.id} from={cue.start} durationInFrames={cue.frames + 8}>
           <Audio src={staticFile(`vo/${cue.id}.mp3`)} />
         </Sequence>
       ))}

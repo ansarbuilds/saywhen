@@ -1,18 +1,26 @@
-import React, { type CSSProperties, type ReactNode } from "react";
+import React, { type ReactNode } from "react";
 import { AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { loadFont } from "@remotion/fonts";
+import instrumentSerif400 from "@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2";
+import instrumentSerif400Italic from "@fontsource/instrument-serif/files/instrument-serif-latin-400-italic.woff2";
+import plusJakarta400 from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-400-normal.woff2";
+import plusJakarta500 from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-500-normal.woff2";
+import plusJakarta600 from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-600-normal.woff2";
 import plusJakarta700 from "@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff2";
 import { C, F, eio, seg } from "./SaywhenDemo";
 
+loadFont({ family: "Instrument Serif", url: instrumentSerif400, weight: "400" });
+loadFont({ family: "Instrument Serif", url: instrumentSerif400Italic, weight: "400", style: "italic" });
+loadFont({ family: "Plus Jakarta Sans", url: plusJakarta400, weight: "400" });
+loadFont({ family: "Plus Jakarta Sans", url: plusJakarta500, weight: "500" });
+loadFont({ family: "Plus Jakarta Sans", url: plusJakarta600, weight: "600" });
 loadFont({ family: "Plus Jakarta Sans", url: plusJakarta700, weight: "700" });
 loadFont({ family: "JetBrains Mono", url: staticFile("jetbrains-mono.woff2"), weight: "100 800" });
 
-const panel = "#180514";
-const line = "rgba(223, 229, 236, 0.23)";
-const tint = "#f0eaf0";
-const full = "100%";
+const OBSIDIAN_BG =
+  "radial-gradient(920px 440px at 16% 12%, rgba(92, 20, 78, 0.42), transparent 65%), radial-gradient(760px 420px at 88% 84%, rgba(251, 179, 3, 0.14), transparent 60%), linear-gradient(155deg, #160514 0%, #0d030c 100%)";
 
-function useTime() {
+function useLoopTime() {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   return frame === durationInFrames - 1 ? 0 : frame / fps;
@@ -22,352 +30,609 @@ const ease = (t: number, a: number, b: number) => eio(seg(t, a, b));
 const windowAt = (t: number, a: number, b: number, edge = 0.4) =>
   ease(t, a, a + edge) * (1 - ease(t, b - edge, b));
 
-function Canvas({ children }: { children: ReactNode }) {
+function LoopStage({ children }: { children: ReactNode }) {
   return (
-    <AbsoluteFill style={{ background: C.plum, color: C.silver, fontFamily: F.sans }}>
+    <AbsoluteFill
+      style={{
+        background: OBSIDIAN_BG,
+        color: C.ivory,
+        fontFamily: F.sans,
+        overflow: "hidden",
+      }}
+    >
       {children}
     </AbsoluteFill>
   );
 }
 
-function Title({ children, style }: { children: ReactNode; style?: CSSProperties }) {
-  return <div style={{ fontFamily: F.serif, fontSize: 86, lineHeight: 0.96, ...style }}>{children}</div>;
-}
-
-function Reveal({ value, children, style }: { value: number; children: ReactNode; style?: CSSProperties }) {
-  return <div style={{ opacity: value, transform: `translateY(${(1 - value) * 8}px)`, ...style }}>{children}</div>;
-}
-
-const states = [
-  { name: "Waiting", hint: "Look at the screen." },
-  { name: "Ready", hint: "Start talking." },
-  { name: "Listening", hint: "Finish your thought." },
-  { name: "Writing", hint: "Turning voice into text." },
-  { name: "Check", hint: "Review before it sends." },
-] as const;
-
-function Meter({ amount = 1 }: { amount?: number }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, height: 36 }}>
-      {[8, 17, 26, 34, 26, 17, 8].map((height, index) => (
-        <span key={index} style={{ width: 4, height: 5 + (height - 5) * amount, borderRadius: 3, background: "currentColor" }} />
-      ))}
-    </div>
-  );
-}
-
-function HudPill({ index, focus = 0, meter = 0.8, detail }: {
-  index: number; focus?: number; meter?: number; detail?: string;
-}) {
-  return (
-    <div style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 12, height: 60, padding: "0 19px 0 13px", borderRadius: 999, background: C.plum, border: `2px solid ${line}`, fontSize: 28, whiteSpace: "nowrap" }}>
-      <div style={{ position: "absolute", inset: -2, border: `2px solid ${C.amber}`, borderRadius: "inherit", opacity: focus }} />
-      <Img src={staticFile("logo.png")} style={{ width: 33, height: 33, borderRadius: 8, filter: "grayscale(1)" }} />
-      <span style={{ position: "relative", width: 13, height: 13, boxSizing: "border-box", borderRadius: full, background: index === 3 ? "transparent" : C.silver, border: index === 3 ? `2px solid ${C.silver}` : undefined, borderRightColor: index === 3 ? "transparent" : undefined }} />
-      <strong style={{ fontWeight: 700 }}>{states[index].name}</strong>
-      {(index === 1 || index === 2) && <Meter amount={index === 1 ? 0 : meter} />}
-      {detail && <span style={{ color: C.mutedDark, fontSize: 23 }}>{detail}</span>}
-    </div>
-  );
-}
-
-function Bar({ amount, accent = 1 }: { amount: number; accent?: number }) {
-  return (
-    <div style={{ height: 6, borderRadius: 6, background: line, overflow: "hidden" }}>
-      <div style={{ height: full, width: `${amount * 100}%`, background: `color-mix(in srgb, ${C.amber} ${accent * 100}%, ${C.silver})`, borderRadius: 6 }} />
-    </div>
-  );
-}
-
-function Preview({ command, amount, policy = "Paste + Enter into Terminal", hint = "Esc or shake head to cancel. Nod to send now.", warning = false, accent = warning ? 0 : 1 }: {
-  command: string; amount: number; policy?: string; hint?: string; warning?: boolean; accent?: number;
-}) {
-  return (
-    <div style={{ background: C.plumDeep, border: `2px solid ${line}`, borderRadius: 26, padding: "18px 24px 17px", display: "grid", gap: 11 }}>
-      <div style={{ color: warning ? C.amber : C.mutedDark, fontWeight: warning ? 700 : 500, fontSize: 24 }}>{policy}</div>
-      <div style={{ fontFamily: F.mono, fontSize: 34, color: C.ivory }}>{command}</div>
-      <Bar amount={amount} accent={accent} />
-      <div style={{ color: C.mutedDark, fontSize: 23 }}>{hint}</div>
-    </div>
-  );
-}
-
-function Terminal({ command, sent = 0, typed = 0 }: { command: string; sent?: number; typed?: number }) {
-  return (
-    <div style={{ height: full, borderRadius: 28, overflow: "hidden", background: panel, border: `2px solid ${line}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "15px 25px", background: C.plumDeep, borderBottom: `2px solid ${line}`, fontSize: 24 }}>
-        <div style={{ display: "flex", gap: 8 }}>{[0, 1, 2].map(dot => <span key={dot} style={{ width: 11, height: 11, border: `2px solid ${C.mutedDark}`, borderRadius: full }} />)}</div>
-        Terminal
-      </div>
-      <div style={{ padding: "24px 28px", fontFamily: F.mono, fontSize: 34, lineHeight: 1.55 }}>
-        <div>
-          <span style={{ color: C.mutedDark }}>$ </span>
-          <span style={{ position: "relative" }}>
-            <span style={{ opacity: typed }}>{command}</span>
-            <span style={{ position: "absolute", left: 0, opacity: 1 - typed, color: C.mutedDark }}>▏</span>
-          </span>
-          <span style={{ opacity: typed * (1 - sent), color: C.mutedDark }}>▏</span>
-        </div>
-        <div style={{ opacity: sent, color: C.mutedDark }}>$ ▏</div>
-      </div>
-    </div>
-  );
-}
-
-const cargo = "cargo test --release";
-const rawCargo = "cargo test dash dash release";
-
-export function HeroLoop() {
-  const t = useTime();
-  const stages = [0.95, 2.05, 4.0, 5.0, 6.85];
-  const index = stages.filter(at => t >= at).length % states.length;
-  const boundary = Math.min(...[...stages, 8.2].map(at => Math.abs(t - at)));
-  const pillText = ease(boundary, 0, 0.23);
-  const sent = windowAt(t, 6.85, 8.75, 0.6);
-  const typed = windowAt(t, 6.85, 8.75, 0.45);
-  const spoken = ["cargo", "test", "dash", "dash", "release"];
-  const partial = 1 - ease(t, 4.55, 5.05);
-  return (
-    <Canvas>
-      <div style={{ position: "absolute", left: 88, top: 126 }}>
-        <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 22 }}>saywhen</div>
-        <Title style={{ fontSize: 142 }}>Look. Talk.<br />Sent.</Title>
-        <div style={{ fontSize: 30, lineHeight: 1.5, color: C.mutedDark, marginTop: 30 }}>Hands-free voice input<br />for your terminal.</div>
-      </div>
-      <div style={{ position: "absolute", left: 650, right: 88, top: 115, height: 560 }}>
-        <Terminal command={cargo} typed={typed} sent={sent} />
-        <div style={{ position: "absolute", left: 34, right: 34, bottom: 132 }}>
-          <Reveal value={windowAt(t, 4.95, 6.9, 0.4)} style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
-            <Preview command={cargo} amount={1 - seg(t, 5.25, 6.85)} />
-          </Reveal>
-          <Reveal value={partial} style={{ minHeight: 48, fontSize: 34, fontFamily: F.mono, color: C.mutedDark }}>
-            {spoken.map((word, i) => <span key={i} style={{ opacity: ease(t, 2.1 + i * 0.37, 2.37 + i * 0.37), marginRight: 18 }}>{word}</span>)}
-          </Reveal>
-        </div>
-        <div style={{ position: "absolute", left: 34, bottom: 42, opacity: pillText }}>
-          <HudPill index={index} detail={index === 0 && t > 6.85 && t < 8.2 ? "Sent to Terminal" : states[index].hint} meter={0.72 + 0.21 * Math.sin(t * 7)} />
-        </div>
-      </div>
-    </Canvas>
-  );
-}
-
-export function FiveStates() {
-  const t = useTime();
-  return (
-    <Canvas>
-      <Title style={{ position: "absolute", left: 88, top: 76 }}>The five states of saywhen</Title>
-      <div style={{ position: "absolute", left: 88, right: 88, top: 222, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 22 }}>
-        {states.map((state, index) => {
-          const start = 1.18 + (index - 1) * 1.48;
-          const focus = index === 0 ? 1 - ease(t, 0.9, 1.18) + ease(t, 7.05, 7.48) : windowAt(t, start, start + 1.42, 0.32);
-          return (
-            <div key={state.name} style={{ borderTop: `2px solid ${line}`, paddingTop: 31 }}>
-              <HudPill index={index} focus={focus} meter={0.6 + focus * 0.25} />
-              <div style={{ marginTop: 23, color: C.silver, fontSize: 28, lineHeight: 1.3 }}>{state.hint}</div>
-            </div>
-          );
-        })}
-      </div>
-    </Canvas>
-  );
-}
-
-export function Cleanup() {
-  const t = useTime();
-  const reset = 1 - ease(t, 5.25, 5.8);
-  return (
-    <Canvas>
-      <Title style={{ position: "absolute", left: 88, top: 55 }}>Say the words. Get the command.</Title>
-      <div style={{ position: "absolute", left: 88, right: 88, top: 177, display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "16px 36px" }}>
-        <div style={{ fontSize: 25, color: C.mutedDark }}>You say</div>
-        <div style={{ fontSize: 25, color: C.mutedDark }}>saywhen writes</div>
-        {[[rawCargo, cargo], ["cubectal get pods", "kubectl get pods"]].map(([raw, clean], index) => {
-          const strike = ease(t, 0.72 + index * 1.95, 1.35 + index * 1.95) * reset;
-          const result = ease(t, 1.18 + index * 1.95, 1.73 + index * 1.95) * reset;
-          const accent = index === 0 ? 1 - ease(t, 2.35, 2.65) : ease(t, 2.65, 2.98);
-          return (
-            <React.Fragment key={clean}>
-              <div style={{ borderTop: `2px solid ${line}`, padding: "20px 0", fontSize: 36 }}>
-                <span style={{ display: "inline-block", position: "relative", color: C.silver }}>
-                  {raw}<span style={{ position: "absolute", top: "55%", left: 0, width: `${strike * 100}%`, height: 3, background: C.mutedDark }} />
-                </span>
-              </div>
-              <div style={{ borderTop: `2px solid ${line}`, paddingTop: 13 }}>
-                <Reveal value={result} style={{ background: C.white, color: C.plum, borderRadius: 15, display: "inline-flex", alignItems: "center", gap: 15, padding: "12px 20px", fontFamily: F.mono, fontSize: 32 }}>
-                  <span style={{ width: 6, height: 28, background: C.amber, opacity: accent, borderRadius: 4 }} />{clean}
-                </Reveal>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-    </Canvas>
-  );
-}
-
-const modes = [
-  { name: "Just pause", detail: "Stop talking. A countdown runs, then it sends.", shape: <path d="M8 6v12M16 6v12" />, before: "Counting down", after: "Sent" },
-  { name: "Nod to send", detail: "Nod when you’re ready to send.", shape: <><circle cx="12" cy="9" r="4" /><path d="M12 15v5M9 18l3 3 3-3" /></>, before: "Waiting for a nod", after: "Sent" },
-  { name: 'Say "send it"', detail: "End with these words to press Enter.", shape: <path d="M4 6h16v9H9l-5 4z" />, before: '“send it”', after: "Sent" },
-  { name: "Type only", detail: "Your words are typed without Enter.", shape: <><rect x="5" y="4" width="14" height="17" rx="1" /><path d="M9 9h6M9 13h6M9 17h3" /></>, before: "$", after: "$ git status ▏" },
-];
-
-function Glyph({ children, size = 30, style }: { children: ReactNode; size?: number; style?: CSSProperties }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={style}>
-      {children}
-    </svg>
-  );
-}
-
-export function SendStyles() {
-  const t = useTime();
-  return (
-    <Canvas>
-      <Title style={{ position: "absolute", left: 88, top: 92 }}>How do you want to send?</Title>
-      <div style={{ position: "absolute", left: 88, right: 88, top: 230, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 22 }}>
-        {modes.map((mode, index) => {
-          const start = 0.25 + index * 2.35;
-          const local = t - start;
-          const active = windowAt(local, 0, 2.2, 0.35);
-          const before = 1 - ease(local, 1.14, 1.38);
-          const result = ease(local, 1.38, 1.64);
-          const nod = windowAt(local, 0.67, 1.42, 0.35);
-          return (
-            <div key={mode.name} style={{ position: "relative", height: 360, boxSizing: "border-box", padding: 26, borderRadius: 26, background: C.white, border: `2px solid ${C.borderLight}`, color: C.plum }}>
-              <div style={{ position: "absolute", inset: -2, borderRadius: "inherit", border: `3px solid ${C.amber}`, opacity: active }} />
-              <div style={{ position: "absolute", right: 24, top: 24, width: 29, height: 29, borderRadius: full, border: `2px solid ${C.borderLight}`, display: "grid", placeItems: "center" }}>
-                <div style={{ position: "absolute", inset: -1, borderRadius: "inherit", background: C.plum, opacity: active }} />
-                <Glyph size={19} style={{ opacity: active, color: C.white, position: "relative" }}><path d="m6 12 4 4 8-8" /></Glyph>
-              </div>
-              <div style={{ display: "grid", placeItems: "center", width: 61, height: 61, background: tint, borderRadius: 17 }}>
-                <Glyph style={{ transform: `translateY(${index === 1 ? nod * 8 : 0}px)` }}>{mode.shape}</Glyph>
-              </div>
-              <div style={{ marginTop: 17, fontSize: 34, fontWeight: 700, letterSpacing: "-0.04em" }}>{mode.name}</div>
-              <div style={{ marginTop: 10, fontSize: 27, lineHeight: 1.33, color: C.mutedLight }}>{mode.detail}</div>
-              <div style={{ position: "absolute", left: 26, right: 26, bottom: 25, height: 62, borderTop: `2px solid ${C.borderLight}`, paddingTop: 10, boxSizing: "border-box" }}>
-                <div style={{ position: "relative", height: 33, fontSize: 25, fontFamily: index === 3 ? F.mono : F.sans }}>
-                  <Reveal value={active * before} style={{ position: "absolute" }}>{mode.before}</Reveal>
-                  <Reveal value={active * result} style={{ position: "absolute", fontWeight: 700 }}>{mode.after}</Reveal>
-                </div>
-                {index === 0 && <div style={{ opacity: active * before }}><Bar amount={1 - seg(local, 0.45, 1.45)} accent={0} /></div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Canvas>
-  );
-}
-
-export function Cancel() {
-  const t = useTime();
-  const reset = ease(t, 5, 5.72);
-  const preview = 1 - windowAt(t, 2.15, 5.72, 0.36);
-  const canceled = windowAt(t, 2.51, 5.36, 0.34);
-  const pressed = windowAt(t, 1.66, 2.7, 0.42);
-  const count = 1 - 0.76 * seg(t, 0.55, 2.15) * (1 - reset);
-  const ways = [
-    { label: "Press Esc", icon: <span style={{ fontFamily: F.mono, fontSize: 24 }}>Esc</span> },
-    { label: "Shake your head", icon: <Glyph><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3" /></Glyph> },
-    { label: "Keep talking", icon: <Meter amount={0.65} /> },
+// Crisp seamless pill stage bar with animated equalizers & glowing progression trace
+export const FiveStates: React.FC = () => {
+  const t = useLoopTime();
+  const states = [
+    { name: "Waiting", caption: "Face not locked", badge: "01", accent: C.mutedDark, t0: 0.0, t1: 1.5 },
+    { name: "Ready", caption: "Looking at screen", badge: "02", accent: C.cyan, t0: 1.5, t1: 3.0 },
+    { name: "Listening", caption: "Capturing with pre-roll", badge: "03", accent: C.amber, t0: 3.0, t1: 4.8 },
+    { name: "Writing", caption: "Whisper Metal GPU", badge: "04", accent: "#dfa8ff", t0: 4.8, t1: 6.2 },
+    { name: "Check", caption: "Review before Enter", badge: "05", accent: C.emerald, t0: 6.2, t1: 8.0 },
   ];
+
+  // Smooth loop wrap progress 0..4
+  const activeIdx = Math.min(4, Math.floor((t / 8) * 5));
+  const tracePct = Math.min(100, (t / 7.2) * 100);
+
   return (
-    <Canvas>
-      <Title style={{ position: "absolute", left: 88, top: 55 }}>Cancel before it sends.</Title>
-      <div style={{ position: "absolute", left: 88, top: 190, width: 762 }}>
-        <Reveal value={preview}>
-          <Preview command={cargo} amount={count} accent={1 - ease(t, 1.3, 1.66) * (1 - reset)} />
-        </Reveal>
-        <Reveal value={canceled} style={{ position: "absolute", left: 0, right: 0, top: 0, height: 161, display: "grid", alignContent: "center", padding: "0 26px", background: C.plumDeep, border: `2px solid ${line}`, borderRadius: 26, fontSize: 37, fontWeight: 700 }}>
-          Canceled. Nothing sent.
-        </Reveal>
-      </div>
-      <div style={{ position: "absolute", left: 952, top: 177, display: "grid", gap: 16 }}>
-        {ways.map(({ label, icon }, index) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", gap: 20, fontSize: 30 }}>
-            <div style={{ position: "relative", width: 86, height: 58, borderRadius: 13, border: `2px solid ${line}`, display: "grid", placeItems: "center", transform: `translateY(${index === 0 ? pressed * 3 : 0}px)` }}>
-              {index === 0 && <span style={{ position: "absolute", inset: -2, borderRadius: "inherit", border: `2px solid ${C.amber}`, opacity: pressed }} />}
-              {icon}
-            </div>
-            {label}
+    <LoopStage>
+      <div style={{ padding: "48px 72px", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 54, lineHeight: 1, color: C.ivory }}>
+            The five states of <span style={{ color: C.amber }}>saywhen</span>
           </div>
-        ))}
-      </div>
-    </Canvas>
-  );
-}
-
-export function Safety() {
-  const t = useTime();
-  const command = "rm -rf dist/";
-  const amount = 1 - seg(t, 0.55, 2.32);
-  const typed = windowAt(t, 2.32, 5.75, 0.45);
-  const enter = ease(t, 2.55, 2.95) * (1 - ease(t, 5.15, 5.75));
-  return (
-    <Canvas>
-      <Title style={{ position: "absolute", left: 88, top: 58, fontSize: 83 }}>Risky commands wait for your hand.</Title>
-      <div style={{ position: "absolute", left: 88, top: 201, width: 701 }}>
-        <Preview command={command} amount={amount + ease(t, 5.3, 5.8)} warning policy="Destructive command: paste only into Terminal" hint="saywhen leaves Enter to you." />
-      </div>
-      <div style={{ position: "absolute", left: 829, right: 88, top: 182, height: 233 }}>
-        <Terminal command={command} typed={typed} />
-        <Reveal value={enter} style={{ position: "absolute", left: 28, bottom: 22, display: "flex", alignItems: "center", gap: 13, color: C.silver, fontSize: 24 }}>
-          <span style={{ fontFamily: F.mono, border: `2px solid ${line}`, padding: "4px 11px", borderRadius: 9 }}>Enter</span>
-          Waiting for you
-        </Reveal>
-      </div>
-    </Canvas>
-  );
-}
-
-function CameraFrame({ amount }: { amount: number }) {
-  return (
-    <div style={{ width: 395, height: 252, boxSizing: "border-box", padding: 16, borderRadius: 24, background: C.white, color: C.plum }}>
-      <div style={{ fontSize: 25, fontWeight: 700, margin: "0 0 10px 3px" }}>Camera</div>
-      <div style={{ position: "relative", height: 174, overflow: "hidden", borderRadius: 15, background: C.plumDeep, display: "grid", placeItems: "center" }}>
-        <div style={{ position: "absolute", width: 105, height: 136, border: `2px solid ${line}`, borderRadius: full }} />
-        <div style={{ position: "absolute", inset: 0, opacity: ease(amount, 0.4, 1) }}>
-          <div style={{ position: "absolute", left: 145, top: 31, width: 71, height: 87, borderRadius: "48% 48% 43% 43%", background: "#cabac8" }} />
-          <div style={{ position: "absolute", left: 119, top: 114, width: 123, height: 77, borderRadius: "50% 50% 0 0", background: "#8b7487" }} />
-          <div style={{ position: "absolute", left: 174, top: 86, width: 13, height: 6, borderRadius: full, background: C.plumDeep }} />
+          <div style={{ fontFamily: F.mono, fontSize: 15, letterSpacing: "0.14em", color: C.mutedDark }}>
+            ATTENTION + AUDIO MULTIMODAL MACHINE
+          </div>
         </div>
-        <div style={{ position: "relative", opacity: 1 - ease(amount, 0, 0.4), color: C.silver, fontSize: 24 }}>Frame discarded</div>
-      </div>
-    </div>
-  );
-}
 
-export function Privacy() {
-  const t = useTime();
-  const clear = 1 - ease(t, 6.25, 7.6);
-  const picture = 1 - ease(t, 3.63, 4.73) * clear;
-  const readings = [
-    { title: "Head angle", value: "Facing screen" },
-    { title: "Lips moving", value: "Yes" },
-    { title: "Face present", value: "Yes" },
-  ];
-  return (
-    <Canvas>
-      <Title style={{ position: "absolute", left: 88, top: 48, fontSize: 76 }}>The picture is never saved.</Title>
-      <div style={{ position: "absolute", left: 91, top: 133, fontSize: 32, color: C.mutedDark }}>Only the numbers are used.</div>
-      <div style={{ position: "absolute", left: 88, top: 198 }}><CameraFrame amount={picture} /></div>
-      <div style={{ position: "absolute", left: 518, top: 297, color: C.mutedDark }}><Glyph size={54}><path d="M4 12h15m-6-6 6 6-6 6" /></Glyph></div>
-      <div style={{ position: "absolute", left: 610, right: 88, top: 232, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
-        {readings.map(({ title, value }, i) => {
-          const shown = ease(t, 0.9 + i * 0.63, 1.46 + i * 0.63) * clear;
-          return (
-            <div key={title} style={{ border: `2px solid ${line}`, borderRadius: 21, minHeight: 151, padding: "24px 17px", boxSizing: "border-box" }}>
-              <div style={{ fontSize: 26, color: C.mutedDark }}>{title}</div>
-              <Reveal value={shown} style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, fontSize: 29, fontWeight: 700, whiteSpace: "nowrap" }}>
-                <span style={{ width: 9, height: 9, borderRadius: full, background: i === 0 ? C.amber : C.silver }} />
-                {value}
-              </Reveal>
-            </div>
-          );
-        })}
+        {/* Continuous optical signal trace behind pills */}
+        <div style={{ position: "relative", paddingTop: 18 }}>
+          <div
+            style={{
+              position: "absolute",
+              left: 90,
+              right: 90,
+              top: 52,
+              height: 2,
+              background: "rgba(255,255,255,0.10)",
+              borderRadius: 99,
+            }}
+          >
+            <div
+              style={{
+                width: `${tracePct}%`,
+                height: "100%",
+                background: "linear-gradient(90deg, rgba(130,232,255,0.7), rgba(251,179,3,0.95), rgba(61,220,151,0.9))",
+                boxShadow: "0 0 18px rgba(251, 179, 3, 0.55)",
+              }}
+            />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 22, position: "relative" }}>
+            {states.map((st, idx) => {
+              const lit = idx === activeIdx ? 1 : 0;
+              return (
+                <div
+                  key={st.name}
+                  style={{
+                    padding: "20px 20px 22px",
+                    borderRadius: 20,
+                    background: lit
+                      ? "linear-gradient(155deg, rgba(60, 18, 52, 0.96), rgba(20, 6, 18, 0.96))"
+                      : "rgba(20, 7, 20, 0.86)",
+                    border: lit ? `1.5px solid ${st.accent}` : "1px solid rgba(255, 255, 255, 0.12)",
+                    boxShadow: lit ? `0 22px 48px rgba(0, 0, 0, 0.6), 0 0 30px ${st.accent}33` : "0 10px 26px rgba(0,0,0,0.35)",
+                    transform: `translateY(${lit ? -6 : 0}px)`,
+                    transition: "none",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <Img src={staticFile("logo.png")} style={{ width: 28, height: 28, borderRadius: 7, opacity: lit ? 1 : 0.72 }} />
+                    <span
+                      style={{
+                        fontFamily: F.mono,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        background: lit ? `${st.accent}24` : "rgba(255,255,255,0.06)",
+                        color: lit ? st.accent : C.mutedDark,
+                      }}
+                    >
+                      {st.badge}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        background: lit ? st.accent : "rgba(255,255,255,0.28)",
+                        boxShadow: lit ? `0 0 12px ${st.accent}` : "none",
+                      }}
+                    />
+                    <span style={{ fontSize: 22, fontWeight: 700, color: lit ? C.ivory : "#c4b6c1" }}>{st.name}</span>
+                  </div>
+
+                  <div style={{ fontSize: 15, color: C.mutedDark, marginTop: 8, lineHeight: 1.4 }}>{st.caption}</div>
+
+                  {/* Micro visualizer per state */}
+                  <div style={{ height: 22, marginTop: 14, display: "flex", alignItems: "center", gap: 4 }}>
+                    {st.name === "Listening" ? (
+                      [0, 1, 2, 3, 4, 5, 6].map((b) => (
+                        <i
+                          key={b}
+                          style={{
+                            width: 4,
+                            height: lit ? 8 + Math.abs(Math.sin(t * 7.5 + b * 0.9)) * 13 : 5,
+                            borderRadius: 99,
+                            background: lit ? st.accent : "rgba(255,255,255,0.2)",
+                          }}
+                        />
+                      ))
+                    ) : st.name === "Writing" ? (
+                      <div style={{ width: "100%", height: 4, borderRadius: 99, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+                        <div style={{ width: lit ? `${((t * 110) % 100)}%` : "25%", height: "100%", background: st.accent }} />
+                      </div>
+                    ) : st.name === "Check" ? (
+                      <div style={{ width: "100%", height: 4, borderRadius: 99, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+                        <div style={{ width: lit ? `${Math.max(12, (1 - (t - 6.2) / 1.8) * 100)}%` : "85%", height: "100%", background: st.accent }} />
+                      </div>
+                    ) : (
+                      <span style={{ fontFamily: F.mono, fontSize: 12, color: lit ? st.accent : "rgba(255,255,255,0.25)" }}>
+                        {st.name === "Ready" ? "gaze +2° · lips closed" : "idle · hotkey ready"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ fontFamily: F.mono, fontSize: 14, color: C.mutedDark, display: "flex", gap: 28 }}>
+          <span>01 · Look to arm</span>
+          <span>02 · Talk immediately</span>
+          <span>03 · Cancelable Check before Enter</span>
+        </div>
       </div>
-    </Canvas>
+    </LoopStage>
   );
-}
+};
+
+// Hero loop (used for GitHub README) showcasing real Obsidian Dark App plates
+export const HeroLoop: React.FC = () => {
+  const t = useLoopTime();
+  const phase = t < 3 ? 0 : t < 6 ? 1 : 2;
+  const imgSrc =
+    phase === 0
+      ? "screens/ui-dark-ready.png"
+      : phase === 1
+      ? "screens/ui-dark-listening.png"
+      : "screens/ui-dark-preview.png";
+  const tag =
+    phase === 0
+      ? "01 LOCKS TO YOUR GAZE · NO HOTKEY"
+      : phase === 1
+      ? "02 TALKS + 500 MS PRE-ROLL"
+      : "03 CANCELABLE CHECK · SAFE ENTER";
+
+  return (
+    <LoopStage>
+      <div style={{ padding: "42px 64px", display: "grid", gridTemplateColumns: "0.78fr 1.22fr", gap: 46, alignItems: "center", height: "100%", boxSizing: "border-box" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+            <Img src={staticFile("logo.png")} style={{ width: 42, height: 42, borderRadius: 11 }} />
+            <span style={{ fontFamily: F.mono, fontSize: 14, letterSpacing: "0.14em", color: C.amber }}>{tag}</span>
+          </div>
+          <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 78, lineHeight: 0.98, color: C.ivory }}>
+            Look. Talk. <span style={{ color: C.amber }}>Sent.</span>
+          </div>
+          <p style={{ fontSize: 21, lineHeight: 1.5, color: C.silver, marginTop: 22 }}>
+            Hands-free voice input that checks you are looking at the screen, cleans spoken commands on-device, and shows a cancelable preview before pressing Enter.
+          </p>
+        </div>
+        <div
+          style={{
+            borderRadius: 18,
+            overflow: "hidden",
+            border: "1px solid rgba(255, 255, 255, 0.14)",
+            boxShadow: "0 36px 88px rgba(0, 0, 0, 0.72), 0 0 60px rgba(251, 179, 3, 0.16)",
+          }}
+        >
+          <Img src={staticFile(imgSrc)} style={{ width: "100%", height: "auto", display: "block" }} />
+        </div>
+      </div>
+    </LoopStage>
+  );
+};
+
+// Cleanup loop (docs/README): laser transformation from spoken English to CLI
+export const Cleanup: React.FC = () => {
+  const t = useLoopTime();
+  const sweep = ease(t, 1.0, 3.2);
+  const done = ease(t, 2.8, 3.6);
+  return (
+    <LoopStage>
+      <div style={{ padding: "54px 78px", display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%", boxSizing: "border-box" }}>
+        <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 52, color: C.ivory }}>
+          Speak like a human. <span style={{ color: C.amber }}>Paste exact syntax.</span>
+        </div>
+        <div style={{ position: "relative", padding: "36px 40px", borderRadius: 20, background: "rgba(22, 8, 22, 0.92)", border: `1px solid ${done > 0.5 ? C.borderAmber : C.borderDark}` }}>
+          <div style={{ fontFamily: F.mono, fontSize: 15, color: C.mutedDark, marginBottom: 14, textDecoration: sweep > 0.5 ? "line-through" : "none" }}>
+            HEARD · um run cargo test dash dash release src main dot rs send it
+          </div>
+          <div style={{ fontFamily: F.mono, fontSize: 38, fontWeight: 700, color: done > 0.5 ? C.amberSoft : C.ivory }}>
+            {done > 0.5 ? "cargo test --release src/main.rs" : "um run cargo test dash dash release src main dot rs"}
+          </div>
+        </div>
+        <div style={{ fontFamily: F.mono, fontSize: 15, color: C.mutedDark }}>
+          cleanup.rs · Local deterministic dev formatter · Strips "um", "send it", fixes slashes & flags
+        </div>
+      </div>
+    </LoopStage>
+  );
+};
+
+// Obsidian Glassmorphic 4 Send Styles (Zero harsh white flash!)
+export const SendStyles: React.FC = () => {
+  const t = useLoopTime();
+  const pause = windowAt(t, 0.0, 2.5);
+  const nod = windowAt(t, 2.5, 5.0);
+  const phrase = windowAt(t, 5.0, 7.5);
+  const typeOnly = windowAt(t, 7.5, 10.0);
+
+  const modes = [
+    {
+      num: "01",
+      name: "Just pause",
+      detail: "Adaptive silence countdown, then Enter fires safely.",
+      foot: pause > 0.1 ? `Sending in ${(Math.max(0.2, 1.8 - (t / 2.5) * 1.6)).toFixed(1)}s` : "Auto countdown · Enter",
+      icon: "II",
+      lit: pause,
+      accent: C.amber,
+    },
+    {
+      num: "02",
+      name: "Nod to send",
+      detail: "Think as long as you need. Dip chin once to send.",
+      foot: nod > 0.55 ? "Nod +11° detected · Sent" : "Waits for head nod",
+      icon: "↓",
+      lit: nod,
+      accent: C.cyan,
+    },
+    {
+      num: "03",
+      name: 'Say "send it"',
+      detail: 'Strips "send it" cleanly and submits immediately.',
+      foot: phrase > 0.55 ? 'Stripped "send it" · Sent' : "End phrase trigger",
+      icon: "💬",
+      lit: phrase,
+      accent: "#dfa8ff",
+    },
+    {
+      num: "04",
+      name: "Type only",
+      detail: "Pastes clean text into the app. Never presses Enter.",
+      foot: typeOnly > 0.5 ? "Pasted · Enter left to you" : "Safest mode · No Enter",
+      icon: "⌘",
+      lit: typeOnly,
+      accent: C.emerald,
+    },
+  ];
+
+  return (
+    <LoopStage>
+      <div style={{ padding: "54px 72px", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 60, color: C.ivory, lineHeight: 1 }}>
+            Four ways to <span style={{ color: C.amber }}>send</span>
+          </div>
+          <div style={{ fontFamily: F.mono, fontSize: 15, letterSpacing: "0.14em", color: C.mutedDark }}>
+            CHOOSE HOW MUCH CONFIRMATION YOU WANT
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24 }}>
+          {modes.map((m) => {
+            const on = m.lit > 0.25;
+            return (
+              <div
+                key={m.name}
+                style={{
+                  height: 410,
+                  padding: "30px 28px",
+                  borderRadius: 24,
+                  background: on
+                    ? "linear-gradient(155deg, rgba(64, 18, 56, 0.96), rgba(20, 6, 18, 0.96))"
+                    : "rgba(20, 7, 20, 0.84)",
+                  border: on ? `1.8px solid ${m.accent}` : "1px solid rgba(255, 255, 255, 0.13)",
+                  boxShadow: on ? `0 26px 56px rgba(0, 0, 0, 0.65), 0 0 36px ${m.accent}2e` : "0 14px 32px rgba(0,0,0,0.4)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  transform: `translateY(${on ? -8 : 0}px)`,
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+                    <span
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        display: "grid",
+                        placeItems: "center",
+                        fontFamily: F.mono,
+                        fontSize: 18,
+                        fontWeight: 700,
+                        background: on ? `${m.accent}26` : "rgba(255,255,255,0.06)",
+                        color: on ? m.accent : C.silver,
+                        border: on ? `1px solid ${m.accent}66` : "1px solid rgba(255,255,255,0.1)",
+                      }}
+                    >
+                      {m.icon}
+                    </span>
+                    <span style={{ fontFamily: F.mono, fontSize: 13, letterSpacing: "0.14em", color: on ? m.accent : C.mutedDark }}>
+                      MODE {m.num}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: C.ivory, lineHeight: 1.15 }}>{m.name}</div>
+                  <div style={{ fontSize: 18, lineHeight: 1.5, color: C.mutedDark, marginTop: 14 }}>{m.detail}</div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    background: on ? `${m.accent}1f` : "rgba(255,255,255,0.04)",
+                    border: on ? `1px solid ${m.accent}55` : "1px solid rgba(255,255,255,0.08)",
+                    fontFamily: F.mono,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: on ? m.accent : C.silver,
+                  }}
+                >
+                  {m.foot}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </LoopStage>
+  );
+};
+
+// Cancel before send (real HUD styling + smooth interruption shield)
+export const Cancel: React.FC = () => {
+  const t = useLoopTime();
+  const canceled = t >= 3.0;
+  const barPct = Math.max(0, Math.min(100, (1 - t / 3.2) * 100));
+
+  return (
+    <LoopStage>
+      <div style={{ padding: "48px 72px", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 54, lineHeight: 1 }}>
+            Cancel anytime <span style={{ color: C.amber }}>before Enter</span>
+          </div>
+          <div style={{ fontFamily: F.mono, fontSize: 14, letterSpacing: "0.14em", color: C.mutedDark }}>
+            PREVIEW COUNTDOWN · 100% ABORTABLE
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1.25fr 0.75fr", gap: 36, alignItems: "center" }}>
+          <div
+            style={{
+              padding: "28px 34px",
+              borderRadius: 22,
+              background: canceled ? "rgba(38, 10, 18, 0.94)" : "rgba(22, 8, 22, 0.94)",
+              border: canceled ? "1.5px solid rgba(255, 92, 108, 0.7)" : `1.5px solid ${C.borderAmber}`,
+              boxShadow: canceled
+                ? "0 24px 60px rgba(0, 0, 0, 0.65), 0 0 36px rgba(255, 92, 108, 0.2)"
+                : "0 24px 60px rgba(0, 0, 0, 0.65), 0 0 36px rgba(251, 179, 3, 0.16)",
+            }}
+          >
+            {canceled ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 102 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <span style={{ padding: "6px 14px", borderRadius: 999, background: "rgba(255,92,108,0.18)", color: C.danger, fontFamily: F.mono, fontSize: 14, fontWeight: 700 }}>
+                    ABORTED
+                  </span>
+                  <span style={{ fontSize: 28, fontWeight: 700, color: C.ivory }}>Canceled. Nothing sent.</span>
+                </div>
+                <span style={{ fontFamily: F.mono, fontSize: 15, color: C.mutedDark }}>Clipboard clean</span>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F.mono, fontSize: 15, color: C.amber, marginBottom: 12 }}>
+                  <span>Paste + Enter into Cursor</span>
+                  <span>{(1.8 - t * 0.45).toFixed(1)}s</span>
+                </div>
+                <div style={{ fontFamily: F.mono, fontSize: 29, fontWeight: 700, color: C.ivory }}>cargo test --release src/main.rs</div>
+                <div style={{ height: 6, borderRadius: 99, background: "rgba(255,255,255,0.12)", marginTop: 18, overflow: "hidden" }}>
+                  <div style={{ width: `${barPct}%`, height: "100%", background: C.amber }} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gap: 12 }}>
+            {[
+              { k: "Esc", label: "Tap Esc key", on: canceled },
+              { k: "← →", label: "Shake your head", on: false },
+              { k: "Say", label: 'Say "scratch that" or keep talking', on: false },
+            ].map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  padding: "13px 18px",
+                  borderRadius: 14,
+                  background: item.on ? "rgba(255, 92, 108, 0.16)" : "rgba(255, 255, 255, 0.04)",
+                  border: item.on ? "1px solid rgba(255, 92, 108, 0.55)" : "1px solid rgba(255, 255, 255, 0.1)",
+                }}
+              >
+                <span
+                  style={{
+                    minWidth: 54,
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    textAlign: "center",
+                    fontFamily: F.mono,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    background: "rgba(0,0,0,0.4)",
+                    color: item.on ? C.danger : C.amber,
+                  }}
+                >
+                  {item.k}
+                </span>
+                <span style={{ fontSize: 17, fontWeight: 600, color: item.on ? C.ivory : C.silver }}>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </LoopStage>
+  );
+};
+
+// Risky command guard: dark crimson padlock shields Terminal Enter key
+export const Safety: React.FC = () => {
+  const t = useLoopTime();
+  const cmd = "git reset --hard && rm -rf target/";
+  const typedLen = Math.floor(ease(t, 0.6, 2.2) * cmd.length);
+  const shown = cmd.slice(0, typedLen);
+
+  return (
+    <LoopStage>
+      <div style={{ padding: "48px 72px", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 54, lineHeight: 1 }}>
+            Risky commands <span style={{ color: C.danger }}>never press Enter.</span>
+          </div>
+          <div style={{ fontFamily: F.mono, fontSize: 14, letterSpacing: "0.14em", color: C.danger }}>
+            DESTRUCTIVE GUARD · PASTE-ONLY DOWNGRADE
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, alignItems: "center" }}>
+          <div
+            style={{
+              padding: "24px 28px",
+              borderRadius: 20,
+              background: "rgba(32, 8, 16, 0.94)",
+              border: "1.5px solid rgba(255, 92, 108, 0.58)",
+              boxShadow: "0 20px 52px rgba(0,0,0,0.55), 0 0 32px rgba(255,92,108,0.16)",
+            }}
+          >
+            <div style={{ fontFamily: F.mono, fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 10 }}>
+              BLOCKED AUTO-ENTER · PASTE ONLY INTO TERMINAL
+            </div>
+            <div style={{ fontFamily: F.mono, fontSize: 24, fontWeight: 700, color: C.ivory }}>{cmd}</div>
+            <div style={{ fontSize: 15, color: C.mutedDark, marginTop: 12 }}>
+              Detected: git reset --hard, rm -rf
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: "24px 28px",
+              borderRadius: 20,
+              background: "rgba(14, 6, 14, 0.96)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              boxShadow: "0 20px 52px rgba(0,0,0,0.55)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: F.mono, fontSize: 13, color: C.mutedDark, marginBottom: 14 }}>
+              <span>ghostty · Terminal</span>
+              <span style={{ color: C.amber }}>ENTER WITHHELD</span>
+            </div>
+            <div style={{ fontFamily: F.mono, fontSize: 23, color: C.silver }}>
+              <span style={{ color: C.amber }}>$ </span>
+              {shown}
+              <span style={{ color: C.danger }}>|</span>
+            </div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginTop: 18, padding: "6px 14px", borderRadius: 10, background: "rgba(255, 92, 108, 0.14)", border: "1px solid rgba(255, 92, 108, 0.45)", fontFamily: F.mono, fontSize: 14, color: "#ffb8c0" }}>
+              Enter key locked · Waiting for your hand
+            </div>
+          </div>
+        </div>
+      </div>
+    </LoopStage>
+  );
+};
+
+// Privacy: Sleek SVG biometric face landmark scanner + RAM discard pulse (Zero cartoon grey face!)
+export const Privacy: React.FC = () => {
+  const t = useLoopTime();
+  const scanPct = ((t % 3.2) / 3.2) * 100;
+  const yaw = (Math.sin(t * 1.9) * 2.1).toFixed(1);
+  const mouthMar = (0.04 + Math.abs(Math.sin(t * 4.5)) * 0.09).toFixed(3);
+  const purged = t > 4.2 && t < 6.4;
+
+  return (
+    <LoopStage>
+      <div style={{ padding: "46px 72px", height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: F.serif, fontStyle: "italic", fontSize: 54, lineHeight: 1 }}>
+            The picture is <span style={{ color: C.cyan }}>never saved.</span>
+          </div>
+          <div style={{ fontFamily: F.mono, fontSize: 14, letterSpacing: "0.14em", color: C.emerald }}>
+            RAM ONLY · 0 DISK WRITES · 0 FRAMES UPLOADED
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "0.86fr 1.14fr", gap: 36, alignItems: "center" }}>
+          {/* Sleek dark biometric camera frame */}
+          <div
+            style={{
+              position: "relative",
+              height: 270,
+              borderRadius: 20,
+              background: "radial-gradient(circle at 50% 45%, #281026, #0d040d)",
+              border: "1px solid rgba(130, 232, 255, 0.35)",
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.6), 0 0 36px rgba(130, 232, 255, 0.14)",
+              overflow: "hidden",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            {/* Precision SVG landmark contour */}
+            <svg width="240" height="220" viewBox="0 0 240 220" style={{ opacity: purged ? 0.25 : 0.95 }}>
+              <path d="M 120 26 C 166 26 186 64 184 114 C 182 158 152 194 120 198 C 88 194 58 158 56 114 C 54 64 74 26 120 26 Z" fill="none" stroke="rgba(130,232,255,0.65)" strokeWidth="2" />
+              <path d="M 78 90 Q 94 82 110 90 Q 94 96 78 90 Z" fill="none" stroke="#82e8ff" strokeWidth="1.8" />
+              <path d="M 130 90 Q 146 82 162 90 Q 146 96 130 90 Z" fill="none" stroke="#82e8ff" strokeWidth="1.8" />
+              <circle cx="94" cy="89" r="3.5" fill="#82e8ff" />
+              <circle cx="146" cy="89" r="3.5" fill="#82e8ff" />
+              <path d="M 120 92 L 120 124 L 112 130 M 120 124 L 128 130" fill="none" stroke="rgba(130,232,255,0.45)" strokeWidth="1.5" />
+              <ellipse cx="120" cy="154" rx="22" ry={6 + Math.abs(Math.sin(t * 4.5)) * 6} fill="none" stroke="#fbb303" strokeWidth="2.4" />
+              <path d="M 30 34 L 30 16 L 48 16 M 210 34 L 210 16 L 192 16 M 30 186 L 30 204 L 48 204 M 210 186 L 210 204 L 192 204" fill="none" stroke="#fbb303" strokeWidth="2.2" />
+            </svg>
+            <div style={{ position: "absolute", left: 22, right: 22, top: `${scanPct}%`, height: 2, background: "linear-gradient(90deg, transparent, #82e8ff, transparent)", opacity: 0.7 }} />
+            <div style={{ position: "absolute", left: 16, bottom: 12, fontFamily: F.mono, fontSize: 12, color: purged ? C.emerald : C.cyan }}>
+              {purged ? "FRAME DISCARDED IN RAM · ZERO BYTES LEFT" : "WEBCAM IN MEMORY · EXTRACTING NUMBERS"}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 14 }}>
+            {[
+              { k: "Head yaw / pitch", v: `${yaw}° · facing screen`, accent: C.cyan },
+              { k: "Lip aperture delta", v: `${mouthMar} · moving`, accent: C.amber },
+              { k: "Disk / network output", v: "0 frames saved · 0 bytes sent", accent: C.emerald },
+            ].map((row) => (
+              <div
+                key={row.k}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "20px 26px",
+                  borderRadius: 16,
+                  background: "rgba(22, 8, 22, 0.90)",
+                  border: "1px solid rgba(255, 255, 255, 0.13)",
+                }}
+              >
+                <span style={{ fontSize: 18, fontWeight: 600, color: C.silver }}>{row.k}</span>
+                <span style={{ fontFamily: F.mono, fontSize: 18, fontWeight: 700, color: row.accent }}>{row.v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </LoopStage>
+  );
+};

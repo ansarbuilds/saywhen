@@ -1,119 +1,232 @@
 #!/usr/bin/env python3
 """
-Builds film/public/demo-soundtrack.wav (60.0s, 44.1 kHz, 16-bit stereo)
-by mixing:
-1. Real studio music track from brag (happy-beats-business-moves-vol-12-by-ende-dot-app.mp3, CC BY 4.0 Sascha Ende)
-   with automatic sidechain ducking under voiceover.
-2. 12 Microsoft Azure Neural (en-US-AvaNeural) voiceover reads in film/public/vo/01.mp3..12.mp3.
-3. Real CC0 sound effects from brag (Kenney.nl / OpenGameArt):
-   - 32 mechanical keypress WAVs (keypress-001..032.wav) for ticker & terminal injection
-   - impactSoft_medium_001..004.ogg for whip pans & iris transitions
-   - impactBell_heavy_000 / 003.ogg for major reveals & end card lockup
-   - interface/click_002..005.ogg, switch_007.ogg, bong_001.ogg, drop_001.ogg, casino/card-slide-1.ogg
+Generate a cinema-grade 60.0s (44.1 kHz, stereo) soundtrack for saywhen launch film
+AND export frame-accurate 30fps reactive envelopes to film/src/audioData.ts.
+
+Pipeline:
+1. Studio music bed (happy-beats-business-moves-vol-12-by-ende-dot-app.mp3)
+   shaped with intro ramp, stereo sidechain ducking under Ava Neural VO, and tail fade.
+2. Cleanly pre-processed Neural VO (12 cues in film/public/vo/01..12.mp3) via FFmpeg
+   85 Hz high-pass + presence air shelf for studio broadcast clarity.
+3. Precision SFX choreography from assets-src/sfx/ (impacts, glass ticks, keyboard bursts,
+   confirmation bell, red security vault lock) + synthesized sub-drops (55 -> 31 Hz) &
+   filtered air whoosh risers at scene cuts.
+4. EBU R128 loudness mastering (-14 LUFS / -1.2 dBTP) via FFmpeg loudnorm.
+5. Extracts 1800-frame AUDIO_RMS & AUDIO_PEAK into film/src/audioData.ts.
 """
+
+from __future__ import annotations
 
 import math
 import os
 import random
+import shutil
 import struct
 import subprocess
 import tempfile
 import wave
 
-SR = 44100
-DURATION = 60.0
-TOTAL_SAMPLES = int(SR * DURATION)
-FPS = 30.0
-
-FILM_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FILM_DIR = os.path.dirname(SCRIPT_DIR)
 VO_DIR = os.path.join(FILM_DIR, "public", "vo")
 SFX_DIR = os.path.join(FILM_DIR, "assets-src", "sfx")
 MUSIC_DIR = os.path.join(FILM_DIR, "assets-src", "music")
 OUT_WAV = os.path.join(FILM_DIR, "public", "demo-soundtrack.wav")
+OUT_AUDIODATA = os.path.join(FILM_DIR, "src", "audioData.ts")
 
+SR = 44100
+DURATION = 60.0
+FPS = 30
+TOTAL_SAMPLES = int(SR * DURATION)
+
+# Exact frame offsets matching film/src/cinematic.tsx
 VOICE_CUES = [
     ("01", 14),
-    ("02", 118),
-    ("03", 230),
+    ("02", 120),
+    ("03", 228),
     ("04", 318),
-    ("05", 500),
+    ("05", 498),
     ("06", 604),
-    ("07", 720),
-    ("08", 990),
-    ("09", 1132),
-    ("10", 1288),
-    ("11", 1536),
-    ("12", 1688),
+    ("07", 718),
+    ("08", 916),
+    ("09", 1130),
+    ("10", 1284),
+    ("11", 1498),
+    ("12", 1682),
 ]
 
 
-def decode_audio_to_stereo(src_path: str) -> list[tuple[float, float]]:
-    """Decode any audio file (.mp3, .ogg, .wav) to 44.1kHz stereo floats [-1, 1] using npx remotion ffmpeg."""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        subprocess.run(
-            [
-                "npx",
-                "remotion",
-                "ffmpeg",
-                "-y",
-                "-i",
-                src_path,
-                "-ac",
-                "2",
-                "-ar",
-                str(SR),
-                "-f",
-                "wav",
-                tmp_path,
-            ],
-            cwd=FILM_DIR,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        with wave.open(tmp_path, "rb") as wf:
-            n_frames = wf.getnframes()
-            raw = wf.readframes(n_frames)
-            vals = struct.unpack(f"<{n_frames * 2}h", raw)
-            return [(vals[i * 2] / 32768.0, vals[i * 2 + 1] / 32768.0) for i in range(n_frames)]
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+def find_ffmpeg() -> str:
+    sys_ff = shutil.which("ffmpeg")
+    if sys_ff:
+        return sys_ff
+    return "ffmpeg"
 
 
-def mix_stereo(
-    buf_l: list[float],
-    buf_r: list[float],
-    clip: list[tuple[float, float]],
+FFMPEG = find_ffmpeg()
+
+
+def decode_audio_to_stereo(path: str, af: str | None = None) -> tuple[list[float], list[float]]:
+    cmd = [FFMPEG, "-v", "error", "-i", path]
+    if af:
+        cmd.extend(["-af", af])
+    cmd.extend(["-f", "s16le", "-acodec", "pcm_s16le", "-ar", str(SR), "-ac", "2", "pipe:1"])
+    raw = subprocess.check_output(cmd)
+    n = len(raw) // 4
+    samples = struct.unpack(f"<{n * 2}h", raw)
+    left = [samples[i * 2] / 32768.0 for i in range(n)]
+    right = [samples[i * 2 + 1] / 32768.0 for i in range(n)]
+    return left, right
+
+
+def mix_sfx(
+    dest_l: list[float],
+    dest_r: list[float],
+    sfx: tuple[list[float], list[float]],
     start_sec: float,
-    gain_l: float = 1.0,
-    gain_r: float = 1.0,
+    gain: float = 0.5,
+    pan: float = 0.0,
 ) -> None:
-    idx0 = int(start_sec * SR)
-    for i, (sl, sr) in enumerate(clip):
-        idx = idx0 + i
+    sl, sr = sfx
+    start_idx = int(start_sec * SR)
+    lg = gain * (1.0 - max(0.0, pan))
+    rg = gain * (1.0 + min(0.0, pan))
+    for i in range(len(sl)):
+        idx = start_idx + i
         if 0 <= idx < TOTAL_SAMPLES:
-            buf_l[idx] += sl * gain_l
-            buf_r[idx] += sr * gain_r
+            dest_l[idx] += sl[i] * lg
+            dest_r[idx] += sr[i] * rg
+
+
+def add_sub_drop(
+    dest_l: list[float],
+    dest_r: list[float],
+    start_sec: float,
+    f0: float = 64.0,
+    f1: float = 31.0,
+    dur: float = 0.52,
+    amp: float = 0.34,
+) -> None:
+    start_idx = int(start_sec * SR)
+    n = int(dur * SR)
+    phase = 0.0
+    for i in range(n):
+        idx = start_idx + i
+        if not (0 <= idx < TOTAL_SAMPLES):
+            continue
+        p = i / max(1, n - 1)
+        freq = f1 + (f0 - f1) * math.exp(-5.0 * p)
+        phase += 2.0 * math.pi * freq / SR
+        atk = min(1.0, p / 0.018)
+        dec = math.exp(-4.2 * p)
+        s = amp * atk * dec * (0.85 * math.sin(phase) + 0.15 * math.sin(phase * 2.0))
+        dest_l[idx] += s
+        dest_r[idx] += s
+
+
+def add_whoosh_riser(
+    dest_l: list[float],
+    dest_r: list[float],
+    peak_sec: float,
+    rise_dur: float = 0.44,
+    tail_dur: float = 0.18,
+    amp: float = 0.22,
+    pan_sweep: float = 0.35,
+) -> None:
+    rng = random.Random(int(peak_sec * 1000))
+    total_dur = rise_dur + tail_dur
+    n = int(total_dur * SR)
+    start_idx = int((peak_sec - rise_dur) * SR)
+    lp_l = 0.0
+    lp_r = 0.0
+    hp_l = 0.0
+    hp_r = 0.0
+    prev_l = 0.0
+    prev_r = 0.0
+    for i in range(n):
+        idx = start_idx + i
+        if not (0 <= idx < TOTAL_SAMPLES):
+            continue
+        t = i / SR
+        if t < rise_dur:
+            u = t / rise_dur
+            env = (u ** 2.6) * amp
+            cutoff = 0.06 + 0.42 * (u ** 2.0)
+        else:
+            u = (t - rise_dur) / max(0.01, tail_dur)
+            env = math.exp(-7.0 * u) * amp * 0.85
+            cutoff = 0.45 * (1.0 - 0.65 * u)
+
+        nl = rng.uniform(-1.0, 1.0)
+        nr = rng.uniform(-1.0, 1.0)
+        # Gentle high-pass (~140 Hz) + sweeping low-pass filter for silky air riser
+        hp_l = 0.96 * (hp_l + nl - prev_l)
+        prev_l = nl
+        hp_r = 0.96 * (hp_r + nr - prev_r)
+        prev_r = nr
+        lp_l += cutoff * (hp_l - lp_l)
+        lp_r += cutoff * (hp_r - lp_r)
+
+        pan = math.sin((i / n - 0.5) * math.pi) * pan_sweep
+        dest_l[idx] += lp_l * env * (1.0 - pan)
+        dest_r[idx] += lp_r * env * (1.0 + pan)
+
+
+def write_audio_data_ts(wav_path: str, ts_path: str) -> None:
+    with wave.open(wav_path, "rb") as w:
+        assert w.getframerate() == SR
+        nframes = w.getnframes()
+        raw = w.readframes(nframes)
+    samples = struct.unpack(f"<{nframes * 2}h", raw)
+    spc = SR // FPS  # 1470 samples per frame
+    total_frames = int(DURATION * FPS)
+    rms_list = []
+    peak_list = []
+    for f in range(total_frames):
+        s0 = f * spc
+        s1 = min(nframes, s0 + spc)
+        acc = 0.0
+        pk = 0.0
+        count = max(1, s1 - s0)
+        for s in range(s0, s1):
+            l_v = samples[s * 2] / 32768.0
+            r_v = samples[s * 2 + 1] / 32768.0
+            m = 0.5 * (abs(l_v) + abs(r_v))
+            acc += 0.5 * (l_v * l_v + r_v * r_v)
+            if m > pk:
+                pk = m
+        rms_list.append(round(math.sqrt(acc / count), 3))
+        peak_list.append(round(pk, 3))
+
+    content = (
+        "// Auto-extracted 30fps audio reactive envelopes from demo-soundtrack.wav\n"
+        f"export const AUDIO_RMS: number[] = {rms_list};\n"
+        f"export const AUDIO_PEAK: number[] = {peak_list};\n"
+    )
+    with open(ts_path, "w", encoding="utf-8") as fp:
+        fp.write(content)
+    print(f"Wrote {len(rms_list)} reactive frames to {ts_path}")
 
 
 def main() -> None:
     print("Decoding studio music track (happy-beats-business-moves-vol-12)...")
     music_path = os.path.join(MUSIC_DIR, "happy-beats-business-moves-vol-12-by-ende-dot-app.mp3")
-    music_samples = decode_audio_to_stereo(music_path)
+    music_l, music_r = decode_audio_to_stereo(
+        music_path,
+        af="highpass=f=32,equalizer=f=240:t=q:w=1.2:g=-2.5,equalizer=f=3500:t=q:w=1.4:g=-2.0",
+    )
 
-    print("Decoding SFX library from brag...")
-    sfx_cache: dict[str, list[tuple[float, float]]] = {}
+    print("Decoding SFX assets...")
     sfx_files = [
         "impact/impactSoft_medium_001.ogg",
         "impact/impactSoft_medium_002.ogg",
         "impact/impactSoft_medium_003.ogg",
         "impact/impactSoft_medium_004.ogg",
+        "impact/impactSoft_heavy_001.ogg",
         "impact/impactBell_heavy_000.ogg",
         "impact/impactBell_heavy_003.ogg",
-        "impact/impactBell_heavy_004.ogg",
+        "impact/impactGlass_light_002.ogg",
+        "impact/impactMetal_heavy_000.ogg",
         "interface/bong_001.ogg",
         "interface/click_002.ogg",
         "interface/click_003.ogg",
@@ -126,145 +239,183 @@ def main() -> None:
         "casino/card-place-1.ogg",
         "ui/click2.ogg",
     ]
-    for rel in sfx_files:
-        sfx_cache[rel] = decode_audio_to_stereo(os.path.join(SFX_DIR, rel))
+    sfx_cache = {rel: decode_audio_to_stereo(os.path.join(SFX_DIR, rel)) for rel in sfx_files}
+    keypresses = [
+        decode_audio_to_stereo(os.path.join(SFX_DIR, "keyboard", f"keypress-{k:03d}.wav"))
+        for k in range(1, 13)
+    ]
 
-    keypress_clips = []
-    for k in range(1, 33):
-        kp_path = os.path.join(SFX_DIR, "keyboard", f"keypress-{k:03d}.wav")
-        if os.path.exists(kp_path):
-            keypress_clips.append(decode_audio_to_stereo(kp_path))
-
-    print("Decoding 12 Ava neural voiceover clips...")
+    print("Decoding 12 Neural voiceover clips with studio presence EQ...")
     vo_l = [0.0] * TOTAL_SAMPLES
     vo_r = [0.0] * TOTAL_SAMPLES
     vo_env = [0.0] * TOTAL_SAMPLES
+    vo_filter = "highpass=f=85,equalizer=f=3200:t=q:w=1.2:g=2.4,equalizer=f=7500:t=q:w=1.0:g=1.6"
 
     for cid, start_frame in VOICE_CUES:
-        mp3_path = os.path.join(VO_DIR, f"{cid}.mp3")
-        clip = decode_audio_to_stereo(mp3_path)
-        start_idx = int((start_frame / FPS) * SR)
-        for i, (sl, sr) in enumerate(clip):
-            idx = start_idx + i
+        path = os.path.join(VO_DIR, f"{cid}.mp3")
+        cl, cr = decode_audio_to_stereo(path, af=vo_filter)
+        s0 = int((start_frame / FPS) * SR)
+        for i in range(len(cl)):
+            idx = s0 + i
             if 0 <= idx < TOTAL_SAMPLES:
-                vo_l[idx] += sl * 1.12
-                vo_r[idx] += sr * 1.12
-                vo_env[idx] = max(vo_env[idx], abs(sl), abs(sr))
+                vl = cl[i] * 1.18
+                vr = cr[i] * 1.18
+                vo_l[idx] += vl
+                vo_r[idx] += vr
+                vo_env[idx] = max(vo_env[idx], abs(vl), abs(vr))
 
-    # Smooth sidechain envelope (attack 35ms, release 320ms)
-    smooth_env = [0.0] * TOTAL_SAMPLES
-    cur = 0.0
-    att = math.exp(-1.0 / (0.035 * SR))
-    rel = math.exp(-1.0 / (0.320 * SR))
-    for i in range(TOTAL_SAMPLES):
-        target = 1.0 if vo_env[i] > 0.025 else 0.0
-        if target > cur:
-            cur = att * cur + (1.0 - att) * target
-        else:
-            cur = rel * cur + (1.0 - rel) * target
-        smooth_env[i] = cur
+    # Smooth exponential sidechain envelope (attack 28ms, release 310ms)
+    print("Mixing sidechain-ducked score, risers, sub-drops & foley...")
+    duck_env = 0.0
+    atk_coef = 1.0 - math.exp(-1.0 / (SR * 0.028))
+    rel_coef = 1.0 - math.exp(-1.0 / (SR * 0.310))
 
-    # Lay down the music track with warm cinematic sub-bass reinforcement and VO ducking
     mix_l = [0.0] * TOTAL_SAMPLES
     mix_r = [0.0] * TOTAL_SAMPLES
+    n_music = len(music_l)
 
     for i in range(TOTAL_SAMPLES):
+        target = 1.0 if vo_env[i] > 0.022 else 0.0
+        coef = atk_coef if target > duck_env else rel_coef
+        duck_env += coef * (target - duck_env)
+
+        ml = music_l[i % n_music]
+        mr = music_r[i % n_music]
         t = i / SR
-        ml, mr = music_samples[i % len(music_samples)]
-        # Fade in first 0.6s, fade out last 1.8s
-        fade_in = min(1.0, t / 0.6)
-        fade_out = min(1.0, (DURATION - t) / 1.8) if t > DURATION - 1.8 else 1.0
-        # Duck from 0.34 down to 0.14 when voiceover is active
-        duck = 0.34 - 0.20 * smooth_env[i]
-        # Warm analog sub-octave pulse on 110 BPM grid
-        sub = 0.04 * math.sin(2.0 * math.pi * 55.0 * t) * (0.5 + 0.5 * math.cos(2.0 * math.pi * (109.96 / 60.0) * t))
-        mix_l[i] = ml * duck * fade_in * fade_out + sub * fade_out
-        mix_r[i] = mr * duck * fade_in * fade_out + sub * fade_out
 
-    # Layer SFX synced to exact scene transitions and interactions
-    rng = random.Random(42)
+        fade_in = min(1.0, t / 0.45)
+        fade_out = min(1.0, (DURATION - t) / 1.65) if t > DURATION - 1.65 else 1.0
+        # Vibrant musical energy between sentences (0.40 -> 0.145 under VO)
+        duck = 0.40 - 0.255 * duck_env
 
-    # 1. Scene transitions & whip pans
-    transitions = [
-        (0.05, "impact/impactBell_heavy_000.ogg", 0.45),
-        (1.60, "impact/impactSoft_medium_001.ogg", 0.55),
-        (3.90, "impact/impactSoft_medium_002.ogg", 0.58),
-        (7.45, "impact/impactSoft_medium_003.ogg", 0.55),
-        (10.45, "impact/impactSoft_medium_004.ogg", 0.58),
-        (16.38, "impact/impactSoft_medium_001.ogg", 0.52),
-        (20.05, "impact/impactBell_heavy_004.ogg", 0.52),  # Pixel burst send!
-        (23.78, "impact/impactSoft_medium_002.ogg", 0.55),
-        (32.70, "impact/impactSoft_medium_003.ogg", 0.55),
-        (37.45, "impact/impactSoft_medium_004.ogg", 0.55),
-        (42.65, "impact/impactSoft_medium_001.ogg", 0.55),
-        (50.90, "impact/impactSoft_medium_002.ogg", 0.55),
-        (55.85, "impact/impactBell_heavy_003.ogg", 0.55),  # End card lockup
+        mix_l[i] = ml * duck * fade_in * fade_out + vo_l[i]
+        mix_r[i] = mr * duck * fade_in * fade_out + vo_r[i]
+
+    # Scene-synced sub-bass impacts + glossy air risers at major film transitions
+    for sec, amp in [
+        (0.05, 0.32),
+        (3.93, 0.35),
+        (7.47, 0.26),
+        (16.40, 0.32),
+        (20.00, 0.36),
+        (23.80, 0.28),
+        (30.13, 0.34),
+        (37.47, 0.30),
+        (42.47, 0.38),
+        (49.47, 0.30),
+        (55.60, 0.40),
+    ]:
+        add_sub_drop(mix_l, mix_r, sec, amp=amp)
+
+    for peak_sec, amp, pan in [
+        (3.92, 0.24, -0.25),
+        (16.38, 0.20, 0.25),
+        (20.00, 0.28, 0.0),
+        (23.78, 0.20, -0.20),
+        (30.12, 0.24, 0.20),
+        (42.45, 0.25, -0.25),
+        (55.60, 0.32, 0.0),
+    ]:
+        add_whoosh_riser(mix_l, mix_r, peak_sec, amp=amp, pan_sweep=pan)
+
+    # Tactile foley choreography synced directly to beat visual events
+    sfx_events = [
+        # Beat 1: Option+Space mechanical impact + prism shatter -> whip pan
+        (0.06, "impact/impactBell_heavy_000.ogg", 0.34, 0.0),
+        (0.92, "impact/impactGlass_light_002.ogg", 0.38, -0.15),
+        (1.62, "impact/impactSoft_medium_001.ogg", 0.46, 0.15),
+        # Beat 2: Sculpted ribbon -> Look. Talk. Sent.
+        (3.93, "impact/impactSoft_medium_002.ogg", 0.48, 0.0),
+        (5.55, "interface/bong_001.ogg", 0.36, 0.18),
+        # Beat 3: Biometric face lock
+        (7.47, "interface/switch_007.ogg", 0.36, -0.20),
+        (8.60, "interface/click_003.ogg", 0.32, 0.18),
+        # Beat 4: Speech capture live ticks
+        (10.50, "interface/click_002.ogg", 0.34, 0.0),
+        # Beat 5: Rack focus -> Check preview + countdown clicks
+        (16.40, "impact/impactSoft_medium_003.ogg", 0.44, 0.0),
+        (17.10, "interface/click_005.ogg", 0.30, 0.15),
+        (17.70, "interface/click_005.ogg", 0.26, 0.15),
+        (18.30, "interface/click_005.ogg", 0.24, 0.15),
+        # Beat 6: Hyperspace burst + Terminal send confirmation
+        (20.00, "impact/impactSoft_heavy_001.ogg", 0.42, 0.0),
+        (22.10, "interface/bong_001.ogg", 0.42, 0.0),
+        # Beat 7: Compiler laser scan + Obsidian/Light theme flip
+        (23.80, "casino/card-slide-1.ogg", 0.38, -0.15),
+        (26.20, "casino/card-place-1.ogg", 0.36, 0.15),
+        (28.30, "interface/switch_007.ogg", 0.38, 0.0),
+        # Beat 8: Four Send Modes sequential cards (Pause / Nod / Send it / Type only)
+        (30.15, "casino/card-slide-1.ogg", 0.40, -0.35),
+        (31.65, "casino/card-place-1.ogg", 0.42, -0.12),
+        (33.20, "interface/click_005.ogg", 0.42, 0.12),
+        (34.90, "interface/switch_007.ogg", 0.40, 0.35),
+        # Beat 9: Always Cancelable strike
+        (37.48, "interface/drop_001.ogg", 0.42, 0.0),
+        (39.10, "ui/click2.ogg", 0.44, 0.0),
+        # Beat 10: Destructive Command Vault Lock
+        (42.48, "impact/impactMetal_heavy_000.ogg", 0.46, 0.0),
+        (43.25, "interface/drop_002.ogg", 0.38, -0.15),
+        (45.50, "interface/glitch_002.ogg", 0.20, 0.15),
+        # Beat 11: Privacy grid sweep
+        (49.48, "impact/impactSoft_medium_004.ogg", 0.36, 0.0),
+        # Beat 12: Finale golden reveal
+        (55.62, "impact/impactBell_heavy_003.ogg", 0.48, 0.0),
+        (57.20, "interface/bong_001.ogg", 0.32, 0.0),
     ]
-    for sec, name, vol in transitions:
-        mix_stereo(mix_l, mix_r, sfx_cache[name], sec, vol, vol)
+    for sec, rel, gain, pan in sfx_events:
+        mix_sfx(mix_l, mix_r, sfx_cache[rel], sec, gain, pan)
 
-    # 2. Look / Talk / Sent triptych hits (Beat 2: frames 118, 146, 174)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/drop_001.ogg"], 118 / FPS, 0.50, 0.50)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/drop_002.ogg"], 146 / FPS, 0.52, 0.52)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/bong_001.ogg"], 174 / FPS, 0.58, 0.58)
+    # Beat 6 fast mechanical terminal execution ticks
+    for k in range(16):
+        mix_sfx(mix_l, mix_r, keypresses[k % len(keypresses)], 20.12 + k * 0.075, 0.34, -0.1 + 0.2 * (k / 15.0))
 
-    # 3. 3D card slides & UI switches (Beat 3, Beat 5, Beat 7, Beat 8)
-    card_times = [2.1, 7.8, 16.8, 24.4, 26.8, 29.2, 33.1, 34.4, 35.7]
-    for ct in card_times:
-        mix_stereo(mix_l, mix_r, sfx_cache["casino/card-slide-1.ogg"], ct, 0.34, 0.34)
+    # Write temporary raw PCM mix -> EBU R128 loudness-mastered stereo WAV via FFmpeg
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+        raw_wav = tf.name
 
-    ui_clicks = [0.6, 1.0, 1.4, 8.4, 17.5, 18.5, 19.5, 33.6, 35.0, 36.3, 38.6, 44.2, 57.5]
-    for uc in ui_clicks:
-        mix_stereo(mix_l, mix_r, sfx_cache["interface/click_003.ogg"], uc, 0.42, 0.42)
+    try:
+        interleaved = bytearray(TOTAL_SAMPLES * 4)
+        for i in range(TOTAL_SAMPLES):
+            # Soft saturation ceiling before mastering
+            lv = math.tanh(mix_l[i] * 0.92)
+            rv = math.tanh(mix_r[i] * 0.92)
+            il = max(-32767, min(32767, int(lv * 32767.0)))
+            ir = max(-32767, min(32767, int(rv * 32767.0)))
+            struct.pack_into("<hh", interleaved, i * 4, il, ir)
 
-    # Cancel override glitch + switch (Beat 9: f1160 = 38.67s)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/glitch_002.ogg"], 38.65, 0.38, 0.38)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/switch_007.ogg"], 38.75, 0.48, 0.48)
+        with wave.open(raw_wav, "wb") as wf:
+            wf.setnchannels(2)
+            wf.setsampwidth(2)
+            wf.setframerate(SR)
+            wf.writeframes(bytes(interleaved))
 
-    # Destructive guard shield lock (Beat 10: f1335 = 44.5s)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/bong_001.ogg"], 44.50, 0.55, 0.55)
+        print("Mastering final soundtrack through FFmpeg EBU R128 (-14 LUFS)...")
+        subprocess.run(
+            [
+                FFMPEG,
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                raw_wav,
+                "-af",
+                "loudnorm=I=-14:TP=-1.2:LRA=8",
+                "-ar",
+                str(SR),
+                "-ac",
+                "2",
+                "-c:a",
+                "pcm_s16le",
+                OUT_WAV,
+            ],
+            check=True,
+        )
+    finally:
+        if os.path.exists(raw_wav):
+            os.remove(raw_wav)
 
-    # 4. Mechanical keyboard keypresses during:
-    # - Beat 4 Caret-tracking ticker (11.2s to 15.4s)
-    t_cur = 11.20
-    while t_cur < 15.35:
-        kp = rng.choice(keypress_clips)
-        pan = rng.uniform(0.85, 1.0)
-        mix_stereo(mix_l, mix_r, kp, t_cur, 0.24 * pan, 0.24 * (1.85 - pan))
-        t_cur += rng.uniform(0.055, 0.085)
-
-    # - Beat 6 Terminal command injection burst (20.3s to 21.3s)
-    t_cur = 20.30
-    while t_cur < 21.25:
-        kp = rng.choice(keypress_clips)
-        mix_stereo(mix_l, mix_r, kp, t_cur, 0.28, 0.28)
-        t_cur += 0.032
-
-    # - Beat 11 Slot reel ticks (51.3s to 54.4s)
-    reel_ticks = [51.35, 51.55, 51.72, 51.88, 52.04, 52.20, 52.38, 52.58, 52.82, 53.15, 53.55]
-    for rt in reel_ticks:
-        mix_stereo(mix_l, mix_r, sfx_cache["interface/click_002.ogg"], rt, 0.36, 0.36)
-    mix_stereo(mix_l, mix_r, sfx_cache["interface/bong_001.ogg"], 53.65, 0.55, 0.55)
-
-    # Combine voiceover + soft saturation limiter
-    out_bytes = bytearray(TOTAL_SAMPLES * 4)
-    for i in range(TOTAL_SAMPLES):
-        l = mix_l[i] + vo_l[i]
-        r = mix_r[i] + vo_r[i]
-        # Soft limiter
-        l = math.tanh(l * 0.92) * 0.94
-        r = math.tanh(r * 0.92) * 0.94
-        li = max(-32767, min(32767, int(l * 32767)))
-        ri = max(-32767, min(32767, int(r * 32767)))
-        struct.pack_into("<hh", out_bytes, i * 4, li, ri)
-
-    with wave.open(OUT_WAV, "wb") as wf:
-        wf.setnchannels(2)
-        wf.setsampwidth(2)
-        wf.setframerate(SR)
-        wf.writeframes(out_bytes)
-
-    print(f"Wrote {OUT_WAV} ({os.path.getsize(OUT_WAV):,} bytes)")
+    write_audio_data_ts(OUT_WAV, OUT_AUDIODATA)
+    print(f"Done: {OUT_WAV}")
 
 
 if __name__ == "__main__":
