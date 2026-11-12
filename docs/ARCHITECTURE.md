@@ -11,7 +11,7 @@ Status: draft, pre-prototype. Everything here is a plan, not a measured result.
 - **Transcription:** whisper.cpp (via Rust bindings) and NVIDIA Parakeet, user-selectable. Models downloaded on first run to `<app_data_dir>/models` in packaged `.app` / `.exe` builds (or `./models` in dev runs), never committed.
 - **AI cleanup:** deterministic local developer pass (`src-tauri/src/cleanup.rs`, `< 50 us`) plus opt-in secondary local Ollama (`http://127.0.0.1:11434/v1/chat/completions`) or OpenAI-compatible BYOK pass (`run_opt_in_llm_cleanup`, off by default, `1.2s` timeout with deterministic fallback).
 - **Text injection:** `enigo` for keystrokes (`src-tauri/src/inject.rs`, `inject/macos.rs`, `inject/windows.rs`), clipboard paste via `arboard` as the default path, then a synthetic Enter after a length-scaled delay.
-- **Storage:** `<app_data_dir>/utterance-history.jsonl` for 7-day local transcript history (`src-tauri/src/history.rs`), automatically pruned on startup and write (`HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`), with one-click purge. Settings in `settings.local.json`.
+- **Storage:** `<app_data_dir>/utterance-history.jsonl` for 7-day local transcript history (`src-tauri/src/history.rs`), automatically pruned on startup and write (`HISTORY_RETENTION_MS = 7 days`, `MAX_HISTORY_ENTRIES = 200`), with one-click purge. Settings in `<app_data_dir>/settings.local.json` (a legacy repo-root `settings.local.json` is copied there once on first launch).
 
 ## Pipeline
 

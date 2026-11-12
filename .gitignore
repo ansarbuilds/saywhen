@@ -30,5 +30,10 @@ settings.local.json
 # Scratch AI image output (not part of the app)
 generated_images/
 
-# Remotion launch film (local only, not part of the app)
-film/
+# Remotion launch film build output & heavy audio sources
+film/node_modules/
+film/out/
+film/assets-src/
+film/public/demo-soundtrack.wav
+brag-output/
+youtube/
