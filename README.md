@@ -13,9 +13,18 @@ saywhen is a free, open source desktop app for Mac and Windows. It is for people
 
 Your voice and camera stay on your computer. You always get a short chance to cancel before anything is sent.
 
-[Watch the demo](#watch-the-demo) · [How it works](#how-it-works) · [Install](#install) · [For Claude and Cursor](#for-coding-assistants) · [Docs](docs/README.md) · [Project page](https://ansarbuilds.dev/p/saywhen/)
+[Watch the demo](#watch-the-demo) · [Safe to try](#safe-to-try) · [How it works](#how-it-works) · [Install](#install) · [For Claude and Cursor](#for-coding-assistants) · [Docs](docs/README.md) · [Project page](https://ansarbuilds.dev/p/saywhen/)
 
 **Beta.** You can build it and try it today. Packaged installers exist, and real-device checks for Windows, Intel Macs, and signed Mac builds are still open. See the [launch checklist](docs/LAUNCH_CHECKLIST.md).
+
+## Safe to try
+
+The camera, the microphone, and Enter are the parts worth asking about.
+
+- **The camera does not keep a picture.** Each frame is used for a moment to notice your face, then thrown away. Nothing is saved, and nothing is uploaded.
+- **Your voice stays on this computer.** Speech becomes text here. The audio is discarded after that. A cloud clean-up step exists, and it stays off until you turn it on.
+- **You see the words before they go anywhere.** A preview comes first. Press Esc, shake your head, or keep talking to cancel. For a first try, choose **Type only**. Enter is never pressed.
+- **The install warning is a missing signature.** This beta is not signed by Apple or Microsoft yet, so Mac and Windows ask an extra question. That question is about the signature. [Install](#install) explains the one step. You can also [build saywhen yourself](#build-it-yourself) from this repository and skip the downloaded app.
 
 ---
 
@@ -155,13 +164,13 @@ Get the beta installer from the **[v0.2.0 release](https://github.com/kmsmohamed
 - **Mac:** the `.dmg` file (`aarch64` is for Apple Silicon, `x64` is for Intel Macs when that build is included). Open it and drag saywhen into Applications.
 - **Windows:** the `-setup.exe` file. Run it.
 
-If your Mac says saywhen "is damaged" or "cannot be opened", that build was not signed by Apple yet. Run this once in Terminal, then open the app again:
+If your Mac says saywhen "is damaged" or "cannot be opened", this beta is not signed by Apple yet. The message is about that missing signature. Run this once in Terminal, then open the app again:
 
 ```bash
 xattr -cr /Applications/saywhen.app
 ```
 
-On Windows, if SmartScreen appears, click **More info**, then **Run anyway**.
+On Windows, SmartScreen appears for the same reason: this beta is not signed yet. Click **More info**, then **Run anyway**.
 
 ### Build it yourself
 
