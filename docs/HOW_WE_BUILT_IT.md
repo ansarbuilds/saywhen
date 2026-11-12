@@ -1,6 +1,8 @@
 # How we built saywhen
 
-This is the story of saywhen, told simply. Every number here was measured, and the full technical log lives in [ROADMAP.md](ROADMAP.md).
+This is the story of saywhen, told simply. Measurements below come from specific prototype sessions and synthetic replay tests, not a broad user study. The full technical log lives in [ROADMAP.md](ROADMAP.md).
+
+![How camera and microphone signals combine before local transcription and a cancelable preview.](visuals/intent-and-privacy.png)
 
 ## The itch
 
@@ -21,7 +23,7 @@ We used Google's free MediaPipe face tracker, which finds about 470 points on a 
 
 What we learned:
 
-- It is **fast**: 12 to 15 milliseconds per frame, so checking 15 times a second costs almost nothing.
+- It is **fast**: 12 to 15 milliseconds per frame, in the prototype sessions. That does not yet establish whole-app CPU or battery cost.
 - "Facing the screen or not" was separated **100%** of the time in our test sessions.
 - "Mouth still" was correctly ignored **96.2%** of the time.
 - But **the camera alone cannot tell chewing or smiling from talking.** That proved we needed the microphone too. Neither sensor is enough on its own; together they are.
@@ -76,6 +78,9 @@ The first tester to try the new look had a laptop camera beside a big monitor, s
 
 ## A logo and a calmer look (8 November 2026)
 
+![saywhen preview screen with plum and amber styling and four send modes, captured with demo data.](screenshots/stage4-cleanup-preview.png)
+
+
 saywhen got its own logo: a ribbon "S" in silver and amber on deep plum. The app was redesigned around it, aiming for the calm, rounded feel of the best voice tools: soft white cards, rounded buttons, one strong colour (plum) and amber only for "live" moments like listening and the send countdown. The logo now sits in the sidebar, the welcome screen, the floating pill and the app icon, and a new **Guide** page inside the app explains what to do and what to avoid in plain words.
 
 ## What is next
@@ -90,3 +95,5 @@ saywhen got its own logo: a ribbon "S" in silver and amber on deep plum. The app
 - **Always cancelable.** Nothing is sent without a chance to stop it.
 - **Fail loudly.** If something breaks, saywhen tells you instead of quietly doing something else.
 - **Measure everything.** If we claim it is better, there is a number.
+
+[Back to documentation](README.md) · [Detailed roadmap](ROADMAP.md) · [Launch checklist](LAUNCH_CHECKLIST.md)

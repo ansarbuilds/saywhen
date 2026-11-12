@@ -220,6 +220,7 @@ fn test_clipboard_restore_decision() {
 }
 
 #[test]
+#[ignore = "requires an interactive desktop; run explicitly during release smoke testing"]
 fn test_frontmost_app_detection_latency_20_calls() {
     let mut samples_us = Vec::with_capacity(20);
     let mut last = FrontmostApp::default();
@@ -244,6 +245,7 @@ fn test_frontmost_app_detection_latency_20_calls() {
 }
 
 #[test]
+#[ignore = "requires an interactive desktop; run explicitly during release smoke testing"]
 fn test_clipboard_image_preservation_roundtrip() {
     let Ok(mut cb) = Clipboard::new() else {
         return;
