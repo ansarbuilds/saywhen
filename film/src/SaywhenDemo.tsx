@@ -1097,11 +1097,11 @@ export const SaywhenDemo: React.FC = () => {
     { label: "MediaPipe 15 FPS.", acc: false },
     { label: "Silero VAD v5.", acc: false },
     { label: "Whisper Metal GPU.", acc: false },
-    { label: "Zero Cloud Calls.", acc: false },
+    { label: "Cloud Off By Default.", acc: false },
     { label: "Zero Telemetry.", acc: false },
     { label: "Cursor & Claude Code.", acc: false },
     { label: "Ghostty & Zed.", acc: false },
-    { label: "100% On-Device.", acc: true },
+    { label: "Runs On Your Computer.", acc: true },
   ];
   const RL = REEL_ITEMS.length - 1;
   const REH = 166;
@@ -1600,7 +1600,7 @@ export const SaywhenDemo: React.FC = () => {
                     letterSpacing: "0.08em",
                   }}
                 >
-                  MEDIAPIPE 3D FACE TOPOLOGY · 15 FPS
+                  ON-DEVICE FACE TRACKING · 15 FPS
                 </span>
                 <span
                   style={{
@@ -1613,7 +1613,7 @@ export const SaywhenDemo: React.FC = () => {
                     fontWeight: 700,
                   }}
                 >
-                  ● GAZE LOCKED · ARMED
+                  ● FACING SCREEN · READY
                 </span>
               </div>
 
@@ -1640,7 +1640,7 @@ export const SaywhenDemo: React.FC = () => {
                 {[
                   { k: "Head Yaw", v: "-1.4°", sub: "Facing display" },
                   { k: "Lip Aperture", v: "0.042", sub: "Motion active" },
-                  { k: "Pre-Roll Ring", v: "500 ms", sub: "Zero clipped words" },
+                  { k: "Pre-Roll Ring", v: "500 ms", sub: "First word kept" },
                 ].map((stat, idx) => (
                   <div
                     key={idx}
@@ -1958,7 +1958,7 @@ export const SaywhenDemo: React.FC = () => {
                       color: C.mutedDark,
                     }}
                   >
-                    Target: Ghostty (dev.mitchellh.ghostty)
+                    Target: Ghostty (com.mitchellh.ghostty)
                   </span>
                 </div>
                 <span
@@ -2200,7 +2200,7 @@ export const SaywhenDemo: React.FC = () => {
                     style={{ marginTop: 22, color: C.mutedDark, fontSize: 24 }}
                   >
                     <div>
-                      {"   "}Compiling saywhen v0.1.0
+                      {"   "}Compiling saywhen v0.2.0
                       (/Users/dev/saywhen/src-tauri)
                     </div>
                     {T6 >= 1.45 && (
@@ -2245,7 +2245,7 @@ export const SaywhenDemo: React.FC = () => {
                           display: "inline-block",
                         }}
                       >
-                        test result: ok. 48 passed; 0 failed; finished in 0.41s
+                        test result: ok. 45 passed; 0 failed; 3 ignored; finished in 0.41s
                       </div>
                     )}
                   </div>
@@ -2390,7 +2390,7 @@ export const SaywhenDemo: React.FC = () => {
                     color: C.mutedLight,
                   }}
                 >
-                  0 ms network latency · Deterministic Rust pass
+                  No network call · Deterministic Rust pass
                 </span>
               </div>
 
@@ -2515,7 +2515,7 @@ export const SaywhenDemo: React.FC = () => {
               {
                 title: "Pause.",
                 badge: "MODE 01 · ADAPTIVE SILENCE",
-                desc: "Waits 550 ms on a crisp command, or 1,100 ms mid-thought so it never cuts you off.",
+                desc: "Waits 550 ms on a crisp command, or 1,100 ms mid-thought, so you can finish the sentence.",
                 metric: "780 ms",
                 x: 160,
                 activeWindow: [0, 1.55],
@@ -3156,18 +3156,7 @@ export const SaywhenDemo: React.FC = () => {
         </div>
       </MotionGroup>
 
-      {/* Simulated Screen-Space Pointer for Beat 6 Send Press */}
-      {frame >= 585 && frame <= 628 && (
-        <SimulatedCursor
-          t={(frame - 585) / FPS}
-          keys={[
-            { t: 0, x: CX + 280, y: 420 },
-            { t: 0.55, x: CX + 110, y: 258 },
-          ]}
-          presses={[0.62]}
-          show={[0.05, 1.15]}
-        />
-      )}
+      {/* No mouse pointer in Beat 6: saywhen presses Enter by itself, hands-free. */}
 
       {/* Subtle Voiceover Captions at Bottom */}
       <FilmSubtitles frame={frame} />
