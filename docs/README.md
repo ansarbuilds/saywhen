@@ -1,8 +1,10 @@
 # Explore saywhen
 
-![saywhen: Look. Talk. Sent. Voice input for terminals and coding assistants.](visuals/readme-hero.png)
+![saywhen: Look. Talk. Sent. Silver and amber brand artwork.](visuals/brand-hero.png)
 
 Start with what you want to do. The user guides explain the app in plain language; the engineering documents go deeper into how it is built.
+
+**[Watch the original demo film](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)** · [See its poster](../README.md#watch-the-demo)
 
 ## Try it
 
