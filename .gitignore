@@ -32,6 +32,7 @@ generated_images/
 
 # Remotion launch film build output & heavy audio sources
 film/node_modules/
+film/.venv/
 film/out/
 film/assets-src/
 film/public/demo-soundtrack.wav

@@ -3,7 +3,7 @@
 # saywhen
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-fbb303.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/kmsmohamedansar/saywhen?color=fbb303&label=release)](https://github.com/kmsmohamedansar/saywhen/releases/latest)
+[![Release](https://img.shields.io/github/v/release/kmsmohamedansar/saywhen?include_prereleases&color=fbb303&label=release)](https://github.com/kmsmohamedansar/saywhen/releases/tag/v0.2.0)
 [![CI](https://github.com/kmsmohamedansar/saywhen/actions/workflows/ci.yml/badge.svg)](https://github.com/kmsmohamedansar/saywhen/actions/workflows/ci.yml)
 ![Platforms: macOS and Windows](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-dfe5ec.svg)
 
@@ -150,7 +150,7 @@ The full checklist is [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md). The rules your a
 
 ### Download the app
 
-Get the latest installer from the **[Releases page](https://github.com/kmsmohamedansar/saywhen/releases/latest)**:
+Get the beta installer from the **[v0.2.0 release](https://github.com/kmsmohamedansar/saywhen/releases/tag/v0.2.0)**:
 
 - **Mac:** the `.dmg` file (`aarch64` is for Apple Silicon, `x64` is for Intel Macs when that build is included). Open it and drag saywhen into Applications.
 - **Windows:** the `-setup.exe` file. Run it.
