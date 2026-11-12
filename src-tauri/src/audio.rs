@@ -404,40 +404,80 @@ impl DictationConfig {
             .clamp(-MAX_CALIBRATED_YAW_OFFSET_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG);
     }
 
-    pub fn config_file_path() -> std::path::PathBuf {
-        let candidates = [
+    /// Writable settings file. Lives next to utterance history so saves do not depend on
+    /// the process working directory (a `.app` launch uses `/`, which is read-only).
+    pub fn settings_file_path(app_data_dir: &std::path::Path) -> std::path::PathBuf {
+        app_data_dir.join("settings.local.json")
+    }
+
+    /// Older builds stored settings next to the repo, relative to the working directory.
+    fn legacy_settings_candidates() -> Vec<std::path::PathBuf> {
+        let mut paths = vec![
             std::path::PathBuf::from("../settings.local.json"),
             std::path::PathBuf::from("settings.local.json"),
         ];
-        for c in &candidates {
-            if c.exists() {
-                return c.clone();
-            }
-        }
-        std::path::PathBuf::from("../settings.local.json")
+        // Dev binaries are often opened with cwd `/`. This compile-time path still finds
+        // the repo copy on the machine that built the app, and is a no-op if it is absent.
+        paths.push(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../settings.local.json"),
+        );
+        paths
     }
 
-    pub fn load_or_default() -> Self {
-        let path = Self::config_file_path();
-        if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(mut parsed) = serde_json::from_str::<DictationConfig>(&raw) {
-                parsed.sanitize_after_parse();
+    fn read_settings_file(path: &std::path::Path) -> Option<Self> {
+        let raw = std::fs::read_to_string(path).ok()?;
+        let mut parsed = serde_json::from_str::<DictationConfig>(&raw).ok()?;
+        parsed.sanitize_after_parse();
+        Some(parsed)
+    }
+
+    /// Loads `<app_data_dir>/settings.local.json`. If that file does not exist yet, copies
+    /// the first readable legacy `settings.local.json` into the app data directory.
+    pub fn load_with_legacy(
+        app_data_dir: &std::path::Path,
+        legacy: &[std::path::PathBuf],
+    ) -> Self {
+        let path = Self::settings_file_path(app_data_dir);
+        if let Some(parsed) = Self::read_settings_file(&path) {
+            return parsed;
+        }
+        for candidate in legacy {
+            if let Some(parsed) = Self::read_settings_file(candidate) {
+                if let Err(err) = parsed.save_to_path(&path) {
+                    eprintln!(
+                        "saywhen: could not migrate settings from {} to {}: {err}",
+                        candidate.display(),
+                        path.display()
+                    );
+                }
                 return parsed;
             }
         }
         Self::default()
     }
 
-    pub fn save_to_disk(&self) -> Result<(), String> {
-        let path = Self::config_file_path();
+    pub fn load_for_app_data(app_data_dir: &std::path::Path) -> Self {
+        Self::load_with_legacy(app_data_dir, &Self::legacy_settings_candidates())
+    }
+
+    pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    format!(
+                        "Could not create settings directory {}: {e}",
+                        parent.display()
+                    )
+                })?;
+            }
+        }
         let mut persisted = self.clone();
         // Never persist `save_tuning_audio_enabled: true` across restarts.
         persisted.save_tuning_audio_enabled = false;
         let json = serde_json::to_string_pretty(&persisted)
             .map_err(|e| format!("Could not save settings: {e}"))?;
-        std::fs::write(&path, json).map_err(|e| {
-            let shown = std::fs::canonicalize(&path).unwrap_or(path.clone());
-            format!("Could not save settings to {}: {e}", shown.display())
+        std::fs::write(path, json).map_err(|e| {
+            format!("Could not save settings to {}: {e}", path.display())
         })
     }
 }
@@ -827,12 +867,15 @@ pub struct AudioPipelineController {
     cmd_tx: Sender<AudioCommand>,
     config: Arc<Mutex<DictationConfig>>,
     shared: Arc<Mutex<SharedCaptureBuffer>>,
+    settings_path: std::path::PathBuf,
 }
 
 impl AudioPipelineController {
     pub fn spawn(app_handle: AppHandle, transcriber: Arc<TranscriberEngine>) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<AudioCommand>();
-        let config = Arc::new(Mutex::new(DictationConfig::load_or_default()));
+        let app_data_dir = resolve_settings_dir(&app_handle);
+        let settings_path = DictationConfig::settings_file_path(&app_data_dir);
+        let config = Arc::new(Mutex::new(DictationConfig::load_for_app_data(&app_data_dir)));
         let shared = Arc::new(Mutex::new(SharedCaptureBuffer::new()));
 
         let config_clone = Arc::clone(&config);
@@ -854,6 +897,7 @@ impl AudioPipelineController {
             cmd_tx,
             config,
             shared,
+            settings_path,
         }
     }
 
@@ -877,7 +921,7 @@ impl AudioPipelineController {
             }
             *guard = new_cfg.clone();
         }
-        let saved = new_cfg.save_to_disk();
+        let saved = new_cfg.save_to_path(&self.settings_path);
         if device_changed {
             let _ = self.send_command(AudioCommand::SwitchDevice(preferred_device));
         }
@@ -900,7 +944,7 @@ impl AudioPipelineController {
             guard.hud_enabled = !guard.hud_enabled;
             guard.clone()
         };
-        if let Err(e) = updated.save_to_disk() {
+        if let Err(e) = updated.save_to_path(&self.settings_path) {
             eprintln!("{e}");
         }
         updated
@@ -1101,6 +1145,18 @@ fn resample_to_16k(input: &[f32], in_rate: u32) -> Vec<f32> {
         output.push(s0 + frac * (s1 - s0));
     }
     output
+}
+
+fn resolve_settings_dir(app_handle: &AppHandle) -> std::path::PathBuf {
+    match app_handle.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!(
+                "saywhen: app data directory unavailable ({err}); settings will use a temporary directory"
+            );
+            std::env::temp_dir().join("saywhen")
+        }
+    }
 }
 
 pub fn unix_timestamp_ms() -> u64 {
@@ -2500,5 +2556,40 @@ mod tests {
         parsed.save_tuning_audio_enabled = true;
         parsed.sanitize_after_parse();
         assert!(!parsed.save_tuning_audio_enabled);
+    }
+
+    #[test]
+    fn settings_save_in_app_data_dir_and_prefer_it_over_legacy() {
+        let root = std::env::temp_dir().join(format!(
+            "saywhen-settings-test-{}",
+            std::process::id()
+        ));
+        let app_data = root.join("appdata");
+        let legacy = root.join("legacy").join("settings.local.json");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let mut cfg = DictationConfig::default();
+        cfg.vad_threshold = 0.42;
+        cfg.hud_enabled = false;
+        cfg.save_to_path(&legacy).unwrap();
+
+        let loaded = DictationConfig::load_with_legacy(&app_data, &[legacy.clone()]);
+        assert!((loaded.vad_threshold - 0.42).abs() < f32::EPSILON);
+        assert!(!loaded.hud_enabled);
+        let migrated = DictationConfig::settings_file_path(&app_data);
+        assert!(migrated.is_file());
+
+        let mut updated = loaded;
+        updated.vad_threshold = 0.55;
+        updated.save_to_path(&migrated).unwrap();
+
+        let mut stale = DictationConfig::default();
+        stale.vad_threshold = 0.1;
+        stale.save_to_path(&legacy).unwrap();
+
+        let again = DictationConfig::load_with_legacy(&app_data, &[legacy]);
+        assert!((again.vad_threshold - 0.55).abs() < f32::EPSILON);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

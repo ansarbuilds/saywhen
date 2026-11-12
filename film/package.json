@@ -1,0 +1,24 @@
+{
+  "name": "saywhen-film",
+  "private": true,
+  "version": "1.0.0",
+  "description": "12-second launch film for saywhen, built in Remotion.",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render SaywhenAnnounce out/saywhen-announce.mp4 --codec=h264 --pixel-format=yuv420p --crf=14",
+    "render:demo": "remotion render SaywhenDemo out/saywhen-demo.mp4 --codec=h264 --pixel-format=yuv420p --crf=14"
+  },
+  "dependencies": {
+    "@fontsource/instrument-serif": "5.3.0",
+    "@fontsource/plus-jakarta-sans": "5.3.0",
+    "@remotion/cli": "4.0.543",
+    "@remotion/fonts": "4.0.543",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.543"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}
