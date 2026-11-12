@@ -29,9 +29,13 @@ No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or
 
 ## Who it's for
 
+[![A keyboard rests in a glass case. Behind it, out of focus, a person sits at a laptop with both hands off the keys.](docs/visuals/keyboard-museum.jpg)](https://ansarbuilds.dev/p/saywhen/#who)
+
+*Six silent seconds. The keyboard stays in the case. GitHub cannot play it here, so [watch the loop on the project page](https://ansarbuilds.dev/p/saywhen/#who). It is a film, not a measurement.*
+
 [![At home, both hands rest off the keyboard while a small pill glows above an amber laptop screen.](docs/visuals/who-its-for.jpg)](https://ansarbuilds.dev/p/saywhen/#who)
 
-*Eight silent seconds. Home, the pill lights, then the office. GitHub cannot play it here, so [watch the loop on the project page](https://ansarbuilds.dev/p/saywhen/#who). It is a film, not a measurement.*
+*Then the office. At home the hands stay down. At the office the pill is dark.*
 
 Talk on the days you work from home. In the 2025 Stack Overflow Developer Survey, **32.4%** of developers worked fully remotely and **37.1%** were hybrid. **12.6%** could choose, and **17.9%** worked in an office. In the US, **45%** worked fully remotely. Those shares are the people who answered the work question. They are not a count of who wants voice input.
 

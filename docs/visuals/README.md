@@ -13,6 +13,8 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 | `send-styles.png` | Four send modes and shared policy constraints |
 | `home-day.jpg` | Earlier home-desk illustration. The film loop replaced it on the page. |
 | `home-and-office.jpg` | Earlier split illustration. The film loop replaced it on the page. |
+| `keyboard-museum.mp4` | Six-second film loop: a keyboard in a glass case, then the person talks to the screen with both hands on a cup. Timing is not a measurement. |
+| `keyboard-museum.jpg` | Still from that loop, the keyboard in the case. |
 | `who-its-for.mp4` | Eight-second film loop: home with the pill, the light to the screen, then the office. No words in the picture. Timing is not a measurement. |
 | `who-its-for.jpg` | Still from that loop, used where a video cannot play. |
 
