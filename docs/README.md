@@ -1,6 +1,6 @@
 # Explore saywhen
 
-![saywhen: Look. Talk. Sent. Silver and amber brand artwork.](visuals/brand-hero.png)
+![The saywhen pill moves from Waiting to Check as spoken words become cargo test --release. The preview counts down and the command is sent to Terminal.](visuals/animated/hero-loop.gif)
 
 Start with what you want to do. The user guides explain the app in plain language; the engineering documents go deeper into how it is built.
 

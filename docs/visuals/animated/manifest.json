@@ -1,0 +1,184 @@
+[
+  {
+    "name": "hero-loop",
+    "width": 1600,
+    "height": 800,
+    "duration": 9,
+    "alt": "The saywhen pill moves from Waiting to Check as spoken words become cargo test --release. The preview counts down and the command is sent to Terminal.",
+    "caption": "Look. Talk. Sent.",
+    "placement": "README header, above the project title",
+    "files": {
+      "gif": {
+        "name": "hero-loop.gif",
+        "width": 800,
+        "height": 400
+      },
+      "mp4": {
+        "name": "hero-loop.mp4",
+        "width": 1280,
+        "height": 640
+      },
+      "png": {
+        "name": "hero-loop.png",
+        "width": 1280,
+        "height": 640
+      }
+    }
+  },
+  {
+    "name": "five-states",
+    "width": 1600,
+    "height": 500,
+    "duration": 8,
+    "alt": "The five saywhen states light up in order: Waiting, Ready, Listening, Writing, and Check. A short line under each state says what the app is waiting for.",
+    "caption": "See what saywhen is waiting for.",
+    "placement": "How it works",
+    "files": {
+      "gif": {
+        "name": "five-states.gif",
+        "width": 800,
+        "height": 250
+      },
+      "mp4": {
+        "name": "five-states.mp4",
+        "width": 1280,
+        "height": 400
+      },
+      "png": {
+        "name": "five-states.png",
+        "width": 1280,
+        "height": 400
+      }
+    }
+  },
+  {
+    "name": "cleanup",
+    "width": 1600,
+    "height": 500,
+    "duration": 6,
+    "alt": "Two spoken phrases are crossed out as saywhen turns them into cargo test --release and kubectl get pods.",
+    "caption": "Say the words. Get the command.",
+    "placement": "How it works, after the stop-talking step",
+    "files": {
+      "gif": {
+        "name": "cleanup.gif",
+        "width": 800,
+        "height": 250
+      },
+      "mp4": {
+        "name": "cleanup.mp4",
+        "width": 1280,
+        "height": 400
+      },
+      "png": {
+        "name": "cleanup.png",
+        "width": 1280,
+        "height": 400
+      }
+    }
+  },
+  {
+    "name": "send-styles",
+    "width": 1600,
+    "height": 700,
+    "duration": 10,
+    "alt": "Four send cards show a countdown, a nod, the words send it, and typing without pressing Enter.",
+    "caption": "Choose how you want to send.",
+    "placement": "Pick how you send",
+    "files": {
+      "gif": {
+        "name": "send-styles.gif",
+        "width": 800,
+        "height": 350
+      },
+      "mp4": {
+        "name": "send-styles.mp4",
+        "width": 1280,
+        "height": 560
+      },
+      "png": {
+        "name": "send-styles.png",
+        "width": 1280,
+        "height": 560
+      }
+    }
+  },
+  {
+    "name": "cancel",
+    "width": 1600,
+    "height": 500,
+    "duration": 6,
+    "alt": "Pressing Esc stops a preview countdown and shows Canceled. Nothing sent. The visual also shows that shaking your head or talking again can stop the countdown.",
+    "caption": "Cancel while the preview counts down.",
+    "placement": "Pick how you send, after the ways to stop a send",
+    "files": {
+      "gif": {
+        "name": "cancel.gif",
+        "width": 800,
+        "height": 250
+      },
+      "mp4": {
+        "name": "cancel.mp4",
+        "width": 1280,
+        "height": 400
+      },
+      "png": {
+        "name": "cancel.png",
+        "width": 1280,
+        "height": 400
+      }
+    }
+  },
+  {
+    "name": "safety",
+    "width": 1600,
+    "height": 500,
+    "duration": 6,
+    "alt": "A warning marks rm -rf dist/ as paste only. The command sits at the terminal prompt with Enter still unpressed.",
+    "caption": "Risky commands wait for your hand.",
+    "placement": "Safety built in",
+    "files": {
+      "gif": {
+        "name": "safety.gif",
+        "width": 800,
+        "height": 250
+      },
+      "mp4": {
+        "name": "safety.mp4",
+        "width": 1280,
+        "height": 400
+      },
+      "png": {
+        "name": "safety.png",
+        "width": 1280,
+        "height": 400
+      }
+    }
+  },
+  {
+    "name": "privacy",
+    "width": 1600,
+    "height": 500,
+    "duration": 8,
+    "alt": "An illustrated camera frame produces readings for head angle, lips moving, and face present. The picture fades away and the readings remain.",
+    "caption": "The picture is never saved. Only the numbers are used.",
+    "placement": "Is it private?",
+    "files": {
+      "gif": {
+        "name": "privacy.gif",
+        "width": 800,
+        "height": 250
+      },
+      "mp4": {
+        "name": "privacy.mp4",
+        "width": 1280,
+        "height": 400
+      },
+      "png": {
+        "name": "privacy.png",
+        "width": 1280,
+        "height": 400
+      }
+    }
+  }
+]
