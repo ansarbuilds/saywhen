@@ -8,6 +8,8 @@ Imagine talking to a friend who is helping you at your computer. You do not pres
 
 saywhen tries to be that friend for your computer.
 
+![The default intent gate combines face, gaze and lip movement with microphone speech detection before capturing an utterance. Processing is local; optional paths are explained below.](visuals/intent-and-privacy.png)
+
 ## The four helpers inside saywhen
 
 ### 1. The watcher (camera)
@@ -35,11 +37,11 @@ The listener checks the microphone about 30 times a second and asks: "Is this a 
 
 It also keeps the last half second of sound in a small memory, like a tape that keeps rewinding. That way, when you start talking, your very first word is already saved, even though saywhen needed a moment to notice you.
 
-**saywhen only starts recording when the watcher AND the listener both say yes.** So a podcast playing in the background, or someone else talking in the room, will not set it off. Your lips are not moving, so the watcher says no.
+**In the default hands-free mode, both the watcher and listener must agree before an utterance starts.** This helps reject a podcast or another person speaking when your own lips are still. It reduces accidental starts; it does not guarantee they never happen. The manual hotkey and optional wake word provide separate ways to start.
 
 ### 3. The writer (speech to text)
 
-When you stop talking, the writer turns your recording into text. It uses a speech model called Whisper that runs on your own computer (on a Mac it uses the graphics chip). On an Apple Silicon Mac a short sentence takes well under half a second.
+When you stop talking, the writer turns your recording into text. It uses a speech model called Whisper that runs on your own computer (on a Mac it uses the graphics chip). In the recorded Apple Silicon benchmark, 1.5 seconds of audio took 87 to 473 milliseconds to transcribe with Tiny.en. Your model and hardware will affect the time.
 
 Then a tidy-up step fixes the words developers use a lot:
 
@@ -68,6 +70,11 @@ And you can always stop it: shake your head, press Esc, or (in the countdown) ju
 
 ## The five moods of saywhen
 
+![saywhen cycles through ready, listening, writing, preview and delivery in an illustrated pause-mode example.](visuals/workflow.gif)
+
+*Concept animation with simplified timing.* [Static alternative](visuals/workflow-still.png).
+
+
 You can see which mood saywhen is in by the colour of the window and the small floating pill. The colours below are the defaults, taken from the saywhen logo (plum, silver and amber). In **Settings > Colours** you can pick another palette and choose whether the glow changes with each mood. There is also a **Guide** page inside the app with the do's and don'ts.
 
 | Mood | What it means | Colour |
@@ -94,4 +101,6 @@ saywhen is careful about pressing Enter, because Enter makes things happen.
 | Camera pictures | **Never.** Thrown away a split second after they are looked at. |
 | Your voice recordings | **No.** Deleted right after they become text. (Unless you switch on "Save recordings" in the Lab to help improve saywhen.) |
 | The text you said | **7 days**, on your computer only, so you can search and copy it. You can turn this off or clear it. |
-| Anything sent to the internet | **Nothing**, unless you switch on the optional AI clean-up and point it somewhere yourself. |
+| Internet access | Setup downloads model/runtime files. After setup, local dictation works offline. Optional remote AI cleanup sends text to the endpoint you choose. |
+
+[Back to documentation](README.md) · [Install saywhen](../README.md#install) · [Engineering details](ARCHITECTURE.md)
