@@ -6,7 +6,7 @@ Status: beta preparation complete locally; public launch sign-off is pending.
 
 - Frontend production build passes and includes the camera model and MediaPipe WASM runtime.
 - macOS Apple Silicon debug `.app` packaging succeeds. This is not a signed production installer test.
-- 45 automated Rust tests pass, including model format validation; 3 desktop/GPU tests are explicitly ignored by default.
+- 46 automated Rust tests pass, including model format validation and the model checksum check; 3 desktop/GPU tests are explicitly ignored by default.
 - 3 Node release tests pass: wrong release tags, failed model requests and corrupt camera-model responses are rejected.
 - Release metadata versions agree. CI and release packaging now run these checks before bundling.
 - Camera asset preparation validates the pinned face model's SHA-256 and copies WASM from the installed npm version. Cached asset preparation passes.
@@ -19,7 +19,7 @@ Record the version, OS version, hardware and result for each applicable platform
 | Gate | Apple Silicon | Intel Mac | Windows x64 |
 | --- | --- | --- | --- |
 | Clean checkout: `npm ci`, `npm test`, `npm run check:release`, `npm run build` | Local pass on 2026-11-12 (macOS 27.0.1, M4, existing checkout); CI pending | Pending CI | Pending CI |
-| Locked Rust tests pass | Local pass on 2026-11-12 (45 passed, 3 ignored) | Pending | Pending |
+| Locked Rust tests pass | Local pass on 2026-11-12 (46 passed, 3 ignored) | Pending | Pending |
 | Release installer builds and opens on a fresh account | Pending | Pending | Pending |
 | Camera, microphone and typing permissions: deny, retry, grant | Pending | Pending | Pending |
 | Download Tiny, interrupt the download, retry, restart | Pending | Pending | Pending |
@@ -55,7 +55,7 @@ The GPU benchmark crashed inside Metal allocation in the restricted agent sessio
 
 ## Remaining hardening
 
-- Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. They are not yet pinned to cryptographic model hashes.
+- Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. Since 2026-11-12 they are also pinned to one revision of the model repository and to SHA-256 digests. Both digests were checked against real downloads of Tiny and Base. The v0.2.0 installers predate this, so it ships with the next build.
 - The current webview CSP is disabled. A restrictive policy needs testing with MediaPipe WASM, blob workers and Tauri IPC before enabling it.
 - Review optional remote cleanup and API-key storage before advertising it for sensitive work.
 - Real-user accuracy, CPU and battery results are still needed. Existing replay numbers are synthetic-corpus results.

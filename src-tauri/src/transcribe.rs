@@ -181,13 +181,15 @@ impl TranscriberEngine {
             "base.en" => "ggml-base.en.bin",
             _ => return Err(format!("Unsupported model id: {}", model_id)),
         };
+        let expected_sha256 = pinned_model_sha256(filename)
+            .ok_or_else(|| format!("No pinned checksum for model: {}", model_id))?;
 
         let dir = self.resolve_models_dir();
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create models dir: {}", e))?;
         let dest = dir.join(filename);
         let url = format!(
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
-            filename
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/{}/{}",
+            MODEL_REPO_REVISION, filename
         );
 
         // Never expose a partial download as an installed model or overwrite a working one.
@@ -218,6 +220,7 @@ impl TranscriberEngine {
                 return Err("Model download failed. Check your connection and retry.".to_string());
             }
             validate_downloaded_model(&temporary)?;
+            verify_model_sha256(&temporary, expected_sha256)?;
             // An existing model is kept intact. Downloads are serialized by download_lock.
             if validate_downloaded_model(&dest).is_err() {
                 if dest.exists() {
@@ -453,8 +456,48 @@ fn clean_whisper_hallucinations(input: &str) -> String {
     result.trim().to_string()
 }
 
+// Speech models are downloaded from one fixed revision of the whisper.cpp model repository
+// and must match these SHA-256 digests (taken from that repository's file metadata).
+const MODEL_REPO_REVISION: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
+
+fn pinned_model_sha256(filename: &str) -> Option<&'static str> {
+    match filename {
+        "ggml-tiny.en.bin" => {
+            Some("921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f")
+        }
+        "ggml-base.en.bin" => {
+            Some("a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002")
+        }
+        _ => None,
+    }
+}
+
+fn file_sha256_hex(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher).map_err(|e| e.to_string())?;
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect())
+}
+
+// Fail loudly: a download that is not the expected file is never installed.
+fn verify_model_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let actual = file_sha256_hex(path)?;
+    if actual != expected {
+        return Err(
+            "The downloaded speech model does not match its expected checksum. Nothing was installed. Please retry."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 // Reject error pages and obviously truncated responses before marking a model installed.
-// This is a format sanity check, not a cryptographic authenticity check.
+// This is a format sanity check. The checksum above is the authenticity check.
 fn validate_downloaded_model(path: &Path) -> Result<(), String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
@@ -491,6 +534,25 @@ mod tests {
         assert!(validate_downloaded_model(&path).is_ok());
         drop(file);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn model_checksum_accepts_only_the_expected_file() {
+        let dir =
+            std::env::temp_dir().join(format!("saywhen-checksum-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.bin");
+        std::fs::write(&path, b"abc").unwrap();
+        let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(file_sha256_hex(&path).unwrap(), abc);
+        assert!(verify_model_sha256(&path, abc).is_ok());
+        std::fs::write(&path, b"abd").unwrap();
+        assert!(verify_model_sha256(&path, abc).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+        for name in ["ggml-tiny.en.bin", "ggml-base.en.bin"] {
+            assert_eq!(pinned_model_sha256(name).unwrap().len(), 64);
+        }
+        assert!(pinned_model_sha256("ggml-large.bin").is_none());
     }
 
     #[test]
