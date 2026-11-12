@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import './fonts';
 import { playWakeChime, unlockChimeOnFirstInteraction } from './chime';
 import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
+import { initSetupChecklist, reopenSetupChecklist, updateSetupChecklist } from './setup';
 
 type SendMode = 'pause' | 'nod' | 'phrase' | 'paste_only';
 
@@ -588,6 +589,7 @@ function updateStatsDisplay() {
 
 function updateAccessibilityBadge(trusted: boolean) {
   accessibilityPermissionTrusted = trusted;
+  syncSetupChecklist();
   if (trusted) {
     axDot.className = 'dot dot-emerald';
     axText.textContent = 'Accessibility: Trusted';
@@ -627,6 +629,29 @@ function startAccessibilityPoll() {
   }, 2000);
 }
 
+let setupBackendReady = false;
+let setupHasSpoken = false;
+
+function isVisionCalibrated(): boolean {
+  return (
+    (currentConfig.calibratedYawOffsetDeg || 0) !== 0 ||
+    (currentConfig.calibratedPitchOffsetDeg || 0) !== 0 ||
+    (currentConfig.calibratedRestingMar || 0.016) !== 0.016
+  );
+}
+
+// Feeds the Home setup checklist from the real app state.
+function syncSetupChecklist() {
+  updateSetupChecklist({
+    ready: setupBackendReady,
+    modelInstalled: Boolean(modelsCatalog.find((m) => m.id === selectedModelId)?.installed),
+    typingAllowed: accessibilityPermissionTrusted,
+    cameraOn: cameraRunning,
+    calibrated: isVisionCalibrated(),
+    spoke: setupHasSpoken,
+  });
+}
+
 function renderModelsDropdown() {
   modelSelect.innerHTML = '';
   for (const m of modelsCatalog) {
@@ -642,6 +667,7 @@ function renderModelsDropdown() {
   }
   activeModelPill.textContent = `whisper-${selectedModelId}`;
   updateModelDownloadButtonState();
+  syncSetupChecklist();
 }
 
 function updateModelDownloadButtonState() {
@@ -982,6 +1008,7 @@ async function toggleCameraGate() {
     webcamPlaceholder.classList.remove('hidden');
     toggleCameraBtn.classList.remove('camera-active');
     toggleCameraLabel.textContent = 'Turn on camera';
+    syncSetupChecklist();
     fpsPill.textContent = 'FPS: OFF';
     fpsPill.className = 'gauge-tag';
     gazePill.textContent = 'GAZE: OFF';
@@ -1027,6 +1054,7 @@ async function toggleCameraGate() {
     toggleCameraLabel.textContent = 'Turn on camera';
   } finally {
     toggleCameraBtn.disabled = false;
+    syncSetupChecklist();
   }
 }
 
@@ -1092,6 +1120,7 @@ function finalizeVisionCalibration() {
   currentConfig.calibratedRestingMar = Number(mar0.toFixed(4));
   faceAwaySince = 0;
   updateCalibrationDisplay();
+  syncSetupChecklist();
   void syncConfigToBackend();
 }
 
@@ -1471,6 +1500,10 @@ function appendUtteranceCard(
   if (!options?.fromHistory) {
     hidePreviewBanner();
   }
+  if (!setupHasSpoken) {
+    setupHasSpoken = true;
+    syncSetupChecklist();
+  }
   emptyFeed.classList.add('hidden');
   totalTriggersCount += 1;
   if (ev.flaggedFalseTrigger) {
@@ -1719,6 +1752,8 @@ async function initApp() {
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
     updateHistoryBadgeDisplay();
+    setupBackendReady = true;
+    syncSetupChecklist();
 
     if (Array.isArray(snapshot.recentHistory) && snapshot.recentHistory.length > 0) {
       for (const item of snapshot.recentHistory) {
@@ -1854,6 +1889,7 @@ resetCalibrationBtn.addEventListener('click', () => {
   currentConfig.calibratedPitchOffsetDeg = 0.0;
   currentConfig.calibratedRestingMar = 0.016;
   updateCalibrationDisplay();
+  syncSetupChecklist();
   void syncConfigToBackend();
 });
 
@@ -2067,7 +2103,7 @@ modelSelect.addEventListener('change', async () => {
   }
 });
 
-downloadModelBtn.addEventListener('click', async () => {
+async function downloadSelectedModel() {
   const chosenId = modelSelect.value;
   downloadModelBtn.disabled = true;
   downloadModelBtn.textContent = 'Downloading...';
@@ -2086,7 +2122,9 @@ downloadModelBtn.addEventListener('click', async () => {
     downloadModelBtn.disabled = false;
     updateModelDownloadButtonState();
   }
-});
+}
+
+downloadModelBtn.addEventListener('click', () => void downloadSelectedModel());
 
 terminalInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
@@ -2129,6 +2167,38 @@ onboardingCloseBtn.addEventListener('click', () => {
 
 onboardingDoneBtn.addEventListener('click', () => {
   onboardingModal.classList.add('hidden');
+});
+
+document.getElementById('setup-reopen-btn')?.addEventListener('click', () => {
+  onboardingModal.classList.add('hidden');
+  (document.querySelector('[data-tab="home"]') as HTMLElement | null)?.click();
+  reopenSetupChecklist();
+});
+
+if (!isMac) {
+  const typingDesc = document.getElementById('setup-typing-desc');
+  if (typingDesc) typingDesc.textContent = 'saywhen needs permission to type into your terminal and editor.';
+}
+
+initSetupChecklist({
+  downloadModel: () => downloadSelectedModel(),
+  openTypingSettings: async () => {
+    try {
+      await invoke('request_accessibility_settings');
+      startAccessibilityPoll();
+    } catch (err) {
+      showError(String(err));
+    }
+  },
+  turnOnCamera: async () => {
+    if (!cameraRunning) await toggleCameraGate();
+  },
+  calibrate: () =>
+    new Promise<void>((resolve) => {
+      calibrateVisionBtn.click();
+      // Calibration samples for 1.5 s; keep the button busy until it is over.
+      window.setTimeout(resolve, 1700);
+    }),
 });
 
 window.addEventListener('resize', drawVadChart);
@@ -2326,6 +2396,11 @@ function applyDocumentationDemoState(demoMode: string) {
 
     updatePipelineUiState('PREVIEW', 0, 1350);
     terminalInput.value = 'cargo test --release /src/main.rs';
+  } else if (demoMode === 'setup') {
+    // Preview of the first-run checklist for screenshots and UI work.
+    updatePipelineUiState('IDLE', 0, 0);
+    setupHasSpoken = false;
+    updateSetupChecklist({ ready: true, modelInstalled: true, typingAllowed: true, cameraOn: false, calibrated: false, spoke: false });
   } else if (demoMode === 'stage5') {
     if (stageTagEl) stageTagEl.textContent = 'STAGE 5: CROSS-PLATFORM POLISH & ONBOARDING';
     updatePipelineUiState('IDLE', 0, 0);
