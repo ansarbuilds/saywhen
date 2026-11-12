@@ -2,6 +2,8 @@
 
 This file is written for an AI coding assistant (Claude Code, Cursor, Codex, Windsurf and similar) to follow on behalf of a person who may not be technical. If you are a person, you can follow it too: every step is a command you can copy.
 
+If this repository is already open, you are in the right place. Do not clone it again. Start at Step 1 and run every command from this folder.
+
 ## Rules for the assistant
 
 - **Ask before installing anything system-wide** (Homebrew, Rust, CMake, Node.js, Visual Studio Build Tools). Say what it is, why saywhen needs it, and roughly how big it is.
@@ -67,7 +69,11 @@ Install, in this order, after asking:
 
 Close and reopen the terminal afterwards so the new tools are found. WebView2 is already part of Windows 10 and 11.
 
-## Step 3: Download saywhen
+## Step 3: Get the code
+
+If `INSTALL_WITH_AI.md` is already in the current folder, the code is here. Stay in this folder.
+
+If it is not, download it:
 
 ```bash
 git clone https://github.com/kmsmohamedansar/saywhen.git
@@ -76,6 +82,8 @@ git clone https://github.com/kmsmohamedansar/saywhen.git
 ```bash
 cd saywhen
 ```
+
+Then install the app's own packages (this does not install system tools):
 
 ```bash
 npm ci

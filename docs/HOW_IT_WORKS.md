@@ -103,4 +103,4 @@ saywhen is careful about pressing Enter, because Enter makes things happen.
 | The text you said | **7 days**, on your computer only, so you can search and copy it. You can turn this off or clear it. |
 | Internet access | Setup downloads model/runtime files. After setup, local dictation works offline. Optional remote AI cleanup sends text to the endpoint you choose. |
 
-[Back to documentation](README.md) · [Install saywhen](../README.md#install) · [Engineering details](ARCHITECTURE.md)
+[Back to documentation](README.md) · [Install saywhen](../README.md#install) · [For coding assistants](../README.md#for-coding-assistants) · [Engineering details](ARCHITECTURE.md)
