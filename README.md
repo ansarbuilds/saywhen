@@ -1,16 +1,33 @@
+![saywhen: Look. Talk. Sent. Voice input for terminals and coding assistants. Look and talk, check the preview, then send if allowed.](docs/visuals/readme-hero.png)
+
 # saywhen
 
-> **Look. Talk. Sent.** Talk to your terminal or coding assistant without touching the keyboard.
+**Talk to your terminal or coding assistant without touching the keyboard.**
+
+[Install](#install) · [See the workflow](#see-the-workflow) · [Documentation](docs/README.md) · [Contribute](CONTRIBUTING.md) · [Release status](docs/LAUNCH_CHECKLIST.md)
 
 saywhen is a free, open source desktop app for macOS and Windows. You look at your screen, say what you want, and saywhen types it into the app you are using (Terminal, Cursor, VS Code, Claude Code and more). Then it presses Enter for you, unless you stop it.
 
-No hotkey to hold. No "click Send". Everything runs on your own computer.
+**Release status: beta.** macOS and Windows implementations are present; packaged Windows, Intel Mac and real-device safety checks still need sign-off. See the [launch checklist](docs/LAUNCH_CHECKLIST.md).
 
-[![Watch the saywhen 60-second launch film](docs/screenshots/demo-poster.png)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)
+No hotkey to hold. No "click Send". Speech and camera processing run on your own computer. Optional remote AI cleanup is off by default.
 
-> **Watch the film:** **[60-second Launch Film (MP4 with voice & sound)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4)** · **[12-second Teaser (MP4)](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4)**
+## See the workflow
 
-![saywhen main window](docs/screenshots/stage4-cleanup-preview.png)
+![Illustrated workflow: look at the screen, speak a command, transcribe locally, review a cancelable preview, and paste into a trusted terminal with Enter.](docs/visuals/workflow.gif)
+
+*Illustrated pause-mode walkthrough, not a live screen recording. Timing is simplified.* [View the still image](docs/visuals/workflow-still.png).
+
+[Watch the 60-second launch film](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-demo.mp4) · [12-second teaser](https://github.com/kmsmohamedansar/saywhen/releases/download/v0.2.0/saywhen-announce.mp4)
+
+<details>
+<summary><strong>See the app interface</strong></summary>
+
+![saywhen Home showing the cancelable preview and four send styles, using demo data.](docs/screenshots/stage4-cleanup-preview.png)
+
+*App interface captured in browser demo mode. This is separate from the illustrated walkthrough above.*
+
+</details>
 
 ---
 
@@ -28,6 +45,8 @@ Want the longer, friendly explanation? Read **[How saywhen works](docs/HOW_IT_WO
 ## Pick how you send
 
 You choose this once on the Home screen. You can change it any time.
+
+![Four send styles: pause for a countdown, nod to confirm, finish with send it, or type without Enter. App rules can withhold Enter in every mode.](docs/visuals/send-styles.png)
 
 | Send style | What you do | Good for |
 | --- | --- | --- |
@@ -104,12 +123,14 @@ git clone https://github.com/kmsmohamedansar/saywhen.git
 ```
 
 ```bash
-cd saywhen && npm install
+cd saywhen && npm ci
 ```
 
 ```bash
 npx tauri dev
 ```
+
+The first dev run or build downloads and verifies the camera model (about 4 MB) and copies the matching MediaPipe runtime into the app. These assets are bundled, so camera tracking works offline after installation.
 
 The first build takes a few minutes. After that it starts in seconds.
 
@@ -128,7 +149,7 @@ The first build takes a few minutes. After that it starts in seconds.
 Yes, by design.
 
 - **Camera:** pictures stay in memory for a split second and are thrown away. Only numbers (head angle, how open your mouth is) are used. Nothing is saved or sent.
-- **Microphone:** your voice is turned into text on your own computer. The audio is deleted right after.
+- **Microphone:** your voice is turned into text on your own computer. Audio is discarded after transcription unless you explicitly enable local tuning recordings in Settings.
 - **History:** the last 7 days of text are kept on your computer so you can search and copy them. Turn this off in Settings, or clear it with one click.
 - **Internet:** saywhen works fully offline once the speech model is downloaded. The optional "AI clean-up" setting is off by default, and if you turn it on you choose where the text goes (a local Ollama is the default).
 
@@ -151,6 +172,8 @@ Yes, by design.
 
 ## Learn more
 
+**[Browse the documentation](docs/README.md)** to find the right guide for installing, understanding or contributing to saywhen.
+
 - **[How saywhen works](docs/HOW_IT_WORKS.md):** the simple explanation of the camera, the listening and the sending.
 - **[How we built it](docs/HOW_WE_BUILT_IT.md):** the story, stage by stage, with the measurements.
 - **[Vision](docs/VISION.md)**, **[Architecture](docs/ARCHITECTURE.md)**, **[Roadmap](docs/ROADMAP.md)**, **[Risks](docs/RISKS.md)**, **[Prior art](docs/PRIOR_ART.md)**: the deeper technical documents.
@@ -168,7 +191,7 @@ npm run build
 ```
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
 ```bash

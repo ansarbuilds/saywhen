@@ -34,6 +34,7 @@ pub struct TranscriberEngine {
     loaded_model: Mutex<Option<(String, Arc<WhisperContext>)>>,
     selected_model_id: Mutex<String>,
     app_models_dir: Option<PathBuf>,
+    download_lock: Mutex<()>,
 }
 
 impl TranscriberEngine {
@@ -43,6 +44,7 @@ impl TranscriberEngine {
 
     pub fn with_app_data_dir(app_data_dir: Option<PathBuf>) -> Self {
         Self {
+            download_lock: Mutex::new(()),
             loaded_model: Mutex::new(None),
             selected_model_id: Mutex::new("tiny.en".to_string()),
             app_models_dir: app_data_dir.map(|d| d.join("models")),
@@ -50,11 +52,16 @@ impl TranscriberEngine {
     }
 
     pub fn resolve_models_dir(&self) -> PathBuf {
+        // Packaged apps always use their writable data directory, independent of cwd.
+        if !cfg!(debug_assertions) {
+            if let Some(ref app_dir) = self.app_models_dir {
+                return app_dir.clone();
+            }
+        }
         let mut candidates = vec![PathBuf::from("models"), PathBuf::from("../models")];
         if let Some(ref app_dir) = self.app_models_dir {
             candidates.push(app_dir.clone());
         }
-        candidates.push(PathBuf::from("/Users/mohamedansar/Projects/saywhen/models"));
 
         // Prefer a candidate directory that already has a downloaded Whisper .bin model
         for candidate in &candidates {
@@ -98,7 +105,7 @@ impl TranscriberEngine {
             .iter()
             .map(|(id, filename, label, default_mb)| {
                 let full_path = dir.join(filename);
-                let installed = full_path.exists();
+                let installed = validate_downloaded_model(&full_path).is_ok();
                 let size_mb = if installed {
                     std::fs::metadata(&full_path)
                         .map(|m| m.len() / (1024 * 1024))
@@ -148,7 +155,7 @@ impl TranscriberEngine {
             "base.en" => "ggml-base.en.bin",
             _ => "ggml-tiny.en.bin",
         };
-        self.resolve_models_dir().join(filename).exists()
+        validate_downloaded_model(&self.resolve_models_dir().join(filename)).is_ok()
     }
 
     pub fn is_loaded(&self) -> bool {
@@ -165,6 +172,10 @@ impl TranscriberEngine {
     }
 
     pub fn download_model(&self, model_id: &str) -> Result<ModelInfo, String> {
+        let _download = self
+            .download_lock
+            .lock()
+            .map_err(|_| "Model download lock failed")?;
         let filename = match model_id {
             "tiny.en" => "ggml-tiny.en.bin",
             "base.en" => "ggml-base.en.bin",
@@ -179,15 +190,47 @@ impl TranscriberEngine {
             filename
         );
 
-        let status = std::process::Command::new("curl")
-            .args(["-L", "-f", "-sS", &url, "-o"])
-            .arg(&dest)
-            .status()
-            .map_err(|e| format!("Failed to run curl to download model: {}", e))?;
-
-        if !status.success() {
-            return Err(format!("Download failed for {}", url));
-        }
+        // Never expose a partial download as an installed model or overwrite a working one.
+        let temporary = dest.with_extension("bin.part");
+        let result = (|| -> Result<(), String> {
+            let status = std::process::Command::new("curl")
+                .args([
+                    "--proto",
+                    "=https",
+                    "--proto-redir",
+                    "=https",
+                    "-L",
+                    "-f",
+                    "-sS",
+                    "--connect-timeout",
+                    "30",
+                    "--max-time",
+                    "1800",
+                    "--retry",
+                    "2",
+                    &url,
+                    "-o",
+                ])
+                .arg(&temporary)
+                .status()
+                .map_err(|e| format!("Failed to run curl to download model: {}", e))?;
+            if !status.success() {
+                return Err("Model download failed. Check your connection and retry.".to_string());
+            }
+            validate_downloaded_model(&temporary)?;
+            // An existing model is kept intact. Downloads are serialized by download_lock.
+            if validate_downloaded_model(&dest).is_err() {
+                if dest.exists() {
+                    std::fs::remove_file(&dest)
+                        .map_err(|e| format!("Failed to replace invalid model: {}", e))?;
+                }
+                std::fs::rename(&temporary, &dest)
+                    .map_err(|e| format!("Failed to install downloaded model: {}", e))?;
+            }
+            Ok(())
+        })();
+        let _ = std::fs::remove_file(&temporary);
+        result?;
 
         self.list_models()
             .into_iter()
@@ -314,7 +357,9 @@ impl TranscriberEngine {
 
 fn strip_end_phrase(input: &str) -> (String, bool) {
     let trimmed = input.trim();
-    let stripped_punct = trimmed.trim_end_matches(|c: char| ".!,?;:".contains(c)).trim_end();
+    let stripped_punct = trimmed
+        .trim_end_matches(|c: char| ".!,?;:".contains(c))
+        .trim_end();
     let lower = stripped_punct.to_lowercase();
 
     for phrase in ["send it", "submit it"] {
@@ -361,7 +406,13 @@ const SILENCE_HALLUCINATION_PHRASES: &[&str] = &[
 fn normalize_for_phrase_match(input: &str) -> String {
     input
         .chars()
-        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c.to_ascii_lowercase() } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() || c.is_whitespace() {
+                c.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -402,9 +453,45 @@ fn clean_whisper_hallucinations(input: &str) -> String {
     result.trim().to_string()
 }
 
+// Reject error pages and obviously truncated responses before marking a model installed.
+// This is a format sanity check, not a cryptographic authenticity check.
+fn validate_downloaded_model(path: &Path) -> Result<(), String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let size = file.metadata().map_err(|e| e.to_string())?.len();
+    let mut magic = [0; 4];
+    file.read_exact(&mut magic)
+        .map_err(|e| format!("Incomplete model download: {}", e))?;
+    if size < 1_000_000 || magic != *b"lmgg" {
+        return Err("Invalid or incomplete Whisper model download. Please retry.".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_validation_rejects_partial_and_error_responses() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("saywhen-model-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.bin");
+        std::fs::write(&path, b"lmgg").unwrap();
+        assert!(validate_downloaded_model(&path).is_err());
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"html").unwrap();
+        file.set_len(1_000_000).unwrap();
+        assert!(validate_downloaded_model(&path).is_err());
+        drop(file);
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"lmgg").unwrap();
+        file.set_len(1_000_000).unwrap();
+        assert!(validate_downloaded_model(&path).is_ok());
+        drop(file);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn test_hallucination_cleaning() {
@@ -420,7 +507,10 @@ mod tests {
         // Stock phrases on weak speech evidence are dropped.
         assert!(is_likely_silence_hallucination("Thank you.", 0.55));
         assert!(is_likely_silence_hallucination("Thank you.", 0.88));
-        assert!(is_likely_silence_hallucination(" Thanks for watching! ", 0.7));
+        assert!(is_likely_silence_hallucination(
+            " Thanks for watching! ",
+            0.7
+        ));
         assert!(is_likely_silence_hallucination("uh", 0.72));
         assert!(is_likely_silence_hallucination("hmm...", 0.65));
         assert!(is_likely_silence_hallucination("you", 0.99));
@@ -432,11 +522,15 @@ mod tests {
         assert!(!is_likely_silence_hallucination("okay", 0.5));
         assert!(!is_likely_silence_hallucination("continue", 0.5));
         // Phrases inside a longer command are never touched.
-        assert!(!is_likely_silence_hallucination("thank you, now run cargo test", 0.5));
+        assert!(!is_likely_silence_hallucination(
+            "thank you, now run cargo test",
+            0.5
+        ));
         assert!(!is_likely_silence_hallucination("", 0.1));
     }
 
     #[test]
+    #[ignore = "requires a local Whisper model and working GPU; run explicitly on a desktop"]
     fn test_metal_whisper_pipeline_benchmark() {
         let engine = TranscriberEngine::new();
         let models = engine.list_models();
@@ -455,4 +549,3 @@ mod tests {
         }
     }
 }
-

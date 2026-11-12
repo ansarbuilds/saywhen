@@ -1,5 +1,9 @@
 # Roadmap
 
+## Launch readiness follow-up
+
+The launch hardening pass adds verified camera-asset preparation, staged speech-model downloads, release version/tag checks and automated tests before packaging. The macOS debug bundle builds locally. Public launch gates, platform testing and signing remain pending in [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md). Historical implementation completion below does not imply those gates have passed.
+
 Each stage has an exit criterion. Do not start the next stage until the current one passes, or the reason for skipping is written down.
 
 ## Stage 0: Prior-art search
