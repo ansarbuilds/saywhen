@@ -4,6 +4,7 @@ These assets use the app's plum, amber and pale neutral palette. They are locall
 
 | File | Purpose |
 | --- | --- |
+| `hero.jpg`, `steps.jpg`, `app.jpg` | The main README images. Composed in `scripts/visuals/compose.html` from the real interface in its browser demo mode. Run `npm run dev`, then `./scripts/visuals/render.sh`. |
 | `readme-hero.png` | Project introduction and three-step concept |
 | `workflow.gif` | 12-second illustrated pause-mode loop, approximately 1.1 MB |
 | `workflow-still.png` | Non-animated alternative showing the check step |
