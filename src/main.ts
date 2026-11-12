@@ -1251,6 +1251,7 @@ function updateStatsDisplay() {
 function updateAccessibilityBadge(trusted: boolean) {
   accessibilityPermissionTrusted = trusted;
   syncSetupChecklist();
+  accessibilityPill.classList.toggle('is-pending', !trusted);
   if (trusted) {
     axDot.className = 'dot dot-emerald';
     axText.textContent = 'Accessibility: Trusted';
@@ -1431,8 +1432,14 @@ const toggleMoodColors = document.getElementById('toggle-mood-colors') as HTMLIn
 
 function renderPalette() {
   const palette = PALETTE_IDS.includes(currentConfig.uiPalette) ? currentConfig.uiPalette : 'saywhen';
+  document.documentElement.dataset.palette = palette;
   document.body.dataset.palette = palette;
   document.body.dataset.moodColors = currentConfig.moodColors === false ? 'off' : 'on';
+  try {
+    localStorage.setItem('saywhen-palette', palette);
+  } catch {
+    // Storage can be unavailable; the palette still applies for this session.
+  }
   for (const btn of paletteButtons) {
     const on = btn.dataset.palette === palette;
     btn.classList.toggle('is-selected', on);

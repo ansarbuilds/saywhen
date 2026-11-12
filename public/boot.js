@@ -9,4 +9,8 @@ try {
   document.documentElement.dataset.contrast = contrast;
   var motion = localStorage.getItem('saywhen-motion') === 'reduced' ? 'reduced' : 'full';
   document.documentElement.dataset.motion = motion;
+  var palette = localStorage.getItem('saywhen-palette');
+  if (palette) {
+    document.documentElement.dataset.palette = palette;
+  }
 } catch (error) {}
