@@ -34,6 +34,10 @@
   #hero .window { left: 700px; top: 96px; width: 1010px; height: 730px; transform: perspective(2400px) rotateY(-9deg) rotateX(2deg); transform-origin: left center; }
   #hero .window iframe { width: 1440px; height: 1040px; transform: scale(.7014); transform-origin: 0 0; }
 
+  /* social: the hero at 1280 x 640, for the GitHub social preview and link cards */
+  body[data-frame="social"] #hero { height: 800px; zoom: .8; }
+  body[data-frame="social"] #hero .copy { top: 88px; }
+
   /* steps: 1600 x 520 */
   #steps { width: 1600px; height: 520px; padding: 44px 44px; display: none; gap: 28px; }
   body[data-frame="steps"] #steps { display: flex; }

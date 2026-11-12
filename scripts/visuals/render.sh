@@ -14,3 +14,4 @@ shot() { # name width height
 shot hero 1600 860
 shot steps 1600 520
 shot app 1600 1000
+shot social 1280 640

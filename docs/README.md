@@ -1,6 +1,6 @@
 # Explore saywhen
 
-![The saywhen pill moves from Waiting to Check as spoken words become cargo test --release. The preview counts down and the command is sent to Terminal.](visuals/animated/hero-loop.gif)
+![saywhen. Look. Talk. Sent. Hands-free voice input for your terminal and coding agent, shown beside the app's Home screen.](visuals/hero.jpg)
 
 Start with what you want to do. The user guides explain the app in plain language; the engineering documents go deeper into how it is built.
 

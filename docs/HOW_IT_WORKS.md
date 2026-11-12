@@ -2,6 +2,8 @@
 
 This page explains saywhen without any technical words. If you want the engineering detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
+![Three steps. Look: the pill says Ready. Talk: the pill says Listening. Check, sent: a preview of cargo test --release counts down.](visuals/steps.jpg)
+
 ## The big idea
 
 Imagine talking to a friend who is helping you at your computer. You do not press a button before you speak. Your friend just *knows* you are talking to them, because you are looking at them and your mouth is moving. And they wait until you are finished before they act.
