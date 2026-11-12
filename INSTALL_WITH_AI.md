@@ -122,7 +122,7 @@ Ask the person:
 - Did it show "Listening" when they talked?
 - Did the words appear in the terminal?
 
-If something did not work, open the **Problems** list on the Home screen, read the message together, and use the "When something goes wrong" table in [README.md](README.md).
+If something did not work, open the **Problems** list on the Home screen, read the message together, and use the table in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Updating later
 
