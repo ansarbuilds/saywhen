@@ -1,59 +1,75 @@
 <p align="center">
-  <img src="docs/visuals/hero.jpg" alt="saywhen. Look. Talk. Sent. Hands-free voice input for your terminal and coding agent, shown beside the app's Home screen with a preview of the command cargo test --release." width="100%">
+  <a href="https://ansarbuilds.dev/p/saywhen/"><img src="docs/visuals/page-top.jpg" alt="BETA v0.2 for Mac and Windows. Look. Talk. Sent. Hands-free voice for your terminal and coding agent. Look at the screen, say what you want, and saywhen types it after a preview you can cancel. No hotkey to hold." width="100%"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-Apple_Silicon-fbb303?style=for-the-badge&logo=apple&logoColor=22061c&labelColor=fbb303" alt="Download for Mac (Apple Silicon)"></a>
-  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-64--bit-dfe5ec?style=for-the-badge&labelColor=dfe5ec" alt="Download for Windows (64-bit)"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
+  &nbsp;
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-fbb303.svg" alt="License: MIT"></a>
-  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&color=fbb303&label=beta" alt="Latest beta release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f6f1ea?labelColor=22061c" alt="License: MIT"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
   <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
-  <a href="#see-it-work">See it work</a> ·
-  <a href="#install">Install</a> ·
-  <a href="#you-stay-in-control">Safety</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#the-real-thing">See it for real</a> ·
   <a href="#private-by-design">Privacy</a> ·
-  <a href="docs/HOW_IT_WORKS.md">How it works</a> ·
+  <a href="#install">Install</a> ·
   <a href="https://ansarbuilds.dev/p/saywhen/">Project page</a>
 </p>
 
-# saywhen
+<p align="center">
+  <img src="docs/visuals/scene.gif" alt="One command, start to finish. A Facing the screen tag lights up. The saywhen pill goes from Waiting to Listening while the words cargo test dash dash release appear in a speech bubble. A preview of cargo test --release counts down, then the command is typed into the terminal and the tests pass." width="100%">
+</p>
+<p align="center"><sub>A live illustration of the interface. The real, unedited recording is <a href="#the-real-thing">further down</a>.</sub></p>
 
-**You talk to a coding agent all day. Stop holding a key to do it.**
+<br>
 
-saywhen listens when you look at the screen and start talking. It writes down what you said, shows it to you for a moment, then types it into your terminal or editor and presses Enter. Everything runs on your own computer.
+## How it works
 
-![Three steps. Look: the pill says Ready. Talk: the pill says Listening. Check, sent: a preview of cargo test --release counts down.](docs/visuals/steps.jpg)
+<img src="docs/visuals/page-how.jpg" alt="No hotkey. Just look and talk. 01 Look: face the screen; saywhen keeps a few numbers, like head angle, and throws the picture away. 02 Talk: speak normally; the last half second is already kept, so your first word is never clipped. 03 Check, then sent: read it in a short preview; Esc, a head shake, or talking again cancels." width="100%">
 
-## See it work
+The camera and the microphone both have to agree before saywhen listens. A camera alone cannot tell chewing from talking, and a microphone alone cannot tell who you are talking to. No camera? **Option + Space** on Mac or **Alt + Space** on Windows starts listening by hand. More in [How saywhen works](docs/HOW_IT_WORKS.md).
 
-![A real screen recording. The saywhen pill goes from Ready to Listening, a preview of the spoken request counts down, and the request is typed into Cursor and sent.](docs/visuals/real-run.gif)
+## Speaks developer
 
-*A real screen recording, in real time: a spoken request goes into Cursor. No keys were pressed.*
+<img src="docs/visuals/page-dev.jpg" alt="Whisper mishears. saywhen fixes it. What was heard, then what gets typed: Cubectal Get Pods becomes kubectl get pods. NTM RunBuild becomes npm run build. Get If Had becomes git diff head. Get Stash Pot becomes git stash pop. cargo test dash dash release becomes cargo test --release." width="100%">
+
+Every row is a real case from the test suite in [`cleanup.rs`](src-tauri/src/cleanup.rs). Add your own words for project names in Settings.
+
+## The real thing
+
+<img src="docs/visuals/real-run.gif" alt="A real screen recording. The saywhen pill goes from Ready to Listening, a preview of the spoken request counts down, and the request is typed into Cursor and sent." width="100%">
+
+Unedited and in real time: a spoken request goes into Cursor and gets sent with no keys pressed. One run on an Apple Silicon Mac, not a benchmark.
 
 **The 60-second film, with sound:**
 
 https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
 
-No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/).
+## You stay in control
 
-## Why you might want it
+<img src="docs/visuals/page-modes.jpg" alt="Four ways to send, all cancelable. Just pause (default): stop talking and a short countdown runs, then it sends. Nod to send: nothing goes until you nod. Say send it: end with send it to press Enter. Type only (best first try): your words are typed and Enter is never pressed." width="100%">
 
-| | |
-| --- | --- |
-| **No hotkey** | Looking at the screen is the wake-up. The camera and the microphone both have to agree, so chewing, typing or talking to someone else does not set it off. |
-| **Speaks developer** | "cargo test dash dash release" becomes `cargo test --release`. Add your own words for project names. |
-| **You see it first** | Every send goes through a short preview. Esc, a head shake, or talking again throws it away. |
-| **Stays on your computer** | Speech becomes text locally with Whisper. Camera pictures are never saved or sent. It works offline. |
-| **Careful with Enter** | Enter is pressed only in apps you trust. `rm -rf` and friends are typed with a warning and left for you. |
-| **A shortcut, too** | **Option + Space** on Mac, **Alt + Space** on Windows starts listening with no camera at all. |
+- Cancel with **Esc**, a head shake, or by talking again during the countdown. Or say "scratch that".
+- Enter is pressed only in apps you trust. Terminals and code editors are trusted by default. In chat, email and browsers, saywhen only types.
+- If the app in front changes during the countdown, saywhen stops and types nothing.
 
-![The saywhen Home screen while listening, with the camera check, the sound level and the five states from Waiting to Check.](docs/visuals/app.jpg)
+## Private by design
+
+<img src="docs/visuals/page-safe.jpg" alt="Private by design. It sees a few numbers, never a picture. The camera: each frame is read for a moment, then thrown away. Your voice: speech becomes text on this computer, then the audio is discarded. The Enter key: pressed only in apps you trust; commands like rm -rf are typed with a warning and left for you." width="100%">
+
+After the speech model downloads, saywhen works with the internet off. History keeps the last 7 days of text on your computer, and you can turn it off or clear it. Optional cloud clean-up stays off until you turn it on. The risky-command check is a heuristic, not a guarantee.
+
+## Measured, with the caveats
+
+<img src="docs/visuals/page-numbers.jpg" alt="What the numbers say, and what they don't. 34 of 34 spoken developer commands cleaned to the exact text. 0% false starts on 56 replay clips, down from 36.4%. 12 to 15 ms face tracking per camera frame. 87 to 473 ms to turn 1.5 s of speech into text." width="100%">
+
+Replay clips are generated speech with simulated camera traces, not live users. Real-user accuracy, CPU and battery are not measured yet. Details in [what has been measured](docs/MEASUREMENTS.md) and the [launch checklist](docs/LAUNCH_CHECKLIST.md).
 
 ## Install
 
@@ -119,35 +135,9 @@ The first run downloads the camera model (about 4 MB) and can take 5 to 15 minut
 5. **Turn on the camera.** Look at the screen with your mouth closed and click **Calibrate**.
 6. Open a terminal, look at it, and say "git status".
 
-## You stay in control
-
-Pick how words get sent. You can change it any time on Home.
-
-| Send style | What you do | Good for |
-| --- | --- | --- |
-| **Just pause** (default) | Stop talking. A short countdown runs, then it sends. | Fast, hands-free work |
-| **Nod to send** | Nothing is sent until you nod. | When you want to be sure |
-| **Say "send it"** | End with "send it" to press Enter. Otherwise the text is only typed. | Mixing notes and commands |
-| **Type only** | Your words are typed. Enter is never pressed. | The first time you try saywhen |
-
-- **Cancel:** press **Esc**, shake your head, or start talking again during the countdown. You can also say "scratch that" or "never mind".
-- **Trusted apps only:** terminals and code editors get Enter by default. In chat, email and browsers, saywhen only types.
-- **Risky commands:** `rm -rf`, `git reset --hard`, `git push --force` and similar are typed with a warning. You press Enter yourself. This check is a heuristic, not a guarantee.
-- **Switched apps?** If the app in front changes during the countdown, saywhen stops and types nothing.
-
-## Private by design
-
-- **Camera.** Each picture is looked at for a split second and thrown away. saywhen keeps a few numbers, such as head angle. Nothing is saved or sent.
-- **Microphone.** Your voice becomes text on this computer, then the audio is discarded.
-- **History.** The last 7 days of text stay on your computer. Turn it off or clear it with one click.
-- **Internet.** After the speech model is downloaded, saywhen works offline. Cloud clean-up is off until you turn it on.
-- **Open source.** Read the code, or [build it yourself](#build-it-yourself) and skip the downloaded app.
-
 ## Beta, honestly
 
-saywhen is a working beta. It runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. The [launch checklist](docs/LAUNCH_CHECKLIST.md) says exactly what has been verified, and [what has been measured](docs/MEASUREMENTS.md) has the numbers.
-
-Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md) or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
+saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md) or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
 
 ## For coding assistants
 
@@ -188,7 +178,3 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml
 | [src/main.ts](src/main.ts) | Camera, head gestures, main window |
 
 **[How it works](docs/HOW_IT_WORKS.md)** · **[How we built it](docs/HOW_WE_BUILT_IT.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Measurements](docs/MEASUREMENTS.md)** · **[Roadmap](docs/ROADMAP.md)** · **[Contributing](CONTRIBUTING.md)** · **[Code of Conduct](CODE_OF_CONDUCT.md)** · **[Security](SECURITY.md)**
-
-## License
-
-MIT. See [LICENSE](LICENSE). Built by [Mohamed Ansar](https://ansarbuilds.dev).

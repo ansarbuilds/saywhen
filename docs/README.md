@@ -1,6 +1,6 @@
 # Explore saywhen
 
-![saywhen. Look. Talk. Sent. Hands-free voice input for your terminal and coding agent, shown beside the app's Home screen.](visuals/hero.jpg)
+![saywhen. Look. Talk. Sent. Hands-free voice input for your terminal and coding agent, shown beside the app's Home screen.](visuals/page-top.jpg)
 
 Start with what you want to do. The user guides explain the app in plain language; the engineering documents go deeper into how it is built.
 
