@@ -29,9 +29,9 @@ No player? [Watch it on the project page](https://ansarbuilds.dev/p/saywhen/) or
 
 ## Who it's for
 
-![Home day: Look. Talk. Hands off the keyboard. Office day: Stay quiet, Type only, the shortcut is still there. Then where developers worked in the 2025 Stack Overflow survey: 32.4% fully remote, 37.1% hybrid, 12.6% free to choose, 17.9% in an office. US fully remote 45%. JetBrains 2025: 62% regularly use an AI coding assistant.](docs/visuals/who-its-for.gif)
+[![At home, both hands rest off the keyboard while a small pill glows above an amber laptop screen.](docs/visuals/who-its-for.jpg)](https://ansarbuilds.dev/p/saywhen/#who)
 
-*Home, then the office, then the survey. An illustration. The timing is not a measurement.* [Still frame](docs/visuals/who-its-for.jpg).
+*Eight silent seconds. Home, the pill lights, then the office. GitHub cannot play it here, so [watch the loop on the project page](https://ansarbuilds.dev/p/saywhen/#who). It is a film, not a measurement.*
 
 Talk on the days you work from home. In the 2025 Stack Overflow Developer Survey, **32.4%** of developers worked fully remotely and **37.1%** were hybrid. **12.6%** could choose, and **17.9%** worked in an office. In the US, **45%** worked fully remotely. Those shares are the people who answered the work question. They are not a count of who wants voice input.
 
