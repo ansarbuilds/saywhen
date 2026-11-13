@@ -55,7 +55,7 @@ Unedited and in real time: a spoken request goes into Cursor and gets sent with 
 
 **The 60-second film, with sound:**
 
-https://github.com/user-attachments/assets/2ac61c5f-9fce-4fb5-b146-e4e08f66a520
+https://github.com/user-attachments/assets/6867215a-d32f-4b9c-a871-fb03f6e047f6
 
 ## You stay in control
 

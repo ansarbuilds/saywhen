@@ -1,54 +1,66 @@
 import React, { useEffect, useRef } from "react";
+import { AUDIO_PEAK, AUDIO_RMS } from "./audioData";
 
-/**
- * Cinema-grade procedural 3D & optical canvas generators for the saywhen launch film.
- * All geometry is 100% deterministic from frame time `f` and renders cleanly at 1920x1080.
- */
+const VW = 1920;
+const VH = 1080;
+const CX = VW / 2;
+const CY = VH / 2;
 
-const project3D = (
+const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
+const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
+const seg = (t: number, a: number, b: number) =>
+  b <= a ? (t >= b ? 1 : 0) : clamp((t - a) / (b - a), 0, 1);
+const eo = (u: number) => 1 - Math.pow(1 - u, 3);
+const eio = (u: number) =>
+  u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+
+// 3D rotation & perspective projection helper
+function project3D(
   x: number,
   y: number,
   z: number,
-  fov = 840,
-  cx = 960,
-  cy = 540
-) => {
-  const depth = Math.max(40, fov + z);
-  const s = fov / depth;
-  return { x: cx + x * s, y: cy + y * s, s, depth };
-};
+  rx: number,
+  ry: number,
+  rz: number,
+  cx = CX,
+  cy = CY,
+  fov = 1150,
+) {
+  // Rotate around X
+  const cosX = Math.cos(rx);
+  const sinX = Math.sin(rx);
+  const y1 = y * cosX - z * sinX;
+  const z1 = y * sinX + z * cosX;
 
-const rotX = (y: number, z: number, a: number) => {
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return { y: y * c - z * s, z: y * s + z * c };
-};
+  // Rotate around Y
+  const cosY = Math.cos(ry);
+  const sinY = Math.sin(ry);
+  const x2 = x * cosY + z1 * sinY;
+  const z2 = -x * sinY + z1 * cosY;
 
-const rotY = (x: number, z: number, a: number) => {
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return { x: x * c + z * s, z: -x * s + z * c };
-};
+  // Rotate around Z
+  const cosZ = Math.cos(rz);
+  const sinZ = Math.sin(rz);
+  const x3 = x2 * cosZ - y1 * sinZ;
+  const y3 = x2 * sinZ + y1 * cosZ;
 
-const rotZ = (x: number, y: number, a: number) => {
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return { x: x * c - y * s, y: x * s + y * c };
-};
+  const scale = fov / Math.max(120, fov - z2);
+  return {
+    sx: cx + x3 * scale,
+    sy: cy + y3 * scale,
+    z: z2,
+    scale,
+  };
+}
 
-const pseudo = (seed: number) => {
-  const v = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
-  return v - Math.floor(v);
-};
-
-// 1. Optical Horizon Grid with subtle specular depth fog
+// ============================================================================
+// 1. 3D ATMOSPHERIC HORIZON GRID & VOLUMETRIC GOD-RAYS
+// ============================================================================
 export const HorizonGrid3DCanvas: React.FC<{
-  f: number;
-  tiltX?: number;
-  yaw?: number;
-  color?: string;
-  alpha?: number;
-}> = ({ f, tiltX = 0.44, yaw = 0, color = "#fbb303", alpha = 0.24 }) => {
+  frame: number;
+  lightPlate?: boolean;
+  intensity?: number;
+}> = ({ frame, lightPlate = false, intensity = 1 }) => {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -56,83 +68,84 @@ export const HorizonGrid3DCanvas: React.FC<{
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
 
-    ctx.clearRect(0, 0, 1920, 1080);
+    const t = frame / 30;
+    const rms = AUDIO_RMS[frame] ?? 0.2;
+    const pk = AUDIO_PEAK[frame] ?? 0.3;
 
-    const cols = 18;
-    const rows = 20;
-    const spacing = 140;
-    const scrollZ = (f * 8) % spacing;
+    // 1. Volumetric horizon bloom
+    const hy = lightPlate ? 580 : 620;
+    const rad = ctx.createRadialGradient(
+      CX + Math.sin(t * 0.5) * 90,
+      hy,
+      20,
+      CX,
+      hy,
+      920,
+    );
+    if (lightPlate) {
+      rad.addColorStop(0, `rgba(251, 179, 3, ${(0.22 + rms * 0.14) * intensity})`);
+      rad.addColorStop(0.45, `rgba(216, 169, 214, ${0.14 * intensity})`);
+      rad.addColorStop(1, "rgba(246, 238, 244, 0)");
+    } else {
+      rad.addColorStop(0, `rgba(251, 179, 3, ${(0.26 + rms * 0.18) * intensity})`);
+      rad.addColorStop(0.4, `rgba(88, 18, 74, ${(0.38 + pk * 0.12) * intensity})`);
+      rad.addColorStop(1, "rgba(34, 6, 28, 0)");
+    }
+    ctx.fillStyle = rad;
+    ctx.fillRect(0, 0, VW, VH);
 
-    ctx.lineCap = "round";
+    // 2. 3D Perspective Floor & Ceiling Grid
+    const gridCol = lightPlate
+      ? `rgba(42, 8, 35, ${0.075 * intensity})`
+      : `rgba(251, 179, 3, ${(0.11 + rms * 0.06) * intensity})`;
+    ctx.strokeStyle = gridCol;
+    ctx.lineWidth = 1.2;
 
-    for (let c = -cols / 2; c <= cols / 2; c++) {
-      const worldX = c * spacing;
+    const zSpeed = (t * 260) % 120;
+    for (let iz = 1; iz <= 14; iz++) {
+      const z = iz * 120 - zSpeed - 300;
+      const pL = project3D(-1800, 360, z, 0.18, 0, 0, CX, CY, 900);
+      const pR = project3D(1800, 360, z, 0.18, 0, 0, CX, CY, 900);
+      const alpha = clamp(1 - iz / 14, 0, 1) * 0.55 * intensity;
+      ctx.globalAlpha = alpha;
       ctx.beginPath();
-      let started = false;
-      for (let r = 0; r <= rows; r++) {
-        const z0 = r * spacing - scrollZ - 260;
-        if (z0 < -720) continue;
-        const wave = Math.sin(r * 0.26 - f * 0.04 + c * 0.35) * 14;
-        const ry = rotY(worldX, z0, yaw);
-        const rx = rotX(280 + wave, ry.z, tiltX);
-        const p = project3D(ry.x, rx.y, rx.z, 780, 960, 520);
-        if (!started) {
-          ctx.moveTo(p.x, p.y);
-          started = true;
-        } else {
-          ctx.lineTo(p.x, p.y);
-        }
-      }
-      const centerDist = Math.abs(c) / (cols / 2);
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = alpha * (1 - centerDist * 0.72) * 0.65;
-      ctx.lineWidth = Math.abs(c) % 4 === 0 ? 1.5 : 0.85;
+      ctx.moveTo(pL.sx, pL.sy);
+      ctx.lineTo(pR.sx, pR.sy);
       ctx.stroke();
     }
 
-    for (let r = 1; r <= rows; r++) {
-      const z0 = r * spacing - scrollZ - 260;
-      if (z0 < -680) continue;
-      const distFade = Math.max(0, 1 - r / (rows + 2));
+    for (let ix = -12; ix <= 12; ix++) {
+      const x = ix * 160;
+      const pNear = project3D(x, 360, 400, 0.18, 0, 0, CX, CY, 900);
+      const pFar = project3D(x, 360, -1400, 0.18, 0, 0, CX, CY, 900);
+      ctx.globalAlpha = (1 - Math.abs(ix) / 14) * 0.32 * intensity;
       ctx.beginPath();
-      let started = false;
-      for (let c = -cols / 2; c <= cols / 2; c++) {
-        const worldX = c * spacing;
-        const wave = Math.sin(r * 0.26 - f * 0.04 + c * 0.35) * 14;
-        const ry = rotY(worldX, z0, yaw);
-        const rx = rotX(280 + wave, ry.z, tiltX);
-        const p = project3D(ry.x, rx.y, rx.z, 780, 960, 520);
-        if (!started) {
-          ctx.moveTo(p.x, p.y);
-          started = true;
-        } else {
-          ctx.lineTo(p.x, p.y);
-        }
-      }
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = alpha * distFade * 0.72;
-      ctx.lineWidth = 1.05;
+      ctx.moveTo(pNear.sx, pNear.sy);
+      ctx.lineTo(pFar.sx, pFar.sy);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  }, [f, tiltX, yaw, color, alpha]);
+  }, [frame, lightPlate, intensity]);
 
   return (
     <canvas
       ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      width={VW}
+      height={VH}
+      style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
     />
   );
 };
 
-// 2. Sculpted Optical Glass Shards & Luminous Dust (cleanly framed, zero text collision)
+// ============================================================================
+// 2. BEAT 1: 3D EXTRUDED MECHANICAL KEYCAPS SHATTERING IN 3D SPACE
+// ============================================================================
 export const ShatteringKeycaps3DCanvas: React.FC<{
-  f: number;
-  explodeFrame: number;
-}> = ({ f, explodeFrame }) => {
+  t: number;
+  shatterTime?: number;
+}> = ({ t, shatterTime = 1.55 }) => {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -140,400 +153,92 @@ export const ShatteringKeycaps3DCanvas: React.FC<{
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
 
-    ctx.clearRect(0, 0, 1920, 1080);
+    const boom = eo(seg(t, shatterTime, shatterTime + 0.85));
+    const fade = 1 - seg(t, shatterTime + 0.45, shatterTime + 0.92);
+    if (fade <= 0) return;
 
-    const tExplode = Math.max(0, f - explodeFrame);
-    const prog = Math.min(1, tExplode / 42);
-    const ease = 1 - Math.pow(1 - prog, 3);
-
-    if (tExplode <= 0) return;
-
-    const pieces = 38;
-    const projected: {
-      x: number;
-      y: number;
-      s: number;
-      z: number;
-      rot: number;
-      w: number;
-      h: number;
-      tint: string;
-      alpha: number;
-      streakX: number;
-      streakY: number;
-    }[] = [];
-
-    for (let i = 0; i < pieces; i++) {
-      const a = pseudo(i * 11 + 1) * Math.PI * 2;
-      const ringRadius = 420 + pseudo(i * 13 + 7) * 580;
-      const initX = Math.cos(a) * 180;
-      const initY = Math.sin(a) * 110;
-
-      // Push shards into orbital perimeter arcs so center typography stays razor-sharp
-      const vx = Math.cos(a) * ringRadius;
-      const vy = Math.sin(a) * ringRadius * 0.68;
-      const vz = (pseudo(i * 19 + 5) - 0.35) * 900;
-
-      const x = initX + vx * ease;
-      const y = initY + vy * ease + Math.sin(ease * 3.1 + i) * 14;
-      const z = vz * ease - ease * 180;
-
-      const p = project3D(x, y, z, 860, 960, 540);
-      const sz = (16 + pseudo(i * 23) * 28) * p.s;
-      const fade = Math.max(0, 1 - Math.pow(prog, 2.1));
-
-      const tints = [
-        "rgba(251, 179, 3, 0.85)",
-        "rgba(232, 198, 255, 0.72)",
-        "rgba(130, 232, 255, 0.65)",
-      ];
-
-      projected.push({
-        x: p.x,
-        y: p.y,
-        s: p.s,
-        z: p.depth,
-        rot: a + tExplode * 0.045 * (pseudo(i * 31) > 0.5 ? 1 : -1),
-        w: sz * 1.4,
-        h: sz * 0.52,
-        tint: tints[i % tints.length],
-        alpha: fade * Math.min(1, tExplode / 4),
-        streakX: Math.cos(a) * 42 * (1 - prog * 0.6),
-        streakY: Math.sin(a) * 28 * (1 - prog * 0.6),
-      });
-    }
-
-    projected.sort((a, b) => b.z - a.z);
-
-    for (const q of projected) {
-      if (q.alpha <= 0.02) continue;
+    // Shockwave ring on shatter
+    if (boom > 0 && boom < 1) {
+      const r = lerp(40, 1180, boom);
       ctx.save();
-      ctx.translate(q.x, q.y);
-
-      // Subtle motion trail behind prism shard
+      ctx.globalAlpha = (1 - boom) * 0.85;
+      ctx.strokeStyle = "#fbb303";
+      ctx.lineWidth = lerp(18, 1.5, boom);
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-q.streakX, -q.streakY);
-      ctx.strokeStyle = q.tint;
-      ctx.globalAlpha = q.alpha * 0.35;
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-
-      ctx.rotate(q.rot);
-      ctx.globalAlpha = q.alpha * 0.82;
-      ctx.fillStyle = "rgba(26, 10, 24, 0.75)";
-      ctx.strokeStyle = q.tint;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.roundRect(-q.w / 2, -q.h / 2, q.w, q.h, 4);
-      ctx.fill();
+      ctx.arc(CX, CY + 40, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
-    ctx.globalAlpha = 1;
-  }, [f, explodeFrame]);
 
-  return (
-    <canvas
-      ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-    />
-  );
-};
-
-// 3. Sculpted Liquid Silk Ribbon (flows along sculpted arcs, never obscures center serif text)
-export const ParametricRibbon3DCanvas: React.FC<{
-  f: number;
-  progress: number;
-  color?: string;
-}> = ({ f, progress, color = "#fbb303" }) => {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, 1920, 1080);
-
-    const steps = 110;
-    const maxStep = Math.floor(steps * Math.min(1, Math.max(0.05, progress)));
-    const layers = [
-      { dy: 210, ampY: 42, phase: 0, stroke: color, alpha: 0.72, lw: 3.0 },
-      { dy: 222, ampY: 50, phase: 0.6, stroke: "rgba(180, 92, 232, 0.85)", alpha: 0.45, lw: 1.8 },
-      { dy: -225, ampY: 36, phase: 1.7, stroke: "rgba(130, 232, 255, 0.7)", alpha: 0.34, lw: 1.4 },
-    ];
-
-    for (const layer of layers) {
-      ctx.beginPath();
-      for (let i = 0; i <= maxStep; i++) {
-        const u = i / steps;
-        const wx = -920 + u * 1840;
-        const wy =
-          layer.dy +
-          Math.sin(u * Math.PI * 2.4 - f * 0.045 + layer.phase) * layer.ampY +
-          Math.cos(u * Math.PI * 1.2 + layer.phase) * 18;
-        const wz = Math.cos(u * Math.PI * 2 + layer.phase) * 140;
-        const p = project3D(wx, wy, wz, 880, 960, 540);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      }
-      ctx.strokeStyle = layer.stroke;
-      ctx.globalAlpha = layer.alpha;
-      ctx.lineWidth = layer.lw;
-      ctx.lineCap = "round";
-      ctx.shadowColor = layer.stroke;
-      ctx.shadowBlur = 18;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-    ctx.globalAlpha = 1;
-  }, [f, progress, color]);
-
-  return (
-    <canvas
-      ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-    />
-  );
-};
-
-// 4. Sculpted Anatomical 478-Point MediaPipe Biometric Reticle (sleek glass contours, not an oval egg)
-export const BiometricFaceMesh3DCanvas: React.FC<{
-  f: number;
-  cx?: number;
-  cy?: number;
-  scale?: number;
-  yawAngle?: number;
-  pitchAngle?: number;
-  mouthOpen?: number;
-  isLocked?: boolean;
-}> = ({
-  f,
-  cx = 430,
-  cy = 530,
-  scale = 1.05,
-  yawAngle,
-  pitchAngle,
-  mouthOpen,
-  isLocked = true,
-}) => {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, 1920, 1080);
-
-    const yAng = yawAngle ?? Math.sin(f * 0.04) * 0.14;
-    const pAng = pitchAngle ?? Math.cos(f * 0.03) * 0.07;
-    const mouth = mouthOpen ?? (0.28 + Math.max(0, Math.sin(f * 0.36)) * 0.65);
-
-    const proj = (vx: number, vy: number, vz: number) => {
-      const r1 = rotY(vx * 185 * scale, vz * 185 * scale, yAng);
-      const r2 = rotX(vy * 225 * scale, r1.z, pAng);
-      return project3D(r1.x, r2.y, r2.z - 60, 820, cx, cy);
+    // 72 3D geometric prism shards bursting out of the 3 hotkey caps
+    let seed = 9001;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
     };
 
-    // Soft biometric radial halo behind reticle
-    const halo = ctx.createRadialGradient(cx, cy, 18, cx, cy, 290 * scale);
-    halo.addColorStop(0, isLocked ? "rgba(130, 232, 255, 0.16)" : "rgba(251, 179, 3, 0.10)");
-    halo.addColorStop(0.55, "rgba(180, 92, 232, 0.08)");
-    halo.addColorStop(1, "rgba(18, 4, 18, 0)");
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 290 * scale, 0, Math.PI * 2);
-    ctx.fill();
+    if (boom > 0.01) {
+      for (let i = 0; i < 84; i++) {
+        const originX = (i % 3 === 0 ? -520 : i % 3 === 1 ? 0 : 520) + (rnd() - 0.5) * 280;
+        const originY = (rnd() - 0.5) * 160;
+        const vx = originX * (1.6 + rnd() * 1.4) + (rnd() - 0.5) * 500;
+        const vy = originY * 2.2 - 180 + rnd() * 520;
+        const vz = 240 + rnd() * 680;
 
-    // Precision optical tracking corners
-    const bR = 230 * scale;
-    const arm = 28 * scale;
-    ctx.strokeStyle = isLocked ? "rgba(251, 179, 3, 0.82)" : "rgba(255, 255, 255, 0.35)";
-    ctx.lineWidth = 2.2;
-    for (const [dx, dy] of [
-      [-1, -1],
-      [1, -1],
-      [-1, 1],
-      [1, 1],
-    ]) {
-      const bx = cx + dx * bR * 0.88;
-      const by = cy + dy * bR * 1.05;
-      ctx.beginPath();
-      ctx.moveTo(bx - dx * arm, by);
-      ctx.lineTo(bx, by);
-      ctx.lineTo(bx, by - dy * arm);
-      ctx.stroke();
+        const x = lerp(originX, originX + vx, boom);
+        const y = lerp(originY, originY + vy + 280 * boom * boom, boom);
+        const z = lerp(0, vz, boom);
+
+        const rx = boom * (3 + rnd() * 8);
+        const ry = boom * (3 + rnd() * 8);
+        const rz = boom * (2 + rnd() * 6);
+        const sz = 14 + rnd() * 26;
+
+        const c0 = project3D(x - sz, y - sz, z, rx, ry, rz);
+        const c1 = project3D(x + sz, y - sz, z, rx, ry, rz);
+        const c2 = project3D(x + sz, y + sz, z, rx, ry, rz);
+        const c3 = project3D(x - sz, y + sz, z, rx, ry, rz);
+
+        ctx.globalAlpha = fade * (0.45 + 0.55 * rnd());
+        ctx.fillStyle =
+          i % 4 === 0 ? "#fbb303" : i % 4 === 1 ? "#ff6b5e" : "#dfe5ec";
+        ctx.beginPath();
+        ctx.moveTo(c0.sx, c0.sy);
+        ctx.lineTo(c1.sx, c1.sy);
+        ctx.lineTo(c2.sx, c2.sy);
+        ctx.lineTo(c3.sx, c3.sy);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
-
-    // Horizontal scan sweep line
-    const scanY = cy + Math.sin(f * 0.075) * 195 * scale;
-    const scanGrad = ctx.createLinearGradient(cx - 210 * scale, 0, cx + 210 * scale, 0);
-    scanGrad.addColorStop(0, "rgba(130, 232, 255, 0)");
-    scanGrad.addColorStop(0.5, "rgba(130, 232, 255, 0.55)");
-    scanGrad.addColorStop(1, "rgba(130, 232, 255, 0)");
-    ctx.strokeStyle = scanGrad;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(cx - 210 * scale, scanY);
-    ctx.lineTo(cx + 210 * scale, scanY);
-    ctx.stroke();
-
-    // Anatomical outer contour (forehead -> temples -> tapered cheekbones -> sculpted jaw -> chin)
-    const jawContour: [number, number, number][] = [
-      [0.0, -0.94, 0.14],
-      [0.44, -0.88, 0.10],
-      [0.74, -0.62, 0.00],
-      [0.82, -0.22, -0.06],
-      [0.74, 0.24, -0.04],
-      [0.54, 0.64, 0.08],
-      [0.24, 0.88, 0.22],
-      [0.0, 0.94, 0.26],
-      [-0.24, 0.88, 0.22],
-      [-0.54, 0.64, 0.08],
-      [-0.74, 0.24, -0.04],
-      [-0.82, -0.22, -0.06],
-      [-0.74, -0.62, 0.00],
-      [-0.44, -0.88, 0.10],
-    ];
-    ctx.beginPath();
-    jawContour.forEach(([vx, vy, vz], idx) => {
-      const p = proj(vx, vy, vz);
-      if (idx === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.closePath();
-    ctx.strokeStyle = "rgba(130, 232, 255, 0.52)";
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-
-    // Inner cheekbone/brow/nose spline mesh
-    const bridgePts: [number, number, number][] = [
-      [-0.58, -0.34, 0.14],
-      [-0.28, -0.38, 0.22],
-      [0.0, -0.30, 0.28],
-      [0.28, -0.38, 0.22],
-      [0.58, -0.34, 0.14],
-    ];
-    ctx.beginPath();
-    bridgePts.forEach(([vx, vy, vz], i) => {
-      const p = proj(vx, vy, vz);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.26)";
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    // Nose bridge to tip
-    const nosePts: [number, number, number][] = [
-      [0.0, -0.30, 0.28],
-      [0.0, 0.14, 0.42],
-      [-0.12, 0.20, 0.30],
-      [0.0, 0.22, 0.34],
-      [0.12, 0.20, 0.30],
-    ];
-    ctx.beginPath();
-    nosePts.forEach(([vx, vy, vz], i) => {
-      const p = proj(vx, vy, vz);
-      if (i === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.strokeStyle = "rgba(130, 232, 255, 0.36)";
-    ctx.lineWidth = 1.3;
-    ctx.stroke();
-
-    // Eye contours + glowing iris gaze markers
-    for (const side of [-1, 1]) {
-      const ex = side * 0.32;
-      const ey = -0.22;
-      const ez = 0.26;
-      const eyeRing: [number, number, number][] = [
-        [ex - 0.17, ey, ez - 0.03],
-        [ex, ey - 0.08, ez + 0.02],
-        [ex + 0.17, ey, ez - 0.03],
-        [ex, ey + 0.07, ez + 0.02],
-      ];
-      ctx.beginPath();
-      eyeRing.forEach(([vx, vy, vz], idx) => {
-        const p = proj(vx, vy, vz);
-        if (idx === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.closePath();
-      ctx.strokeStyle = "rgba(130, 232, 255, 0.78)";
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-
-      const pupil = proj(ex, ey, ez + 0.03);
-      ctx.beginPath();
-      ctx.arc(pupil.x, pupil.y, 4.8 * scale, 0, Math.PI * 2);
-      ctx.fillStyle = "#82e8ff";
-      ctx.shadowColor = "#82e8ff";
-      ctx.shadowBlur = 12;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-
-    // Active speaking lip spline + landmark nodes
-    const mw = 0.26;
-    const mh = 0.04 + mouth * 0.08;
-    const lipRing: [number, number, number][] = [
-      [-mw, 0.44, 0.26],
-      [-mw * 0.45, 0.44 - mh * 0.72, 0.32],
-      [0, 0.44 - mh * 0.9, 0.35],
-      [mw * 0.45, 0.44 - mh * 0.72, 0.32],
-      [mw, 0.44, 0.26],
-      [mw * 0.45, 0.44 + mh * 0.82, 0.31],
-      [0, 0.44 + mh * 1.0, 0.34],
-      [-mw * 0.45, 0.44 + mh * 0.82, 0.31],
-    ];
-    ctx.beginPath();
-    const lipProj = lipRing.map(([vx, vy, vz]) => proj(vx, vy, vz));
-    lipProj.forEach((p, idx) => {
-      if (idx === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.closePath();
-    ctx.strokeStyle = "#fbb303";
-    ctx.lineWidth = 2.4;
-    ctx.shadowColor = "rgba(251, 179, 3, 0.65)";
-    ctx.shadowBlur = 14;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    ctx.fillStyle = "#ffe596";
-    for (const lp of lipProj) {
-      ctx.beginPath();
-      ctx.arc(lp.x, lp.y, 3.0 * scale, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }, [f, cx, cy, scale, yawAngle, pitchAngle, mouthOpen, isLocked]);
+  }, [t, shatterTime]);
 
   return (
     <canvas
       ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      width={VW}
+      height={VH}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 30,
+      }}
     />
   );
 };
 
-// 5. Dual-Trace Harmonic Audio Terrain (Gold vocal envelope + Cyan Silero VAD floor)
-export const AcousticTerrain3DCanvas: React.FC<{
-  f: number;
+// ============================================================================
+// 3. BEAT 2: 3D PARAMETRIC S-RIBBON SCULPTURE (Morphs: Iris -> Helix -> Arrow)
+// ============================================================================
+export const ParametricRibbon3DCanvas: React.FC<{
+  t: number;
+  mode: 0 | 1 | 2;
   rms: number;
-  color?: string;
-}> = ({ f, rms, color = "#fbb303" }) => {
+}> = ({ t, mode, rms }) => {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -541,54 +246,384 @@ export const AcousticTerrain3DCanvas: React.FC<{
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
 
-    ctx.clearRect(0, 0, 1920, 1080);
+    const N = 220;
+    const m01 = eio(seg(t, 1.08, 1.48));
+    const m12 = eio(seg(t, 2.02, 2.42));
 
-    const rows = 14;
-    const cols = 48;
+    // Compute 3D centerline points of the ribbon across the 3 geometric states
+    const pts: {
+      x: number;
+      y: number;
+      z: number;
+      nx: number;
+      ny: number;
+      nz: number;
+      u: number;
+    }[] = [];
 
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      const ang = u * Math.PI * 4;
+
+      // State 0 ("Look."): 3D Torus Iris Ring
+      const r0 = 260 + 48 * Math.cos(u * Math.PI * 6 + t * 3);
+      const x0 = r0 * Math.cos(u * Math.PI * 2);
+      const y0 = r0 * Math.sin(u * Math.PI * 2);
+      const z0 = 95 * Math.sin(u * Math.PI * 4 + t * 2);
+
+      // State 1 ("Talk."): 3D Acoustic Double-Helix Wave
+      const x1 = (u - 0.5) * 1280;
+      const env = Math.sin(u * Math.PI);
+      const amp = (150 + rms * 130) * env;
+      const y1 = amp * Math.sin(ang * 2.2 - t * 9);
+      const z1 = amp * Math.cos(ang * 2.2 - t * 9);
+
+      // State 2 ("Sent."): 3D Folded S-Ribbon + Forward Launch Vector
+      const sCurve = Math.sin((u - 0.5) * Math.PI * 2);
+      const x2 = sCurve * 340;
+      const y2 = (0.5 - u) * 520;
+      const z2 = Math.cos(u * Math.PI * 2) * 160;
+
+      const xa = lerp(x0, x1, m01);
+      const ya = lerp(y0, y1, m01);
+      const za = lerp(z0, z1, m01);
+
+      const x = lerp(xa, x2, m12);
+      const y = lerp(ya, y2, m12);
+      const z = lerp(za, z2, m12);
+
+      // Ribbon width normal twisted along u (2*PI keeps closed torus seam continuous)
+      const twist = u * Math.PI * 2 + t * 1.4;
+      const w = 34 * (0.45 + 0.55 * Math.sin(u * Math.PI));
+      pts.push({
+        x,
+        y,
+        z,
+        nx: Math.cos(twist) * w,
+        ny: Math.sin(twist) * w,
+        nz: Math.cos(twist * 0.7) * w * 0.5,
+        u,
+      });
+    }
+
+    const quads: {
+      p0: { sx: number; sy: number };
+      p1: { sx: number; sy: number };
+      p2: { sx: number; sy: number };
+      p3: { sx: number; sy: number };
+      z: number;
+      u: number;
+    }[] = [];
+
+    const rx = 0.22 * Math.sin(t * 0.9);
+    const ry = 0.35 * Math.cos(t * 0.7);
+    const rz = 0.08 * Math.sin(t * 0.5);
+
+    for (let i = 0; i < N; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const aL = project3D(a.x - a.nx, a.y - a.ny, a.z - a.nz, rx, ry, rz, CX, CY - 30);
+      const aR = project3D(a.x + a.nx, a.y + a.ny, a.z + a.nz, rx, ry, rz, CX, CY - 30);
+      const bR = project3D(b.x + b.nx, b.y + b.ny, b.z + b.nz, rx, ry, rz, CX, CY - 30);
+      const bL = project3D(b.x - b.nx, b.y - b.ny, b.z - b.nz, rx, ry, rz, CX, CY - 30);
+
+      quads.push({
+        p0: aL,
+        p1: aR,
+        p2: bR,
+        p3: bL,
+        z: (aL.z + bR.z) * 0.5,
+        u: a.u,
+      });
+    }
+
+    quads.sort((a, b) => a.z - b.z);
+
+    for (const q of quads) {
+      const torusArc = 0.5 - 0.5 * Math.cos(q.u * Math.PI * 2);
+      const helixRamp = eio(seg(q.u, 0.52, 0.86));
+      const morphMix = clamp(m01 + m12, 0, 1);
+      const tipGrad = lerp(torusArc * 0.72, helixRamp, morphMix);
+      const amberMix = clamp(tipGrad * (0.65 + 0.35 * m12) + m12 * 0.78, 0, 1);
+      const shade = clamp((q.z + 260) / 520, 0.25, 1);
+      ctx.beginPath();
+      ctx.moveTo(q.p0.sx, q.p0.sy);
+      ctx.lineTo(q.p1.sx, q.p1.sy);
+      ctx.lineTo(q.p2.sx, q.p2.sy);
+      ctx.lineTo(q.p3.sx, q.p3.sy);
+      ctx.closePath();
+
+      const silV = lerp(75, 228, shade);
+      const ambR = lerp(180, 251, shade);
+      const ambG = lerp(95, 179, shade);
+      const ambB = lerp(8, 3, shade);
+
+      const r = Math.round(lerp(silV, ambR, amberMix));
+      const g = Math.round(lerp(silV * 0.94, ambG, amberMix));
+      const b = Math.round(lerp(silV, ambB, amberMix));
+      const a = lerp(0.82, 0.90, amberMix);
+      const fillCol = `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
+      ctx.fillStyle = fillCol;
+      ctx.fill();
+      ctx.strokeStyle = fillCol;
+      ctx.lineWidth = 0.75;
+      ctx.stroke();
+    }
+  }, [t, mode, rms]);
+
+  return (
+    <canvas
+      ref={ref}
+      width={VW}
+      height={VH}
+      style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+    />
+  );
+};
+
+// ============================================================================
+// 4. BEAT 3: PROCEDURAL 3D 478-POINT BIOMETRIC FACE TOPOLOGY & GAZE FRUSTUM
+// ============================================================================
+export const BiometricFaceMesh3DCanvas: React.FC<{
+  t: number;
+  rms: number;
+}> = ({ t, rms }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
+
+    const lockU = eio(seg(t, 0.15, 1.05));
+    // Head rotates from turned-away (-0.52 rad yaw) into dead-center screen lock (-0.025 rad)
+    const yaw = lerp(-0.54, -0.024, lockU) + 0.02 * Math.sin(t * 2.1);
+    const pitch = lerp(0.22, 0.015, lockU) + 0.015 * Math.cos(t * 1.7);
+    const roll = lerp(-0.12, 0.005, lockU);
+
+    const faceCx = 460;
+    const faceCy = 520;
+
+    // 1. Volumetric Gaze Cone Frustum projecting from both eyes when locked
+    if (lockU > 0.35) {
+      const coneAlpha = seg(lockU, 0.35, 0.95) * (0.28 + rms * 0.18);
+      const leftEye = project3D(-68, -42, 165, pitch, yaw, roll, faceCx, faceCy, 950);
+      const rightEye = project3D(68, -42, 165, pitch, yaw, roll, faceCx, faceCy, 950);
+
+      for (const eye of [leftEye, rightEye]) {
+        const grad = ctx.createLinearGradient(eye.sx, eye.sy, 1180, faceCy);
+        grad.addColorStop(0, `rgba(251, 179, 3, ${coneAlpha * 1.6})`);
+        grad.addColorStop(0.5, `rgba(184, 204, 228, ${coneAlpha * 0.7})`);
+        grad.addColorStop(1, "rgba(251, 179, 3, 0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(eye.sx, eye.sy);
+        ctx.lineTo(1160, faceCy - 250);
+        ctx.lineTo(1160, faceCy + 250);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // 2. Generate 3D parameterized facial surface topology (18 latitude x 22 longitude)
+    const rows = 16;
+    const cols = 20;
+    const grid: { sx: number; sy: number; z: number; region: string }[][] = [];
+
+    for (let r = 0; r <= rows; r++) {
+      const v = r / rows; // 0 = forehead, 1 = chin
+      const phi = (v - 0.5) * Math.PI * 0.88;
+      const rowPts: { sx: number; sy: number; z: number; region: string }[] = [];
+
+      for (let c = 0; c <= cols; c++) {
+        const u = c / cols; // 0 = left ear, 1 = right ear
+        const theta = (u - 0.5) * Math.PI * 0.92;
+
+        // Sculpt anatomically recognizable 3D face geometry
+        const jawTaper = 1 - 0.28 * Math.pow(Math.max(0, v - 0.45), 1.4);
+        let x = 185 * Math.sin(theta) * Math.cos(phi) * jawTaper;
+        let y = 245 * Math.sin(phi);
+        let z = 175 * Math.cos(theta) * Math.cos(phi);
+
+        // Nose bridge protrusion
+        const noseDistX = Math.abs(u - 0.5);
+        const noseInY = v > 0.36 && v < 0.64;
+        if (noseInY && noseDistX < 0.12) {
+          z += (1 - noseDistX / 0.12) * 38 * Math.sin(((v - 0.36) / 0.28) * Math.PI);
+        }
+
+        // Eye socket indentation
+        const eyeDistL = Math.hypot(u - 0.33, v - 0.4);
+        const eyeDistR = Math.hypot(u - 0.67, v - 0.4);
+        if (eyeDistL < 0.1 || eyeDistR < 0.1) {
+          z -= 18;
+        }
+
+        // Animated lip aperture movement
+        const mouthDist = Math.hypot((u - 0.5) * 1.4, (v - 0.74) * 2.2);
+        let region = "skin";
+        if (eyeDistL < 0.095 || eyeDistR < 0.095) region = "eye";
+        if (mouthDist < 0.18) {
+          region = "lips";
+          const lipOpen = (0.25 + rms * 0.95) * 18;
+          y += (v > 0.74 ? 1 : -1) * lipOpen * (1 - mouthDist / 0.18);
+          z += 14;
+        }
+
+        const p = project3D(x, y, z, pitch, yaw, roll, faceCx, faceCy, 950);
+        rowPts.push({ ...p, region });
+      }
+      grid.push(rowPts);
+    }
+
+    // Draw triangulated wireframe mesh
     for (let r = 0; r < rows; r++) {
-      const z = -120 + r * 48;
-      const depthFade = 1 - r / (rows + 2);
+      for (let c = 0; c < cols; c++) {
+        const p00 = grid[r][c];
+        const p10 = grid[r + 1][c];
+        const p01 = grid[r][c + 1];
+        const p11 = grid[r + 1][c + 1];
+
+        const isFeature =
+          p00.region === "eye" ||
+          p00.region === "lips" ||
+          p11.region === "eye" ||
+          p11.region === "lips";
+
+        ctx.strokeStyle = isFeature
+          ? `rgba(251, 179, 3, ${0.55 + 0.35 * lockU})`
+          : `rgba(184, 204, 228, ${0.18 + 0.16 * lockU})`;
+        ctx.lineWidth = isFeature ? 1.5 : 0.85;
+
+        ctx.beginPath();
+        ctx.moveTo(p00.sx, p00.sy);
+        ctx.lineTo(p01.sx, p01.sy);
+        ctx.lineTo(p11.sx, p11.sy);
+        ctx.lineTo(p00.sx, p00.sy);
+        ctx.lineTo(p10.sx, p10.sy);
+        ctx.lineTo(p11.sx, p11.sy);
+        ctx.stroke();
+      }
+    }
+
+    // Draw glowing landmark vertices
+    for (let r = 0; r <= rows; r++) {
+      for (let c = 0; c <= cols; c++) {
+        const p = grid[r][c];
+        const isHot = p.region === "eye" || p.region === "lips";
+        ctx.fillStyle = isHot ? "#fbb303" : "#dfe5ec";
+        ctx.globalAlpha = isHot ? 0.95 : 0.48;
+        const rad = isHot ? 3.2 : 1.7;
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, rad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // 3. Biometric Target Reticle Ring around Face
+    ctx.save();
+    ctx.translate(faceCx, faceCy);
+    ctx.rotate(t * 0.25);
+    ctx.strokeStyle = lockU > 0.6 ? "#fbb303" : "#b8cce4";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([18, 12]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 315, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }, [t, rms]);
+
+  return (
+    <canvas
+      ref={ref}
+      width={VW}
+      height={VH}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 15,
+      }}
+    />
+  );
+};
+
+// ============================================================================
+// 5. BEAT 4: 3D PERSPECTIVE ACOUSTIC FREQUENCY WATERFALL TERRAIN
+// ============================================================================
+export const AcousticTerrain3DCanvas: React.FC<{
+  frame: number;
+}> = ({ frame }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
+
+    const rows = 26;
+    const cols = 64;
+
+    for (let r = rows - 1; r >= 0; r--) {
+      const histFrame = clamp(frame - r * 2, 0, 1799);
+      const env = AUDIO_RMS[histFrame] ?? 0.25;
+      const pk = AUDIO_PEAK[histFrame] ?? 0.35;
+      const z = 280 - r * 58;
+
       ctx.beginPath();
       for (let c = 0; c <= cols; c++) {
-        const u = (c / cols) * 2 - 1;
-        const wx = u * 1020;
-        const n1 = Math.sin(u * 4.8 + f * 0.14 + r * 0.34);
-        const n2 = Math.cos(u * 9.2 - f * 0.21 + r * 0.52);
-        const centerEnv = Math.exp(-u * u * 1.4);
-        const amp = (24 + rms * 190) * centerEnv;
-        const wy = 240 - (n1 * 0.62 + n2 * 0.38) * amp;
-        const rx = rotX(wy, z, 0.32);
-        const p = project3D(wx, rx.y, rx.z, 820, 960, 610);
-        if (c === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+        const u = c / cols;
+        const x = (u - 0.5) * 2100;
+        const bell = Math.exp(-Math.pow((u - 0.5) * 3.1, 2));
+        const wave =
+          Math.sin(u * 24 + histFrame * 0.28) * 0.55 +
+          Math.cos(u * 41 - histFrame * 0.19) * 0.45;
+        const amp = (28 + env * 155 + pk * 75) * bell;
+        const y = 370 - Math.abs(wave) * amp;
+
+        const p = project3D(x, y, z, 0.16, 0, 0, CX, CY, 1050);
+        if (c === 0) ctx.moveTo(p.sx, p.sy);
+        else ctx.lineTo(p.sx, p.sy);
       }
-      const isLead = r < 2;
-      ctx.strokeStyle = isLead ? "#82e8ff" : color;
-      ctx.globalAlpha = depthFade * (isLead ? 0.68 : 0.34);
-      ctx.lineWidth = isLead ? 2.2 : 1.3;
+
+      const alpha = clamp(1 - r / rows, 0.08, 0.92);
+      ctx.strokeStyle =
+        r < 5
+          ? `rgba(251, 179, 3, ${alpha})`
+          : `rgba(42, 8, 35, ${alpha * 0.38})`;
+      ctx.lineWidth = r === 0 ? 3.2 : 1.5;
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
-  }, [f, rms, color]);
+  }, [frame]);
 
   return (
     <canvas
       ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      width={VW}
+      height={VH}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 2,
+      }}
     />
   );
 };
 
-// 6. Optical Perimeter Warp Streaks
+// ============================================================================
+// 6. BEAT 6: 3D HYPERSPACE DATA WARP CONDUIT & SHOCKWAVE
+// ============================================================================
 export const LightSpeedWarpCanvas: React.FC<{
-  f: number;
-  speed?: number;
-  streakCount?: number;
-}> = ({ f, speed = 1.0, streakCount = 72 }) => {
+  t: number;
+}> = ({ t }) => {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -596,49 +631,64 @@ export const LightSpeedWarpCanvas: React.FC<{
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
 
-    ctx.clearRect(0, 0, 1920, 1080);
+    const warpU = seg(t, 0.05, 1.05);
+    if (warpU <= 0 || warpU >= 1) return;
+    const fade = 1 - seg(t, 0.65, 1.02);
 
-    for (let i = 0; i < streakCount; i++) {
-      const a = pseudo(i * 19 + 3) * Math.PI * 2;
-      const dist = 360 + pseudo(i * 23 + 7) * 760;
-      const x = Math.cos(a) * dist;
-      const y = Math.sin(a) * dist * 0.66;
-      const z0 = ((pseudo(i * 29) * 1400 - f * 48 * speed) % 1400 + 1400) % 1400 - 500;
-      const z1 = z0 + 190 * speed;
+    let sd = 4242;
+    const rn = () => {
+      sd = (sd * 1664525 + 1013904223) >>> 0;
+      return sd / 4294967296;
+    };
 
-      const p0 = project3D(x, y, z0, 740, 960, 540);
-      const p1 = project3D(x, y, z1, 740, 960, 540);
-      if (z0 < -450) continue;
+    ctx.save();
+    for (let i = 0; i < 180; i++) {
+      const ang = rn() * Math.PI * 2;
+      const rad = 40 + rn() * 680;
+      const z0 = -800 + rn() * 1200;
+      const z1 = z0 + warpU * 1450;
+      const tailZ = z1 - 240 * (1 - warpU * 0.4);
 
-      const alpha = Math.min(0.65, Math.max(0, (700 - z0) / 1100)) * 0.55;
-      ctx.strokeStyle = i % 3 === 0 ? "#fbb303" : i % 3 === 1 ? "#82e8ff" : "#e7baff";
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = Math.max(1, 2.2 * p0.s);
-      ctx.lineCap = "round";
+      const x = Math.cos(ang) * rad;
+      const y = Math.sin(ang) * rad * 0.62;
+
+      const pHead = project3D(x, y, z1, 0, 0, 0, CX, CY, 900);
+      const pTail = project3D(x, y, tailZ, 0, 0, 0, CX, CY, 900);
+
+      ctx.globalAlpha = fade * (0.35 + 0.65 * rn());
+      ctx.strokeStyle = i % 3 === 0 ? "#fbb303" : "#dfe5ec";
+      ctx.lineWidth = i % 4 === 0 ? 3.2 : 1.6;
       ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
+      ctx.moveTo(pTail.sx, pTail.sy);
+      ctx.lineTo(pHead.sx, pHead.sy);
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
-  }, [f, speed, streakCount]);
+    ctx.restore();
+  }, [t]);
 
   return (
     <canvas
       ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      width={VW}
+      height={VH}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 45,
+      }}
     />
   );
 };
 
-// 7. Crimson Geodesic Force-Field Ring for Destructive Command Guard
+// ============================================================================
+// 7. BEAT 10: 3D HEXAGONAL LASER CONTAINMENT FORCE-FIELD
+// ============================================================================
 export const HexShieldForcefieldCanvas: React.FC<{
-  f: number;
-  pulse?: number;
-}> = ({ f, pulse = 0 }) => {
+  t: number;
+}> = ({ t }) => {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -646,44 +696,62 @@ export const HexShieldForcefieldCanvas: React.FC<{
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
 
-    ctx.clearRect(0, 0, 1920, 1080);
+    const activeU = eo(seg(t, 1.35, 1.95));
+    if (activeU <= 0) return;
 
-    const ringCount = 3;
-    for (let r = 0; r < ringCount; r++) {
-      const radius = 380 + r * 175 + pulse * 14;
-      const spin = f * (r % 2 === 0 ? 0.008 : -0.006);
-      const segs = 12 + r * 6;
-      ctx.strokeStyle = r === 0 ? "rgba(255, 86, 114, 0.38)" : "rgba(255, 86, 114, 0.16)";
-      ctx.lineWidth = r === 0 ? 1.8 : 1.0;
-      ctx.setLineDash(r === 1 ? [14, 18] : []);
+    const pulse = 0.75 + 0.25 * Math.sin(t * 9);
+    const shieldCx = 1425;
+    const shieldCy = 372;
+
+    // Glowing red/amber containment rings around the blocked Enter key
+    for (let ring = 0; ring < 3; ring++) {
+      const r = (74 + ring * 26) * activeU;
+      ctx.save();
+      ctx.translate(shieldCx, shieldCy);
+      ctx.rotate((ring % 2 === 0 ? 1 : -1) * t * (0.8 + ring * 0.3));
+      ctx.strokeStyle = ring === 0 ? "#ff6b5e" : "#fbb303";
+      ctx.globalAlpha = (0.65 - ring * 0.18) * pulse * activeU;
+      ctx.lineWidth = ring === 0 ? 3.5 : 2;
+
+      // Draw hexagon
       ctx.beginPath();
-      for (let i = 0; i <= segs; i++) {
-        const a = (i / segs) * Math.PI * 2 + spin;
-        const p = project3D(Math.cos(a) * radius, Math.sin(a) * radius * 0.72, 120 + r * 80, 900, 960, 540);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
+      for (let k = 0; k < 6; k++) {
+        const a = (k * Math.PI) / 3;
+        const hx = Math.cos(a) * r;
+        const hy = Math.sin(a) * r;
+        if (k === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
       }
+      ctx.closePath();
       ctx.stroke();
+      ctx.restore();
     }
-    ctx.setLineDash([]);
-  }, [f, pulse]);
+  }, [t]);
 
   return (
     <canvas
       ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      width={VW}
+      height={VH}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 35,
+      }}
     />
   );
 };
 
-// 8. Golden Fibonacci Convergence Halo for Brand Finale
+// ============================================================================
+// 8. BEAT 12: FIBONACCI 3D GOLDEN VORTEX CONVERGENCE
+// ============================================================================
 export const FibonacciVortexCanvas: React.FC<{
-  f: number;
-  converge?: number;
-}> = ({ f, converge = 1 }) => {
+  t: number;
+  rms: number;
+}> = ({ t, rms }) => {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -691,39 +759,44 @@ export const FibonacciVortexCanvas: React.FC<{
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.clearRect(0, 0, VW, VH);
 
-    ctx.clearRect(0, 0, 1920, 1080);
-
-    const n = 220;
+    const N = 260;
     const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-    const spin = f * 0.011;
+    const settle = eo(seg(t, 0, 1.35));
 
-    for (let i = 0; i < n; i++) {
-      const a = i * goldenAngle + spin;
-      const rNorm = Math.sqrt(i / n);
-      const r = (95 + rNorm * 660) * (1.28 - 0.28 * converge);
-      const wx = Math.cos(a) * r;
-      const wy = Math.sin(a) * r * 0.76;
-      const wz = Math.sin(rNorm * Math.PI - f * 0.04) * 160;
-      const p = project3D(wx, wy, wz, 920, 960, 500);
-      const sz = (1.5 + (1 - rNorm) * 2.8) * p.s;
-      const alpha = (0.14 + (1 - rNorm) * 0.56) * converge;
+    for (let i = 0; i < N; i++) {
+      const frac = i / N;
+      const baseR = lerp(820, 290 + 340 * Math.sqrt(frac), settle);
+      const theta = i * goldenAngle + t * (0.45 - frac * 0.22);
+      const z = Math.sin(frac * Math.PI * 4 + t * 2) * (140 * (1 - settle * 0.5));
 
+      const x = Math.cos(theta) * baseR;
+      const y = Math.sin(theta) * baseR * 0.68;
+
+      const p = project3D(x, y, z, 0.25 * (1 - settle), 0, 0, CX, CY - 40, 1100);
+      const rad = (1.6 + (1 - frac) * 3.2 + rms * 2.2) * p.scale;
+
+      ctx.globalAlpha = clamp(0.2 + (1 - frac) * 0.65, 0.15, 0.85);
+      ctx.fillStyle = i % 3 === 0 ? "#fbb303" : "#dfe5ec";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
-      ctx.fillStyle = i % 5 === 0 ? "#82e8ff" : i % 2 === 0 ? "#fbb303" : "#e8c4ff";
-      ctx.globalAlpha = Math.max(0.05, Math.min(0.85, alpha));
+      ctx.arc(p.sx, p.sy, rad, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
-  }, [f, converge]);
+  }, [t, rms]);
 
   return (
     <canvas
       ref={ref}
-      width={1920}
-      height={1080}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      width={VW}
+      height={VH}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 2,
+      }}
     />
   );
 };
