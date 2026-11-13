@@ -34,11 +34,10 @@
 <ul>
 <li>Frontend production build passes and includes the camera model and MediaPipe WASM runtime.</li>
 <li>macOS Apple Silicon debug <code>.app</code> packaging succeeds. This is not a signed production installer test.</li>
-<li>46 automated Rust tests pass, including model format validation and the model checksum check; 3 desktop/GPU tests are explicitly ignored by default.</li>
+<li>47 automated Rust tests pass by default, including model format validation and the model checksum check; 3 desktop/GPU tests run under <code>--ignored</code> and also pass on Apple M4.</li>
 <li>3 Node release tests pass: wrong release tags, failed model requests and corrupt camera-model responses are rejected.</li>
 <li>Release metadata versions agree. CI and release packaging now run these checks before bundling.</li>
-<li>Camera asset preparation validates the pinned face model's SHA-256 and copies WASM from the installed npm version. Cached asset preparation passes.</li>
-<li>A fresh download was attempted but blocked by this session's DNS/network restrictions (<code>ENOTFOUND storage.googleapis.com</code>). It must pass on a clean CI runner before release.</li>
+<li>Camera asset preparation validates the pinned face model's SHA-256 and copies WASM from the installed npm version. Cached asset preparation and CI network downloads both pass.</li>
 </ul>
 <h2 id="required-before-publishing">Required before publishing</h2>
 <p>Record the version, OS version, hardware and result for each applicable platform. Do not infer Windows or Intel Mac results from Apple Silicon.</p>
@@ -54,21 +53,21 @@
 <tbody>
 <tr>
   <td>Clean checkout: <code>npm ci</code>, <code>npm test</code>, <code>npm run check:release</code>, <code>npm run build</code></td>
-  <td>Local pass on 2026-11-12 (macOS 27.0.1, M4, existing checkout); CI pending</td>
-  <td>Pending CI</td>
-  <td>Pending CI</td>
+  <td>Pass on Apple Silicon (2026-11-12, M4) &amp; <code>macos-latest</code> CI (#43343229348)</td>
+  <td>Built in CI (#43343229795); Intel runtime pending</td>
+  <td>Pass in <code>windows-latest</code> CI (#43343229348)</td>
 </tr>
 <tr>
   <td>Locked Rust tests pass</td>
-  <td>Local pass on 2026-11-12 (46 passed, 3 ignored)</td>
-  <td>Pending</td>
-  <td>Pending</td>
+  <td>Pass (2026-11-12: 47 default + 3 desktop/GPU ignored tests on M4); CI pass (#43343229348)</td>
+  <td>Pending Intel hardware</td>
+  <td>Pass in <code>windows-latest</code> CI (#43343229348, 47 passed, 3 ignored)</td>
 </tr>
 <tr>
   <td>Release installer builds and opens on a fresh account</td>
-  <td>Pending</td>
-  <td>Pending</td>
-  <td>Pending</td>
+  <td><code>v0.2.1</code> DMG built in CI (#43343229795); fresh-account open pending</td>
+  <td><code>v0.2.1</code> x64 DMG built in CI (#43343229795); hardware open pending</td>
+  <td><code>v0.2.1</code> EXE/MSI built in CI (#43343229795); hardware open pending</td>
 </tr>
 <tr>
   <td>Camera, microphone and typing permissions: deny, retry, grant</td>

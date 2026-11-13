@@ -6,11 +6,10 @@ Status: beta preparation complete locally; public launch sign-off is pending.
 
 - Frontend production build passes and includes the camera model and MediaPipe WASM runtime.
 - macOS Apple Silicon debug `.app` packaging succeeds. This is not a signed production installer test.
-- 46 automated Rust tests pass, including model format validation and the model checksum check; 3 desktop/GPU tests are explicitly ignored by default.
+- 47 automated Rust tests pass by default, including model format validation and the model checksum check; 3 desktop/GPU tests run under `--ignored` and also pass on Apple M4.
 - 3 Node release tests pass: wrong release tags, failed model requests and corrupt camera-model responses are rejected.
 - Release metadata versions agree. CI and release packaging now run these checks before bundling.
-- Camera asset preparation validates the pinned face model's SHA-256 and copies WASM from the installed npm version. Cached asset preparation passes.
-- A fresh download was attempted but blocked by this session's DNS/network restrictions (`ENOTFOUND storage.googleapis.com`). It must pass on a clean CI runner before release.
+- Camera asset preparation validates the pinned face model's SHA-256 and copies WASM from the installed npm version. Cached asset preparation and CI network downloads both pass.
 
 ## Required before publishing
 
@@ -18,9 +17,9 @@ Record the version, OS version, hardware and result for each applicable platform
 
 | Gate | Apple Silicon | Intel Mac | Windows x64 |
 | --- | --- | --- | --- |
-| Clean checkout: `npm ci`, `npm test`, `npm run check:release`, `npm run build` | Local pass on 2026-11-12 (macOS 27.0.1, M4, existing checkout); CI pending | Pending CI | Pending CI |
-| Locked Rust tests pass | Local pass on 2026-11-12 (46 passed, 3 ignored) | Pending | Pending |
-| Release installer builds and opens on a fresh account | Pending | Pending | Pending |
+| Clean checkout: `npm ci`, `npm test`, `npm run check:release`, `npm run build` | Pass on Apple Silicon (2026-11-12, M4) & `macos-latest` CI (#43343229348) | Built in CI (#43343229795); Intel runtime pending | Pass in `windows-latest` CI (#43343229348) |
+| Locked Rust tests pass | Pass (2026-11-12: 47 default + 3 desktop/GPU ignored tests on M4); CI pass (#43343229348) | Pending Intel hardware | Pass in `windows-latest` CI (#43343229348, 47 passed, 3 ignored) |
+| Release installer builds and opens on a fresh account | `v0.2.1` DMG built in CI (#43343229795); fresh-account open pending | `v0.2.1` x64 DMG built in CI (#43343229795); hardware open pending | `v0.2.1` EXE/MSI built in CI (#43343229795); hardware open pending |
 | Camera, microphone and typing permissions: deny, retry, grant | Pending | Pending | Pending |
 | Download Tiny, interrupt the download, retry, restart | Pending | Pending | Pending |
 | Disconnect internet after setup: camera and dictation work | Pending | Pending | Pending |

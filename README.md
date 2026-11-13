@@ -13,7 +13,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f6f1ea?labelColor=22061c" alt="License: MIT"></a>
   <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.1"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
-  <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ansarbuilds/saywhen/ci.yml?branch=main&label=CI&labelColor=22061c" alt="CI"></a>
 </p>
 
 <p align="center">
@@ -56,6 +56,8 @@ Unedited and in real time: a spoken request goes into Cursor and gets sent with 
 **The 60-second film, with sound:**
 
 https://github.com/user-attachments/assets/6867215a-d32f-4b9c-a871-fb03f6e047f6
+
+<p><sub>If your viewer does not embed the player above: <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen-demo.mp4">download the 60-second MP4</a> · <a href="https://ansarbuilds.dev/p/saywhen/">watch on ansarbuilds.dev</a></sub></p>
 
 ## You stay in control
 

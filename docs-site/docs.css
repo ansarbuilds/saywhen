@@ -86,7 +86,7 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .prose table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 14px; }
 .prose th, .prose td { padding: 9px 12px; border: 1px solid var(--rule); text-align: left; vertical-align: top; }
 .prose th { background: color-mix(in srgb, var(--ink) 5%, transparent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-.prose img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--rule); }
+.prose img, .prose video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--rule); }
 .prose hr { margin: 34px 0; border: 0; border-top: 1px solid var(--rule); }
 .prose a { overflow-wrap: anywhere; }
 .toc { position: sticky; top: 84px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }

@@ -198,6 +198,15 @@ def rewrite_markdown(text: str, slug: str, source_rel_dir: str = "") -> str:
         text,
     )
     text = re.sub(
+        r"^https://github\.com/user-attachments/assets/[0-9a-f-]+/?\s*$",
+        '<video controls playsinline preload="metadata" width="100%">'
+        '<source src="https://ansarbuilds.dev/p/saywhen/demo.mp4" type="video/mp4">'
+        '<source src="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen-demo.mp4" type="video/mp4">'
+        "</video>",
+        text,
+        flags=re.M,
+    )
+    text = re.sub(
         r'(<img[^>]+src=")([^"]+)(")',
         lambda m: m.group(1) + rewrite_target(m.group(2), slug, source_rel_dir) + m.group(3),
         text,
@@ -451,7 +460,7 @@ a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset:
 .prose table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 14px; }
 .prose th, .prose td { padding: 9px 12px; border: 1px solid var(--rule); text-align: left; vertical-align: top; }
 .prose th { background: color-mix(in srgb, var(--ink) 5%, transparent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-.prose img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--rule); }
+.prose img, .prose video { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--rule); }
 .prose hr { margin: 34px 0; border: 0; border-top: 1px solid var(--rule); }
 .prose a { overflow-wrap: anywhere; }
 .toc { position: sticky; top: 84px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
