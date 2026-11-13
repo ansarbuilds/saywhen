@@ -3,16 +3,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen_0.2.1_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
   &nbsp;
-  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen_0.2.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen_0.2.1_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
   &nbsp;
   <a href="https://ansarbuilds.dev/p/saywhen/#try-it"><img src="https://img.shields.io/badge/Try_Interactive_Preview-fbb303?style=for-the-badge&logoColor=22061c" alt="Try Interactive Preview on ansarbuilds.dev" height="44"></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f6f1ea?labelColor=22061c" alt="License: MIT"></a>
-  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.1"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
   <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
@@ -122,7 +122,7 @@ The full checklist is [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md).
 
 ### Download the app
 
-Get the beta installer from the **[v0.2.0 release](https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0)**:
+Get the beta installer from the **[v0.2.1 release](https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.1)**:
 
 - **Mac:** the `.dmg` file (`aarch64` is Apple Silicon, `x64` is Intel when that build is included). Drag saywhen into Applications.
 - **Windows:** the `-setup.exe` file.

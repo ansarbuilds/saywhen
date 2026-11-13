@@ -30,30 +30,62 @@
       <article class="prose">
         <h1 id="changelog">Changelog</h1>
 <h2 id="unreleased">Unreleased</h2>
+<h2 id="v021-beta">v0.2.1 beta</h2>
 <ul>
-<li>The onboarding window keeps <strong>Start talking</strong> visible at the default window size, traps focus, closes with Escape and restores focus when it closes.</li>
-<li>The onboarding microphone and camera badges now reflect the device list and the camera state instead of being hard-coded.</li>
-<li>Model downloads show a real progress bar and percentage in Settings and on the setup checklist.</li>
-<li>The &quot;Say something&quot; setup step is only marked done after text is successfully injected.</li>
-<li>The check step scrolls into view when it appears, so it is visible at the minimum window size.</li>
-<li>The check step can no longer be turned off. Every automatic send goes through a cancelable review.</li>
-<li>Send-style cards support arrow-key navigation.</li>
-<li>Renamed Lab to Diagnostics and moved the practice box and live numbers under that name.</li>
-<li>Removed the marketing demo button from Home and hid the Problems panel until there is a real problem.</li>
-<li>The HUD now appears on the display under the pointer, and the tray has a &quot;Move HUD to This Display&quot; action. It stays click-through on purpose so it can never steal focus; send and cancel remain on the keyboard and in the main window.</li>
-<li>Added a searchable static docs hub in <code>docs-site/</code> (build with <code>npm run docs:build</code>).</li>
-<li>Added a command palette on Cmd+K / Ctrl+K for navigation, listening, camera, theme, contrast, text size and help actions.</li>
-<li>Added a skippable first-run intro, with a Replay the intro command.</li>
-<li>Added high contrast mode, an in-app reduce-motion switch and four text-size steps that scale the window through the webview.</li>
-<li>The dark theme now uses brighter text, stronger surfaces and contrast-checked labels; sent, cancel and error actions have short motion cues.</li>
-<li>The push-to-talk shortcut can be recorded and reset in Settings &gt; Sending. The HUD and the in-app Guide follow the new binding. If the combination is already taken, the old shortcut is restored and the error is shown.</li>
-<li>Onboarding now has a Try it now practice box: record a short command and see the raw and cleaned text without typing into another app or needing Accessibility.</li>
-<li>Recent has a Paste last button, and Cmd+Ctrl+V on Mac or Ctrl+Alt+V on Windows types the last transcript again without pressing Enter.</li>
-<li>Settings now has a section navigation bar, a search field, an app picker for the trusted-apps list, and an About section with a privacy-safe diagnostics copy.</li>
-<li>Added a System, Light or Dark theme. The choice is remembered and follows the system when set to System.</li>
-<li>Moved the custom vocabulary into its own Words section and renamed Colours to Appearance.</li>
-<li>Added a user <a href="faq.html">FAQ</a> and expanded <a href="troubleshooting.html">troubleshooting</a> for permissions, camera stalls, microphone loss, secure input, elevation and model downloads.</li>
-<li>Fixed the broken <code>#see-it-work</code> link in the documentation index.</li>
+<li><p>Pinned Whisper Tiny/Base model downloads to a specific repository revision with verified SHA-256 checksums, bounded retries and GGML validation.</p>
+</li>
+<li><p>Set a restrictive webview Content Security Policy in <code>tauri.conf.json</code> and hardened font/asset bundling and startup checks.</p>
+</li>
+<li><p>Rebuilt the 60-second launch film (<code>SaywhenDemo</code>) with EBU R128 loudness leveling, tighter audio-visual sync, and updated README/docs visuals.</p>
+</li>
+<li><p>Added a first-run setup checklist on Home (<code>Checklist</code>: speech model download, Accessibility trust, camera gate, calibration and first test phrase).</p>
+</li>
+<li><p>The onboarding window keeps <strong>Start talking</strong> visible at the default window size, traps focus, closes with Escape and restores focus when it closes.</p>
+</li>
+<li><p>The onboarding microphone and camera badges now reflect the device list and the camera state instead of being hard-coded.</p>
+</li>
+<li><p>Model downloads show a real progress bar and percentage in Settings and on the setup checklist.</p>
+</li>
+<li><p>The &quot;Say something&quot; setup step is only marked done after text is successfully injected.</p>
+</li>
+<li><p>The check step scrolls into view when it appears, so it is visible at the minimum window size.</p>
+</li>
+<li><p>The check step can no longer be turned off. Every automatic send goes through a cancelable review.</p>
+</li>
+<li><p>Send-style cards support arrow-key navigation.</p>
+</li>
+<li><p>Renamed Lab to Diagnostics and moved the practice box and live numbers under that name.</p>
+</li>
+<li><p>Removed the marketing demo button from Home and hid the Problems panel until there is a real problem.</p>
+</li>
+<li><p>The HUD now appears on the display under the pointer, and the tray has a &quot;Move HUD to This Display&quot; action. It stays click-through on purpose so it can never steal focus; send and cancel remain on the keyboard and in the main window.</p>
+</li>
+<li><p>Added a searchable static docs hub in <code>docs-site/</code> (build with <code>npm run docs:build</code>).</p>
+</li>
+<li><p>Added a command palette on Cmd+K / Ctrl+K for navigation, listening, camera, theme, contrast, text size and help actions.</p>
+</li>
+<li><p>Added a skippable first-run intro, with a Replay the intro command.</p>
+</li>
+<li><p>Added high contrast mode, an in-app reduce-motion switch and four text-size steps that scale the window through the webview.</p>
+</li>
+<li><p>The dark theme now uses brighter text, stronger surfaces and contrast-checked labels; sent, cancel and error actions have short motion cues.</p>
+</li>
+<li><p>The push-to-talk shortcut can be recorded and reset in Settings &gt; Sending. The HUD and the in-app Guide follow the new binding. If the combination is already taken, the old shortcut is restored and the error is shown.</p>
+</li>
+<li><p>Onboarding now has a Try it now practice box: record a short command and see the raw and cleaned text without typing into another app or needing Accessibility.</p>
+</li>
+<li><p>Recent has a Paste last button, and Cmd+Ctrl+V on Mac or Ctrl+Alt+V on Windows types the last transcript again without pressing Enter.</p>
+</li>
+<li><p>Settings now has a section navigation bar, a search field, an app picker for the trusted-apps list, and an About section with a privacy-safe diagnostics copy.</p>
+</li>
+<li><p>Added a System, Light or Dark theme. The choice is remembered and follows the system when set to System.</p>
+</li>
+<li><p>Moved the custom vocabulary into its own Words section and renamed Colours to Appearance.</p>
+</li>
+<li><p>Added a user <a href="faq.html">FAQ</a> and expanded <a href="troubleshooting.html">troubleshooting</a> for permissions, camera stalls, microphone loss, secure input, elevation and model downloads.</p>
+</li>
+<li><p>Fixed the broken <code>#see-it-work</code> link in the documentation index.</p>
+</li>
 </ul>
 <h2 id="v020-beta">v0.2.0 beta</h2>
 <ul>
@@ -66,7 +98,7 @@
       <nav class="pager"><a class="pager-link" href="how-it-works.html"><span>Previous</span><strong>How saywhen works</strong></a><a class="pager-link pager-next" href="architecture.html"><span>Next</span><strong>Architecture</strong></a></nav>
       <footer class="page-footer"><a href="https://github.com/ansarbuilds/saywhen/blob/main/docs/CHANGELOG.md">Edit this page on GitHub</a></footer>
     </main>
-    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#unreleased">Unreleased</a><a class="toc-2" href="#v020-beta">v0.2.0 beta</a></aside>
+    <aside class="toc"><span class="eyebrow">On this page</span><a class="toc-2" href="#unreleased">Unreleased</a><a class="toc-2" href="#v021-beta">v0.2.1 beta</a><a class="toc-2" href="#v020-beta">v0.2.0 beta</a></aside>
   </div>
   <script src="docs.js"></script>
 </body>

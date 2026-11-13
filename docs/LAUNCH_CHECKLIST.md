@@ -55,7 +55,7 @@ The GPU benchmark crashed inside Metal allocation in the restricted agent sessio
 
 ## Remaining hardening
 
-- Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. Since 2026-11-12 they are also pinned to one revision of the model repository and to SHA-256 digests. Both digests were checked against real downloads of Tiny and Base. The v0.2.0 installers predate this, so it ships with the next build.
+- Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. Since 2026-11-12 they are also pinned to one revision of the model repository and to SHA-256 digests. Both digests were checked against real downloads of Tiny and Base. Shipped in v0.2.1 (v0.2.0 installers predate this pinning).
 - A restrictive webview CSP is set in `src-tauri/tauri.conf.json`. Before merging, run `npx tauri dev` and a release build, then confirm: the window and HUD draw with their fonts, the camera turns on and Calibrate works, a phrase is transcribed and typed, and the webview console shows no "Content Security Policy" errors.
 - Review optional remote cleanup and API-key storage before advertising it for sensitive work.
 - Real-user accuracy, CPU and battery results are still needed. Existing replay numbers are synthetic-corpus results.

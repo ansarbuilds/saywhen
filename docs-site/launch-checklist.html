@@ -160,7 +160,7 @@
 </ol>
 <h2 id="remaining-hardening">Remaining hardening</h2>
 <ul>
-<li>Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. Since 2026-11-12 they are also pinned to one revision of the model repository and to SHA-256 digests. Both digests were checked against real downloads of Tiny and Base. The v0.2.0 installers predate this, so it ships with the next build.</li>
+<li>Speech downloads use HTTPS, bounded retries, a temporary file and GGML format/size sanity checks. Since 2026-11-12 they are also pinned to one revision of the model repository and to SHA-256 digests. Both digests were checked against real downloads of Tiny and Base. Shipped in v0.2.1 (v0.2.0 installers predate this pinning).</li>
 <li>A restrictive webview CSP is set in <code>src-tauri/tauri.conf.json</code>. Before merging, run <code>npx tauri dev</code> and a release build, then confirm: the window and HUD draw with their fonts, the camera turns on and Calibrate works, a phrase is transcribed and typed, and the webview console shows no &quot;Content Security Policy&quot; errors.</li>
 <li>Review optional remote cleanup and API-key storage before advertising it for sensitive work.</li>
 <li>Real-user accuracy, CPU and battery results are still needed. Existing replay numbers are synthetic-corpus results.</li>

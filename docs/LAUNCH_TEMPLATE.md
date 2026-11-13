@@ -6,7 +6,7 @@ Copy for the day you tell people about saywhen. Fill the blanks, then paste. Thi
 
 | Blank | Write this |
 | --- | --- |
-| `[VERSION]` | The tag you are actually shipping, such as `v0.2.0` |
+| `[VERSION]` | The tag you are actually shipping, such as `v0.2.1` |
 | `[DATE]` | The day you post |
 | `[ONE_USE]` | One real thing you did with it this week, in your own words. One sentence. |
 | `[MAC_STATUS]` | `unsigned beta` until Apple signing and notarization are verified |
@@ -16,10 +16,10 @@ Copy for the day you tell people about saywhen. Fill the blanks, then paste. Thi
 Links, already live:
 
 - Repo: https://github.com/ansarbuilds/saywhen
-- This release: https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.0
+- This release: https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.1
 - Project page: https://ansarbuilds.dev/p/saywhen/
-- 60-second film: https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-demo.mp4
-- 12-second teaser: https://github.com/ansarbuilds/saywhen/releases/download/v0.2.0/saywhen-announce.mp4
+- 60-second film: https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen-demo.mp4
+- 12-second teaser: https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen-announce.mp4
 
 ## The line
 

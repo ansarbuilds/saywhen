@@ -1,6 +1,6 @@
 [package]
 name = "saywhen"
-version = "0.2.0"
+version = "0.2.1"
 description = "Hands-free, hotkey-free local voice input for developers"
 authors = ["Mohamed Ansar"]
 license = "MIT"

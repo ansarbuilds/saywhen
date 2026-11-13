@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.2.1 beta
+
+- Pinned Whisper Tiny/Base model downloads to a specific repository revision with verified SHA-256 checksums, bounded retries and GGML validation.
+- Set a restrictive webview Content Security Policy in `tauri.conf.json` and hardened font/asset bundling and startup checks.
+- Rebuilt the 60-second launch film (`SaywhenDemo`) with EBU R128 loudness leveling, tighter audio-visual sync, and updated README/docs visuals.
+- Added a first-run setup checklist on Home (`Checklist`: speech model download, Accessibility trust, camera gate, calibration and first test phrase).
+
 - The onboarding window keeps **Start talking** visible at the default window size, traps focus, closes with Escape and restores focus when it closes.
 - The onboarding microphone and camera badges now reflect the device list and the camera state instead of being hard-coded.
 - Model downloads show a real progress bar and percentage in Settings and on the setup checklist.

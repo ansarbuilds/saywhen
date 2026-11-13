@@ -1156,7 +1156,7 @@ function initSettingsUi() {
       if (aboutVersion) aboutVersion.textContent = `Version ${version} beta`;
     })
     .catch(() => {
-      if (aboutVersion) aboutVersion.textContent = 'Version 0.2.0 beta';
+      if (aboutVersion) aboutVersion.textContent = 'Version 0.2.1 beta';
     });
   copyDiagnosticsBtn?.addEventListener('click', () => {
     const lines = [
