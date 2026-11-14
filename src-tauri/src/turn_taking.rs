@@ -23,6 +23,9 @@ pub const DEFAULT_MIN_SPEECH_HOTKEY_MS: u64 = 96;
 pub const DEFAULT_MAX_SILENCE_TIMEOUT_MS: u64 = 1350;
 pub const DEFAULT_POST_ROLL_MS: u64 = 200;
 pub const DEFAULT_CALIBRATED_RESTING_MAR: f32 = 0.016;
+/// Upper bound on calibrated closed-mouth MAR so a calibration taken with slightly parted
+/// lips never pushes `min_speech_mar` high enough to ignore normal speech.
+pub const MAX_CALIBRATED_RESTING_MAR: f32 = 0.030;
 pub const VISION_TICK_ACTIVE_MS: u64 = 66; // ~15.1 FPS when armed, listening, or facing screen
 pub const VISION_TICK_IDLE_AWAY_MS: u64 = 125; // 8.0 FPS when face present but turned away > 3s
 pub const VISION_TICK_IDLE_NO_FACE_MS: u64 = 200; // 5.0 FPS when no face in frame > 3s (66.7% fewer inferences)
@@ -263,7 +266,9 @@ pub fn classify_lip_activity(
     inputs: &LipActivityInputs,
     cfg: &TurnTakingConfig,
 ) -> LipActivityClassification {
-    let resting_mar = cfg.calibrated_resting_mar.clamp(0.006, 0.045);
+    let resting_mar = cfg
+        .calibrated_resting_mar
+        .clamp(0.006, MAX_CALIBRATED_RESTING_MAR);
 
     // 1. Yawn ceiling: wide anatomical stretch of mouth/jaw.
     if inputs.mar > 0.45 || inputs.jaw_open > 0.35 {
@@ -342,10 +347,11 @@ pub fn compute_calibration_baseline(samples: &[(f32, f32, f32)]) -> Option<(f32,
     pitches.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     mars.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = samples.len() / 2;
+    let mar_idx = (samples.len() / 5).min(mid);
     Some((
         yaws[mid].clamp(-45.0, 45.0),
         pitches[mid].clamp(-35.0, 35.0),
-        mars[mid].clamp(0.006, 0.045),
+        mars[mar_idx].clamp(0.006, MAX_CALIBRATED_RESTING_MAR),
     ))
 }
 
@@ -467,6 +473,7 @@ pub fn is_manual_or_hotkey_trigger(trigger_source: &str) -> bool {
         || lower.contains("manual")
         || lower.contains("button")
         || lower.contains("practice")
+        || lower.contains("voice_enroll")
 }
 
 pub fn required_min_speech_ms(trigger_source: &str, cfg: &TurnTakingConfig) -> u64 {
@@ -672,15 +679,72 @@ pub fn compute_adaptive_silence_timeout_ms(turn: &TurnState, cfg: &TurnTakingCon
         0
     };
 
+    // Long multi-sentence dictation (> 2.5 seconds of voiced speech) naturally includes
+    // 1.5 to 2.5 second thinking pauses between sentences.
+    let long_paragraph_bonus = if speech_ms > 2500 {
+        ((speech_ms - 2500) / 3).min(950)
+    } else {
+        0
+    };
+
     let open_mouth_bonus = if turn.vision_fresh && turn.hands_free_enabled && !turn.mouth_closed {
         350
     } else {
         0
     };
 
-    let connective_bonus = if turn.ends_with_connective { 350 } else { 0 };
+    let connective_bonus = if turn.ends_with_connective { 850 } else { 0 };
+    let effective_max_cap = if speech_ms > 2500 || turn.ends_with_connective {
+        max_cap.max(2600)
+    } else {
+        max_cap
+    };
 
-    (base + length_bonus + open_mouth_bonus + connective_bonus).min(max_cap)
+    (base + length_bonus + long_paragraph_bonus + open_mouth_bonus + connective_bonus)
+        .min(effective_max_cap)
+}
+
+/// Grace period (ms) after the user's lips stop moving and their mouth closes during which
+/// trailing acoustic reverberation still counts as part of their speech. After this window,
+/// while the camera clearly sees the user's mouth closed, ongoing VAD activity is background
+/// audio (for example a YouTube song playing through speakers) and must not hold the turn open.
+pub const CLOSED_MOUTH_ACOUSTIC_TAIL_MS: u64 = 250;
+
+/// Relative RMS ratio below the speaker's peak utterance voice level at which trailing VAD
+/// frames (after minimum speech has already been captured) are treated as quieter background
+/// media bleed rather than the user continuing to speak.
+pub const BACKGROUND_BLEED_RMS_RATIO: f32 = 0.38;
+
+/// Pure check whether an above-threshold VAD frame during `LISTENING` should count as active
+/// user speech (advancing `last_speech_at_ms` and `speech_frames_in_utterance`) or be ignored
+/// as background audio / speaker bleed (such as a song playing on YouTube after the user stops).
+pub fn should_count_vad_frame_in_turn(
+    now_ms: u64,
+    vision_fresh: bool,
+    hands_free_enabled: bool,
+    face_present: bool,
+    lips_moving: bool,
+    mouth_closed: bool,
+    last_lip_motion_in_turn_ms: Option<u64>,
+    speech_frames_in_utterance: usize,
+    chunk_rms: f32,
+    peak_speech_rms: f32,
+) -> bool {
+    if vision_fresh && hands_free_enabled && face_present && !lips_moving && mouth_closed {
+        if let Some(last_lip_ms) = last_lip_motion_in_turn_ms {
+            if now_ms.saturating_sub(last_lip_ms) > CLOSED_MOUTH_ACOUSTIC_TAIL_MS {
+                return false;
+            }
+        }
+    }
+
+    if !lips_moving && speech_frames_in_utterance >= 8 && peak_speech_rms >= 0.025 {
+        if chunk_rms > 0.0 && chunk_rms < peak_speech_rms * BACKGROUND_BLEED_RMS_RATIO {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Pure end-of-turn decision (`LISTENING -> post-roll / TRANSCRIBING`).
@@ -1599,5 +1663,61 @@ mod tests {
         assert!(is_manual_or_hotkey_trigger("ui_button"));
         assert!(is_manual_or_hotkey_trigger("hotkey"));
         assert!(!is_manual_or_hotkey_trigger("hands_free_multimodal"));
+    }
+
+    #[test]
+    fn test_background_music_does_not_hold_turn_open_after_mouth_closes_or_voice_stops() {
+        // While user's lips are moving, VAD frames always count.
+        assert!(should_count_vad_frame_in_turn(
+            1_200,
+            true,
+            true,
+            true,
+            true,
+            false,
+            Some(1_200),
+            12,
+            0.050,
+            0.060,
+        ));
+        // Within 250 ms acoustic tail after lips stop, trailing audio still counts.
+        assert!(should_count_vad_frame_in_turn(
+            1_400,
+            true,
+            true,
+            true,
+            false,
+            true,
+            Some(1_200),
+            12,
+            0.025,
+            0.060,
+        ));
+        // After mouth has been visibly closed for > 250 ms, ongoing YouTube vocals do not reset speech timer.
+        assert!(!should_count_vad_frame_in_turn(
+            1_550,
+            true,
+            true,
+            true,
+            false,
+            true,
+            Some(1_200),
+            12,
+            0.030,
+            0.060,
+        ));
+        // With camera off, quieter speaker bleed (< 38% of user's peak voice RMS) after >= 8 frames of speech is ignored.
+        assert!(!should_count_vad_frame_in_turn(
+            2_000,
+            false,
+            false,
+            false,
+            false,
+            true,
+            None,
+            10,
+            0.015,
+            0.065,
+        ));
     }
 }

@@ -536,6 +536,33 @@
                       <input type="text" id="wake-word-input" class="text-control" value="eevee" spellcheck="false" autocomplete="off" />
                     </div>
                   </div>
+                  <div class="pref-row" id="voice-profile-row">
+                    <div class="pref-text">
+                      <span class="field-label">Your voice profile</span>
+                      <span class="pref-desc" id="voice-profile-desc">Say 3 short phrases (like Siri setup) so saywhen learns your voice pitch, loudness, and how you pronounce your wake word. Helps ignore YouTube songs and other voices.</span>
+                    </div>
+                    <div class="pref-control pref-control-inline">
+                      <span class="gauge-tag" id="voice-profile-badge">Not trained</span>
+                      <button type="button" id="start-voice-enroll-btn" class="btn-xs btn-accent">Teach your voice</button>
+                      <button type="button" id="reset-voice-profile-btn" class="btn-xs btn-quiet hidden">Reset</button>
+                    </div>
+                  </div>
+                  <div class="voice-enroll-card hidden" id="voice-enroll-card" aria-live="polite">
+                    <div class="voice-enroll-top">
+                      <span class="voice-enroll-step-pill" id="voice-enroll-step-pill">Phrase 1 of 3</span>
+                      <span class="voice-enroll-hint" id="voice-enroll-status">Listening... speak at your normal volume</span>
+                    </div>
+                    <div class="voice-enroll-prompt" id="voice-enroll-prompt">&ldquo;Eevee, run the tests&rdquo;</div>
+                    <div class="voice-enroll-dots" aria-hidden="true">
+                      <span class="voice-enroll-dot is-active" data-enroll-dot="0"></span>
+                      <span class="voice-enroll-dot" data-enroll-dot="1"></span>
+                      <span class="voice-enroll-dot" data-enroll-dot="2"></span>
+                    </div>
+                    <div class="voice-enroll-actions">
+                      <button type="button" id="voice-enroll-stop-btn" class="btn-xs btn-accent">Done speaking</button>
+                      <button type="button" id="voice-enroll-cancel-btn" class="btn-xs btn-quiet">Cancel</button>
+                    </div>
+                  </div>
                   <label class="toggle-row">
                     <div>
                       <div class="toggle-title">Battery saver</div>

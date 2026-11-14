@@ -15,6 +15,9 @@ MACOS_DIR="$APP/Contents/MacOS"
 RES_DIR="$APP/Contents/Resources"
 
 mkdir -p "$MACOS_DIR" "$RES_DIR"
+# Unlink first so macOS allocates a fresh vnode instead of invalidating the cached cs_blob
+# on the previous inode when re-signing.
+rm -f "$MACOS_DIR/saywhen"
 cp "$BIN" "$MACOS_DIR/saywhen"
 chmod +x "$MACOS_DIR/saywhen"
 cp "$TAURI_DIR/icons/icon.icns" "$RES_DIR/icon.icns"

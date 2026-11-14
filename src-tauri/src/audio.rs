@@ -1,7 +1,7 @@
 use crate::cleanup::{
-    check_destructive_command, classify_llm_endpoint_privacy,
-    run_local_developer_cleanup_with_vocab, run_opt_in_llm_cleanup, CleanupResult,
-    LlmCleanupConfig,
+    check_destructive_command, classify_llm_endpoint_privacy, is_preview_spoken_cancel_command,
+    run_local_developer_cleanup_with_vocab, run_opt_in_llm_cleanup, stitch_continued_transcript,
+    CleanupResult, LlmCleanupConfig,
 };
 use crate::history::append_history_entry;
 use crate::inject::{
@@ -19,23 +19,26 @@ macro_rules! wake_log {
 }
 
 use crate::wake_word::{
-    early_wake_verdict, effective_wake_word, wake_vad_threshold, WAKE_DIAG_SOUND_LEVEL, first_word, strip_wake_word, word_count,
-    WAKE_CHECK_MIN_SAMPLES_ON_PAUSE, wake_holds_turn, EarlyWakeVerdict, DEFAULT_WAKE_WORD, WAKE_CHECK_MAX_SAMPLES,
-    WAKE_CHECK_MIN_SAMPLES, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
+    early_wake_verdict_with_profile, effective_wake_word, extract_leading_wake_alias, first_word,
+    matches_voice_profile, merge_into_voice_profile, should_clear_wake_quiet_wait,
+    strip_wake_word_with_profile, wake_holds_turn, wake_vad_threshold, word_count,
+    EarlyWakeVerdict, VoiceProfile, DEFAULT_WAKE_WORD, VOICE_ENROLL_COMMAND_SUFFIXES,
+    WAKE_CHECK_MAX_SAMPLES, WAKE_CHECK_MIN_SAMPLES, WAKE_CHECK_MIN_SAMPLES_ON_PAUSE,
+    WAKE_DIAG_SOUND_LEVEL, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
 };
 use crate::turn_taking::{
     append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
     ends_with_connective, evaluate_arming_hysteresis, evaluate_audio_stream_health,
     has_minimum_speech_evidence, is_within_arm_exit_cone, preview_deadline, resolve_recordings_dir,
     sanitize_discarded_reason_for_metrics, save_tuning_utterance_wav_and_sidecar,
-    should_auto_start, should_cancel_preview_on_speech, silence_countdown_ms,
-    ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs, PreviewDeadline,
-    RecordedVisionSample, SendMode, TuningRecordingSidecar, TurnState, TurnTakingConfig,
-    UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
+    should_auto_start, should_cancel_preview_on_speech, should_count_vad_frame_in_turn,
+    silence_countdown_ms, ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs,
+    PreviewDeadline, RecordedVisionSample, SendMode, TuningRecordingSidecar, TurnState,
+    TurnTakingConfig, UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
     DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
     DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
     DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
-    MAX_CALIBRATED_YAW_OFFSET_DEG, NOD_WAIT_TIMEOUT_MS,
+    MAX_CALIBRATED_RESTING_MAR, MAX_CALIBRATED_YAW_OFFSET_DEG, NOD_WAIT_TIMEOUT_MS,
     SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -232,6 +235,10 @@ pub struct DictationConfig {
     /// Optional Bearer API key kept in memory only (never serialized to settings.local.json).
     #[serde(default, skip_serializing)]
     pub llm_api_key: String,
+    /// Optional 3-phrase Siri-style personal voice profile (pitch, spectral shape, near-field RMS,
+    /// and learned Whisper wake-word spellings).
+    #[serde(default)]
+    pub voice_profile: Option<VoiceProfile>,
 }
 
 fn default_hotkey_accelerator() -> String {
@@ -363,6 +370,7 @@ impl Default for DictationConfig {
             llm_endpoint_url: default_llm_endpoint_url(),
             llm_model: default_llm_model(),
             llm_api_key: String::new(),
+            voice_profile: None,
         }
     }
 }
@@ -410,6 +418,9 @@ impl DictationConfig {
         self.calibrated_yaw_offset_deg = self
             .calibrated_yaw_offset_deg
             .clamp(-MAX_CALIBRATED_YAW_OFFSET_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG);
+        self.calibrated_resting_mar = self
+            .calibrated_resting_mar
+            .clamp(0.006, MAX_CALIBRATED_RESTING_MAR);
     }
 
     /// Writable settings file. Lives next to utterance history so saves do not depend on
@@ -570,6 +581,16 @@ pub struct PracticeCompleteEvent {
     pub cleanup: CleanupResult,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceEnrollStepEvent {
+    pub step: usize,
+    pub total_steps: usize,
+    pub heard_text: String,
+    pub learned_alias: Option<String>,
+    pub profile: VoiceProfile,
+}
+
 #[derive(Debug, Clone)]
 pub struct PendingPreviewItem {
     pub utterance_id: u64,
@@ -600,6 +621,7 @@ struct CapturedUtterance {
     vision_trace: Vec<RecordedVisionSample>,
     vision_fresh: bool,
     latest_yaw_deg: f32,
+    carried_transcript_prefix: Option<String>,
 }
 
 struct SharedCaptureBuffer {
@@ -612,6 +634,7 @@ struct SharedCaptureBuffer {
     listening_started_at: Option<Instant>,
     listening_started_at_ms: u64,
     pending_preview: Option<PendingPreviewItem>,
+    carried_transcript_prefix: Option<String>,
     speech_frames_in_utterance: usize,
     consecutive_vad_frames: usize,
     last_speech_at_ms: u64,
@@ -621,6 +644,7 @@ struct SharedCaptureBuffer {
     post_roll_started_at_ms: Option<u64>,
     pending_end_reason: Option<EndReason>,
     peak_vad_prob: f32,
+    peak_speech_rms: f32,
     latest_rms: f32,
     latest_vad_prob: f32,
     trigger_source: String,
@@ -645,6 +669,8 @@ struct SharedCaptureBuffer {
     wake_confirmed_at_ms: u64,
     /// After a dropped wake candidate, wait for a short quiet gap before starting another.
     wake_needs_quiet: bool,
+    wake_dropped_at_ms: Option<u64>,
+    wake_floor_rms: f32,
     /// Consecutive frames over the (lower) wake word voice threshold.
     wake_consecutive_frames: usize,
     /// Diagnostics: a burst of sound while waiting that never became a wake candidate.
@@ -664,6 +690,7 @@ impl SharedCaptureBuffer {
             listening_started_at: None,
             listening_started_at_ms: 0,
             pending_preview: None,
+            carried_transcript_prefix: None,
             speech_frames_in_utterance: 0,
             consecutive_vad_frames: 0,
             last_speech_at_ms: 0,
@@ -673,6 +700,7 @@ impl SharedCaptureBuffer {
             post_roll_started_at_ms: None,
             pending_end_reason: None,
             peak_vad_prob: 0.0,
+            peak_speech_rms: 0.0,
             latest_rms: 0.0,
             latest_vad_prob: 0.0,
             trigger_source: "manual".to_string(),
@@ -693,6 +721,8 @@ impl SharedCaptureBuffer {
             wake_awaiting_command: false,
             wake_confirmed_at_ms: 0,
             wake_needs_quiet: false,
+            wake_dropped_at_ms: None,
+            wake_floor_rms: 0.0,
             wake_consecutive_frames: 0,
             wake_burst_frames: 0,
             wake_burst_peak: 0.0,
@@ -740,6 +770,7 @@ impl SharedCaptureBuffer {
         self.post_roll_started_at_ms = None;
         self.pending_end_reason = None;
         self.peak_vad_prob = self.latest_vad_prob;
+        self.peak_speech_rms = self.latest_rms;
         self.trigger_source = source.to_string();
         self.partial_transcript.clear();
         self.partial_ends_with_connective = false;
@@ -796,8 +827,10 @@ impl SharedCaptureBuffer {
         let speech_frames = self.speech_frames_in_utterance;
         let vision_fresh = self.is_vision_fresh();
         let latest_yaw_deg = self.vision.yaw;
+        let carried_transcript_prefix = self.carried_transcript_prefix.take();
 
         self.peak_vad_prob = 0.0;
+        self.peak_speech_rms = 0.0;
         self.speech_frames_in_utterance = 0;
         self.last_lip_motion_in_turn_ms = None;
         self.post_roll_started_at_ms = None;
@@ -841,6 +874,7 @@ impl SharedCaptureBuffer {
             vision_trace,
             vision_fresh,
             latest_yaw_deg,
+            carried_transcript_prefix,
         }
     }
 
@@ -849,12 +883,14 @@ impl SharedCaptureBuffer {
         self.utterance_pcm.clear();
         self.listening_started_at = None;
         self.pending_preview = None;
+        self.carried_transcript_prefix = None;
         self.speech_frames_in_utterance = 0;
         self.last_lip_motion_in_turn_ms = None;
         self.lip_to_listening_ms = None;
         self.post_roll_started_at_ms = None;
         self.pending_end_reason = None;
         self.peak_vad_prob = 0.0;
+        self.peak_speech_rms = 0.0;
         self.partial_transcript.clear();
         self.partial_ends_with_connective = false;
         self.partial_checked_speech_frames = 0;
@@ -869,6 +905,7 @@ pub enum AudioCommand {
     CancelListening,
     ConfirmPreviewNow(Option<String>),
     CancelPreview(String),
+    ResumeFromPreviewOnSpeech,
     BeginPreview(PendingPreviewItem),
     SwitchDevice(Option<String>),
     UpdateVision(VisionTelemetryPayload),
@@ -896,6 +933,7 @@ impl AudioPipelineController {
         let config_clone = Arc::clone(&config);
         let shared_clone = Arc::clone(&shared);
         let cmd_tx_for_worker = cmd_tx.clone();
+        let settings_path_for_worker = settings_path.clone();
 
         thread::spawn(move || {
             run_audio_worker(
@@ -905,6 +943,7 @@ impl AudioPipelineController {
                 cmd_tx_for_worker,
                 config_clone,
                 shared_clone,
+                settings_path_for_worker,
             );
         });
 
@@ -942,6 +981,16 @@ impl AudioPipelineController {
         }
         // The new settings are live either way; a failed save is reported so it is not silent.
         saved.map(|_| new_cfg)
+    }
+
+    pub fn reset_voice_profile(&self) -> Result<DictationConfig, String> {
+        let updated = {
+            let mut guard = self.config.lock().unwrap();
+            guard.voice_profile = None;
+            guard.clone()
+        };
+        updated.save_to_path(&self.settings_path)?;
+        Ok(updated)
     }
 
     pub fn current_state(&self) -> String {
@@ -1318,6 +1367,7 @@ fn run_audio_worker(
     cmd_tx_self: Sender<AudioCommand>,
     config: Arc<Mutex<DictationConfig>>,
     shared: Arc<Mutex<SharedCaptureBuffer>>,
+    settings_path: std::path::PathBuf,
 ) {
     let mut vad = match VoiceActivityDetector::builder()
         .sample_rate(16000)
@@ -1482,11 +1532,16 @@ fn run_audio_worker(
                         v.reset();
                     }
                     let mut guard = shared.lock().unwrap();
-                    if source == "practice" && guard.state == PipelineState::PREVIEW {
+                    let is_interactive_setup =
+                        source == "practice" || source.starts_with("voice_enroll:");
+                    if is_interactive_setup && guard.state == PipelineState::PREVIEW {
                         guard.pending_preview.take();
                         guard.cancel_active_or_preview(&turn_cfg);
                     }
-                    if guard.state == PipelineState::IDLE || guard.state == PipelineState::ARMED {
+                    if guard.state == PipelineState::IDLE
+                        || guard.state == PipelineState::ARMED
+                        || (guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER)
+                    {
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
                         } else if source == WAKE_WORD_TRIGGER {
@@ -1495,10 +1550,16 @@ fn run_audio_worker(
                             0
                         };
                         guard.begin_listening(&source, seed);
-                    } else if source == "practice" && guard.state != PipelineState::LISTENING {
+                        if !source.starts_with("voice_enroll:") {
+                            if let Some(ref vp) = cfg.voice_profile {
+                                guard.peak_speech_rms =
+                                    guard.peak_speech_rms.max(vp.typical_rms * 0.70);
+                            }
+                        }
+                    } else if is_interactive_setup && guard.state != PipelineState::LISTENING {
                         let _ = app_handle.emit(
                             "pipeline-error",
-                            "Finish the current transcription first, then start the practice again.",
+                            "Finish the current transcription first, then try again.",
                         );
                     }
                 }
@@ -1518,9 +1579,13 @@ fn run_audio_worker(
                         if let Some(ref mut v) = vad {
                             v.reset();
                         }
+                        let now_ms = guard.now_ms();
+                        let candidate_rms = guard.peak_speech_rms.max(guard.latest_rms);
                         guard.cancel_active_or_preview(&turn_cfg);
                         wake_log!("[saywhen wake] no wake word at the start: dropped");
                         guard.wake_needs_quiet = true;
+                        guard.wake_dropped_at_ms = Some(now_ms);
+                        guard.wake_floor_rms = candidate_rms;
                         guard.wake_check_in_flight = false;
                     }
                 }
@@ -1561,6 +1626,49 @@ fn run_audio_worker(
                         let _ = app_handle.emit("preview-canceled", reason);
                     }
                 }
+                AudioCommand::ResumeFromPreviewOnSpeech => {
+                    if let Some(ref mut v) = vad {
+                        v.reset();
+                    }
+                    let resumed = {
+                        let mut guard = shared.lock().unwrap();
+                        if guard.state == PipelineState::PREVIEW {
+                            let prev = guard.pending_preview.take();
+                            let source = prev
+                                .as_ref()
+                                .map(|p| p.trigger_source.clone())
+                                .unwrap_or_else(|| "hands_free_multimodal".to_string());
+                            let prefix = prev.and_then(|p| {
+                                let t = p.transcription.text.trim().to_string();
+                                if t.is_empty() {
+                                    None
+                                } else {
+                                    Some(t)
+                                }
+                            });
+                            let seed = guard.consecutive_vad_frames.min(2).max(1);
+                            guard.begin_listening(&source, seed);
+                            if let Some(ref vp) = cfg.voice_profile {
+                                guard.peak_speech_rms =
+                                    guard.peak_speech_rms.max(vp.typical_rms * 0.70);
+                            }
+                            if source == WAKE_WORD_TRIGGER {
+                                guard.wake_confirmed = true;
+                                guard.wake_check_done = true;
+                            }
+                            if let Some(ref p) = prefix {
+                                guard.partial_transcript = p.clone();
+                            }
+                            guard.carried_transcript_prefix = prefix;
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if resumed {
+                        let _ = app_handle.emit("preview-resumed", ());
+                    }
+                }
                 AudioCommand::ConfirmPreviewNow(override_text) => {
                     let taken = {
                         let mut guard = shared.lock().unwrap();
@@ -1586,19 +1694,60 @@ fn run_audio_worker(
                         send_mode: item.send_mode.as_str().to_string(),
                         waits_for_nod: item.waits_for_nod,
                     };
-                    {
+                    let resumed_immediately = {
                         let mut guard = shared.lock().unwrap();
-                        guard.state = PipelineState::PREVIEW;
-                        // Fresh count so speech that ended the turn is not read as "cancel".
-                        guard.consecutive_vad_frames = 0;
-                        guard.pending_preview = Some(item);
+                        let now_ms = guard.now_ms();
+                        let spoke_during_tx = cfg.cancel_on_speech
+                            && guard.consecutive_vad_frames >= 2
+                            && guard
+                                .last_vad_voice_at_ms
+                                .map(|t| now_ms.saturating_sub(t) <= 160)
+                                .unwrap_or(false)
+                            && (!guard.is_vision_fresh()
+                                || guard.vision.lips_moving
+                                || !guard.vision.mouth_closed);
+                        if spoke_during_tx {
+                            let source = item.trigger_source.clone();
+                            let prefix = item.transcription.text.trim().to_string();
+                            let seed = guard.consecutive_vad_frames.min(2).max(1);
+                            guard.begin_listening(&source, seed);
+                            if let Some(ref vp) = cfg.voice_profile {
+                                guard.peak_speech_rms =
+                                    guard.peak_speech_rms.max(vp.typical_rms * 0.70);
+                            }
+                            if source == WAKE_WORD_TRIGGER {
+                                guard.wake_confirmed = true;
+                                guard.wake_check_done = true;
+                            }
+                            if !prefix.is_empty() {
+                                guard.partial_transcript = prefix.clone();
+                                guard.carried_transcript_prefix = Some(prefix);
+                            }
+                            true
+                        } else {
+                            guard.state = PipelineState::PREVIEW;
+                            // Fresh count so speech that ended the turn is not read as "cancel".
+                            guard.consecutive_vad_frames = 0;
+                            guard.pending_preview = Some(item);
+                            false
+                        }
+                    };
+                    if resumed_immediately {
+                        let _ = app_handle.emit("preview-resumed", ());
+                    } else {
+                        let _ = app_handle.emit("preview-started", evt);
                     }
-                    let _ = app_handle.emit("preview-started", evt);
                 }
                 AudioCommand::ToggleListening(source) => {
-                    let current = shared.lock().unwrap().state;
+                    let (current, unconfirmed_wake) = {
+                        let guard = shared.lock().unwrap();
+                        (guard.state, guard.is_unconfirmed_wake_candidate())
+                    };
                     match current {
                         PipelineState::IDLE | PipelineState::ARMED => {
+                            let _ = cmd_tx_self.send(AudioCommand::StartListening(source));
+                        }
+                        PipelineState::LISTENING if unconfirmed_wake => {
                             let _ = cmd_tx_self.send(AudioCommand::StartListening(source));
                         }
                         PipelineState::LISTENING => {
@@ -1656,6 +1805,19 @@ fn run_audio_worker(
                             };
                         }
                         PipelineState::LISTENING => {
+                            if guard.is_unconfirmed_wake_candidate() {
+                                let vision_snap = guard.vision.clone();
+                                let currently_armed =
+                                    is_within_arm_exit_cone(&vision_snap, &turn_cfg);
+                                let _ = evaluate_arming_hysteresis(
+                                    &mut guard.arming_hysteresis,
+                                    currently_armed,
+                                    true,
+                                    &vision_snap,
+                                    &turn_cfg,
+                                    now_ms,
+                                );
+                            }
                             if guard.vision.lips_moving {
                                 guard.last_lip_motion_in_turn_ms = Some(now_ms);
                             }
@@ -1747,52 +1909,59 @@ fn run_audio_worker(
                     }
 
                     // Task 3: Minimum speech evidence check before invoking Whisper.
-                    if let Err(discard_msg) = has_minimum_speech_evidence(
-                        captured.speech_frames,
-                        &captured.trigger_source,
-                        &turn_cfg,
-                    ) {
-                        {
-                            let mut guard = shared.lock().unwrap();
-                            guard.state = guard.resting_state(&turn_cfg);
+                    // Skip discarding when `carried_transcript_prefix` is present so a brief
+                    // sound that resumed `PREVIEW` restores the previous transcript rather than
+                    // throwing it away.
+                    if captured.carried_transcript_prefix.is_none() {
+                        if let Err(discard_msg) = has_minimum_speech_evidence(
+                            captured.speech_frames,
+                            &captured.trigger_source,
+                            &turn_cfg,
+                        ) {
+                            {
+                                let mut guard = shared.lock().unwrap();
+                                guard.state = guard.resting_state(&turn_cfg);
+                            }
+                            let was_wake_candidate = captured.trigger_source == WAKE_WORD_TRIGGER;
+                            let audio_duration_ms =
+                                ((captured.samples.len() as f64 / 16000.0) * 1000.0) as u64;
+                            let metrics_rec = UtteranceMetricsRecord {
+                                utterance_id: captured.utterance_id,
+                                timestamp_ms: unix_timestamp_ms(),
+                                trigger_source: captured.trigger_source,
+                                lip_to_listening_ms: captured.lip_to_listening_ms,
+                                utterance_length_ms: audio_duration_ms,
+                                speech_frames: captured.speech_frames,
+                                speech_duration_ms: (captured.speech_frames as u64) * VAD_FRAME_MS,
+                                peak_vad: captured.peak_vad,
+                                end_reason: captured.end_reason.as_str().to_string(),
+                                post_roll_ms: captured.post_roll_ms,
+                                transcript_length: 0,
+                                discarded_reason: Some("insufficient_speech_evidence".to_string()),
+                                outcome: "discarded".to_string(),
+                                flag_false_trigger_clicks: 0,
+                            };
+                            let tuning_capture = if cfg.save_tuning_audio_enabled {
+                                Some((captured.samples, captured.vision_trace))
+                            } else {
+                                None
+                            };
+                            persist_metrics_and_optional_tuning_wav(
+                                &app_handle,
+                                &cfg,
+                                &metrics_rec,
+                                tuning_capture,
+                            );
+                            // A wake word candidate that was too short is room noise, not a mistake.
+                            if was_wake_candidate {
+                                wake_log!(
+                                    "[saywhen wake] too little clear speech to check: dropped"
+                                );
+                            } else {
+                                let _ = app_handle.emit("utterance-discarded", discard_msg);
+                            }
+                            continue;
                         }
-                        let was_wake_candidate = captured.trigger_source == WAKE_WORD_TRIGGER;
-                        let audio_duration_ms =
-                            ((captured.samples.len() as f64 / 16000.0) * 1000.0) as u64;
-                        let metrics_rec = UtteranceMetricsRecord {
-                            utterance_id: captured.utterance_id,
-                            timestamp_ms: unix_timestamp_ms(),
-                            trigger_source: captured.trigger_source,
-                            lip_to_listening_ms: captured.lip_to_listening_ms,
-                            utterance_length_ms: audio_duration_ms,
-                            speech_frames: captured.speech_frames,
-                            speech_duration_ms: (captured.speech_frames as u64) * VAD_FRAME_MS,
-                            peak_vad: captured.peak_vad,
-                            end_reason: captured.end_reason.as_str().to_string(),
-                            post_roll_ms: captured.post_roll_ms,
-                            transcript_length: 0,
-                            discarded_reason: Some("insufficient_speech_evidence".to_string()),
-                            outcome: "discarded".to_string(),
-                            flag_false_trigger_clicks: 0,
-                        };
-                        let tuning_capture = if cfg.save_tuning_audio_enabled {
-                            Some((captured.samples, captured.vision_trace))
-                        } else {
-                            None
-                        };
-                        persist_metrics_and_optional_tuning_wav(
-                            &app_handle,
-                            &cfg,
-                            &metrics_rec,
-                            tuning_capture,
-                        );
-                        // A wake word candidate that was too short is room noise, not a mistake.
-                        if was_wake_candidate {
-                            wake_log!("[saywhen wake] too little clear speech to check: dropped");
-                        } else {
-                            let _ = app_handle.emit("utterance-discarded", discard_msg);
-                        }
-                        continue;
                     }
 
                     let _ = app_handle.emit(
@@ -1829,19 +1998,85 @@ fn run_audio_worker(
 
                     let transcriber_ref = Arc::clone(&transcriber);
                     let shared_after = Arc::clone(&shared);
+                    let config_for_tx = Arc::clone(&config);
+                    let settings_path_for_tx = settings_path.clone();
                     let cfg_snapshot = config.lock().unwrap().clone();
                     let turn_cfg_snapshot = cfg_snapshot.to_turn_taking_config();
                     let app_for_tx = app_handle.clone();
                     let tx_for_preview = cmd_tx_self.clone();
 
                     thread::spawn(move || {
+                        if let Some(step_str) = captured.trigger_source.strip_prefix("voice_enroll:") {
+                            let step: usize = step_str.parse().unwrap_or(0);
+                            {
+                                let mut guard = shared_after.lock().unwrap();
+                                guard.state = guard.resting_state(&turn_cfg_snapshot);
+                            }
+                            let heard_text = if transcriber_ref.is_model_available() {
+                                transcriber_ref
+                                    .transcribe_pcm(&captured.samples, captured.peak_vad)
+                                    .map(|t| t.text)
+                                    .unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+                            let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
+                            let learned_alias = VOICE_ENROLL_COMMAND_SUFFIXES
+                                .get(step)
+                                .and_then(|suffix| {
+                                    extract_leading_wake_alias(&heard_text, wake_word, suffix)
+                                });
+                            let existing = if step == 0 {
+                                None
+                            } else {
+                                cfg_snapshot.voice_profile.as_ref()
+                            };
+                            match merge_into_voice_profile(
+                                existing,
+                                &captured.samples,
+                                learned_alias.as_deref(),
+                            ) {
+                                Ok(new_profile) => {
+                                    let updated_cfg = {
+                                        let mut cfg_guard = config_for_tx.lock().unwrap();
+                                        cfg_guard.voice_profile = Some(new_profile.clone());
+                                        cfg_guard.clone()
+                                    };
+                                    if let Err(err) = updated_cfg.save_to_path(&settings_path_for_tx) {
+                                        eprintln!("saywhen: voice profile save warning: {err}");
+                                    }
+                                    let _ = app_for_tx.emit("dictation-config-updated", &updated_cfg);
+                                    let _ = app_for_tx.emit(
+                                        "voice-enroll-step",
+                                        VoiceEnrollStepEvent {
+                                            step,
+                                            total_steps: VOICE_ENROLL_COMMAND_SUFFIXES.len(),
+                                            heard_text,
+                                            learned_alias,
+                                            profile: new_profile,
+                                        },
+                                    );
+                                }
+                                Err(err) => {
+                                    let _ = app_for_tx.emit("utterance-discarded", err);
+                                }
+                            }
+                            return;
+                        }
+
                         let tx_res =
                             transcriber_ref.transcribe_pcm(&captured.samples, captured.peak_vad);
                         match tx_res {
                             Ok(mut transcription) => {
-                                if captured.trigger_source == WAKE_WORD_TRIGGER {
+                                if captured.trigger_source == WAKE_WORD_TRIGGER
+                                    && captured.carried_transcript_prefix.is_none()
+                                {
                                     let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
-                                    match strip_wake_word(&transcription.text, wake_word) {
+                                    match strip_wake_word_with_profile(
+                                        &transcription.text,
+                                        wake_word,
+                                        cfg_snapshot.voice_profile.as_ref(),
+                                    ) {
                                         Some(rest) if !rest.trim().is_empty() => {
                                             wake_log!("[saywhen wake] wake word found: sending the rest to the check step");
                                             transcription.text = rest;
@@ -1849,8 +2084,13 @@ fn run_audio_worker(
                                         stripped => {
                                             {
                                                 let mut guard = shared_after.lock().unwrap();
+                                                let now_ms = guard.now_ms();
                                                 guard.state =
                                                     guard.resting_state(&turn_cfg_snapshot);
+                                                if stripped.is_none() {
+                                                    guard.wake_needs_quiet = true;
+                                                    guard.wake_dropped_at_ms = Some(now_ms);
+                                                }
                                             }
                                             wake_log!(
                                                 "[saywhen wake] full transcript: {}{}",
@@ -1873,6 +2113,22 @@ fn run_audio_worker(
                                         }
                                     }
                                 }
+
+                                if let Some(ref prefix) = captured.carried_transcript_prefix {
+                                    let cont = transcription.text.trim().to_string();
+                                    if is_preview_spoken_cancel_command(&cont) {
+                                        transcription.text = "cancel".to_string();
+                                        transcription.discarded_reason = None;
+                                    } else if cont.is_empty() {
+                                        transcription.text = prefix.clone();
+                                        transcription.discarded_reason = None;
+                                    } else {
+                                        transcription.text =
+                                            stitch_continued_transcript(prefix, &cont);
+                                        transcription.discarded_reason = None;
+                                    }
+                                }
+
                                 let mut cleanup = run_local_developer_cleanup_with_vocab(
                                     &transcription.text,
                                     cfg_snapshot.cleanup_enabled,
@@ -2056,11 +2312,15 @@ fn run_audio_worker(
                                 let waits_for_nod = cfg_snapshot
                                     .send_mode
                                     .preview_waits_for_nod(captured.end_reason);
+                                let trailing_connective =
+                                    ends_with_connective(&cleanup.cleaned_text);
                                 let item = PendingPreviewItem {
                                     utterance_id: captured.utterance_id,
                                     started_at: Instant::now(),
                                     countdown_ms: if waits_for_nod {
                                         NOD_WAIT_TIMEOUT_MS
+                                    } else if trailing_connective {
+                                        cfg_snapshot.preview_countdown_ms.max(3000)
                                     } else {
                                         cfg_snapshot.preview_countdown_ms
                                     },
@@ -2168,6 +2428,9 @@ fn run_audio_worker(
             } else {
                 0.0
             };
+            let chunk_rms = (chunk_samples.iter().map(|s| s * s).sum::<f32>()
+                / VAD_CHUNK_SAMPLES as f32)
+                .sqrt();
 
             let mut guard = shared.lock().unwrap();
             let now_ms = guard.now_ms();
@@ -2193,13 +2456,21 @@ fn run_audio_worker(
                     .as_ref()
                     .map(|p| p.started_at.elapsed().as_millis() as u64)
                     .unwrap_or(0);
-                if should_cancel_preview_on_speech(
-                    cfg.cancel_on_speech,
-                    elapsed,
-                    guard.consecutive_vad_frames,
-                    guard.is_vision_fresh(),
-                    guard.vision.lips_moving,
-                ) {
+                let user_resumed_speaking = cfg.cancel_on_speech
+                    && elapsed >= 120
+                    && guard.consecutive_vad_frames >= 3
+                    && (!guard.is_vision_fresh()
+                        || guard.vision.lips_moving
+                        || !guard.vision.mouth_closed);
+                if user_resumed_speaking
+                    || should_cancel_preview_on_speech(
+                        cfg.cancel_on_speech,
+                        elapsed,
+                        guard.consecutive_vad_frames,
+                        guard.is_vision_fresh(),
+                        guard.vision.lips_moving,
+                    )
+                {
                     cancel_preview_for_speech = true;
                 }
             }
@@ -2211,9 +2482,16 @@ fn run_audio_worker(
                 guard.state = PipelineState::IDLE;
             }
 
-            // Stage 3 Multimodal Auto-Start via pure decision function
+            // Stage 3 Multimodal Auto-Start via pure decision function.
+            // An unconfirmed wake candidate started by background audio (such as a song on YouTube)
+            // never blocks the camera gate: if the user faces the screen and moves their lips,
+            // auto-start upgrades the turn to `hands_free_multimodal` with a clean 500 ms pre-roll.
+            let armed_for_gate = guard.state == PipelineState::ARMED
+                || (guard.is_unconfirmed_wake_candidate()
+                    && guard.is_vision_fresh()
+                    && is_within_arm_exit_cone(&guard.vision, &turn_cfg));
             let gate_inputs = GateInputs {
-                is_armed: guard.state == PipelineState::ARMED,
+                is_armed: armed_for_gate,
                 hands_free_enabled: cfg.hands_free_enabled,
                 vision_fresh: guard.is_vision_fresh(),
                 face_present: guard.vision.face_present,
@@ -2229,12 +2507,25 @@ fn run_audio_worker(
 
             // Wake word fallback: speech while not armed becomes a candidate that is checked
             // for the wake word and dropped silently when it does not start with it.
-            if guard.wake_needs_quiet
-                && prob < cfg.vad_threshold
+            let quiet_gap_met = prob < cfg.vad_threshold
                 && guard
                     .last_vad_voice_at_ms
                     .map(|t| now_ms.saturating_sub(t) >= WAKE_REARM_QUIET_MS)
-                    .unwrap_or(true)
+                    .unwrap_or(true);
+            if quiet_gap_met {
+                guard.wake_floor_rms = 0.0;
+                guard.wake_dropped_at_ms = None;
+            }
+            if guard.wake_needs_quiet
+                && should_clear_wake_quiet_wait(
+                    now_ms,
+                    guard.last_vad_voice_at_ms,
+                    guard.wake_dropped_at_ms,
+                    prob,
+                    cfg.vad_threshold,
+                    chunk_rms,
+                    guard.wake_floor_rms,
+                )
             {
                 guard.wake_needs_quiet = false;
             }
@@ -2244,25 +2535,30 @@ fn run_audio_worker(
                 matches!(guard.state, PipelineState::IDLE | PipelineState::ARMED);
             let wake_watching =
                 cfg.wake_word_enabled && !should_auto_start_listening && wake_can_start_here;
+            let above_recent_drop_floor = guard
+                .wake_dropped_at_ms
+                .map(|t| now_ms.saturating_sub(t) >= 10_000)
+                .unwrap_or(true)
+                || guard.wake_floor_rms <= 0.0
+                || chunk_rms >= (guard.wake_floor_rms * 1.25).max(0.012)
+                || prob >= 0.68;
             if wake_watching
                 && !guard.wake_needs_quiet
                 && wake_model_available
                 && prob >= wake_thr
+                && above_recent_drop_floor
                 && guard.wake_consecutive_frames >= WAKE_START_MIN_VAD_FRAMES
             {
                 should_wake_start_listening = true;
                 guard.wake_burst_frames = 0;
                 guard.wake_burst_peak = 0.0;
             } else if wake_watching
+                && !wake_model_available
                 && guard.wake_consecutive_frames == WAKE_START_MIN_VAD_FRAMES
             {
-                // Once per burst of speech: say why the wake word did not start.
-                let why = if guard.wake_needs_quiet {
-                    "still waiting for a short quiet gap after the last dropped attempt"
-                } else {
-                    "the speech model is not downloaded"
-                };
-                wake_log!("[saywhen wake] voice heard but not started: {why}");
+                wake_log!(
+                    "[saywhen wake] voice heard but not started: the speech model is not downloaded"
+                );
             }
 
             // Diagnostics: a burst of sound that never looked enough like a voice to start.
@@ -2304,22 +2600,33 @@ fn run_audio_worker(
                     let token = guard.listening_started_at_ms;
                     let peak_vad = guard.peak_vad_prob;
                     let wake_word = effective_wake_word(&cfg.wake_word).to_string();
+                    let voice_profile_snap = cfg.voice_profile.clone();
                     let tx_clone = Arc::clone(&transcriber);
                     let shared_wake = Arc::clone(&shared);
                     let cmd_wake = cmd_tx_self.clone();
                     let app_wake = app_handle.clone();
                     thread::spawn(move || {
                         let heard = tx_clone
-                            .transcribe_pcm(&head, peak_vad)
+                            .transcribe_pcm_fast(&head, peak_vad)
                             .map(|t| t.text)
                             .unwrap_or_default();
-                        let verdict = early_wake_verdict(&heard, &wake_word);
+                        let verdict = early_wake_verdict_with_profile(
+                            &heard,
+                            &wake_word,
+                            voice_profile_snap.as_ref(),
+                        );
+                        let voice_matches = voice_profile_snap
+                            .as_ref()
+                            .map(|vp| matches_voice_profile(&head, vp))
+                            .unwrap_or(true);
+                        let words = word_count(&heard);
                         // Word count only: this may be someone else talking, so never log text.
                         wake_log!(
-                            "[saywhen wake] early check on the first {:.1} s: {:?} ({} words heard{})",
+                            "[saywhen wake] early check on the first {:.1} s: {:?} ({} words heard, voice_match={}{})",
                             head.len() as f32 / TARGET_SAMPLE_RATE as f32,
                             verdict,
-                            word_count(&heard),
+                            words,
+                            voice_matches,
                             dev_first_word_note(&heard)
                         );
                         let mut g = shared_wake.lock().unwrap();
@@ -2342,7 +2649,14 @@ fn run_audio_worker(
                                 // true: only the wake word so far, waiting for the command.
                                 let _ = app_wake.emit("wake-word-heard", true);
                             }
-                            // Let the full transcript decide; Whisper is unreliable on 1 s clips.
+                            // Pure instrumental music, noise over 1.5-1.8 s producing 0 words,
+                            // or an unclear snippet whose voiceprint does not match the enrolled
+                            // user is dropped right away instead of holding the turn for 4 s.
+                            EarlyWakeVerdict::Unclear if words == 0 || !voice_matches => {
+                                drop(g);
+                                let _ = cmd_wake.send(AudioCommand::DropWakeCandidate(token));
+                            }
+                            // Let the full transcript decide when 1-2 words were heard.
                             EarlyWakeVerdict::Unclear => {}
                             EarlyWakeVerdict::NotForUs => {
                                 drop(g);
@@ -2362,9 +2676,23 @@ fn run_audio_worker(
                 } else {
                     cfg.vad_threshold
                 };
-                if prob >= speech_thr {
+                let count_as_user_speech = prob >= speech_thr
+                    && should_count_vad_frame_in_turn(
+                        now_ms,
+                        guard.is_vision_fresh(),
+                        cfg.hands_free_enabled,
+                        guard.vision.face_present,
+                        guard.vision.lips_moving,
+                        guard.vision.mouth_closed,
+                        guard.last_lip_motion_in_turn_ms,
+                        guard.speech_frames_in_utterance,
+                        chunk_rms,
+                        guard.peak_speech_rms,
+                    );
+                if count_as_user_speech {
                     guard.speech_frames_in_utterance += 1;
                     guard.last_speech_at_ms = now_ms;
+                    guard.peak_speech_rms = guard.peak_speech_rms.max(chunk_rms);
                     guard.partial_ends_with_connective = false;
                     // If the user resumed speaking during a silence-triggered post-roll, abort the stop.
                     if guard.pending_end_reason == Some(EndReason::Silence) {
@@ -2389,7 +2717,7 @@ fn run_audio_worker(
                         let tx_clone = Arc::clone(&transcriber);
                         let shared_partial = Arc::clone(&shared);
                         thread::spawn(move || {
-                            let res = tx_clone.transcribe_pcm(&tail_samples, peak_vad);
+                            let res = tx_clone.transcribe_pcm_fast(&tail_samples, peak_vad);
                             if let Ok(mut g) = shared_partial.lock() {
                                 g.partial_check_in_flight = false;
                                 if g.state == PipelineState::LISTENING
@@ -2449,9 +2777,7 @@ fn run_audio_worker(
         }
 
         if cancel_preview_for_speech {
-            let _ = cmd_tx_self.send(AudioCommand::CancelPreview(
-                "You started talking, so the send was canceled".to_string(),
-            ));
+            let _ = cmd_tx_self.send(AudioCommand::ResumeFromPreviewOnSpeech);
         }
 
         if should_auto_start_listening {

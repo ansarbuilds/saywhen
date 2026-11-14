@@ -11,6 +11,23 @@ import { initIntro } from './intro';
 
 type SendMode = 'pause' | 'nod' | 'phrase' | 'paste_only';
 
+interface VoiceProfile {
+  sampleCount: number;
+  pitchHz: number;
+  pitchToleranceHz: number;
+  typicalRms: number;
+  spectralBands: [number, number, number, number];
+  learnedWakeAliases: string[];
+}
+
+interface VoiceEnrollStepEvent {
+  step: number;
+  totalSteps: number;
+  heardText: string;
+  learnedAlias: string | null;
+  profile: VoiceProfile;
+}
+
 interface DictationConfig {
   handsFreeEnabled: boolean;
   vadThreshold: number;
@@ -54,6 +71,7 @@ interface DictationConfig {
   wakeWordEnabled: boolean;
   wakeWord: string;
   wakeChimeEnabled: boolean;
+  voiceProfile?: VoiceProfile | null;
   uiPalette: string;
   moodColors: boolean;
   customVocab: string;
@@ -972,7 +990,7 @@ function applySettingsFilter() {
   for (const section of sections) {
     const rows = Array.from(
       section.querySelectorAll<HTMLElement>(
-        '.pref-row, .toggle-row, .palette-grid, .allowlist-editor, .pref-footnote'
+        '.pref-row, .toggle-row, .palette-grid, .allowlist-editor, .pref-footnote, .voice-enroll-card'
       )
     );
     const heading = section.querySelector('.pref-section-head')?.textContent?.toLowerCase() || '';
@@ -1105,12 +1123,131 @@ function renderGuideHotkey() {
   row.innerHTML = `${keys}<span>Start or stop by hand, no camera needed</span>`;
 }
 
+const VOICE_ENROLL_SUFFIXES = ['run the tests', 'check git status', 'explain this error'];
+const voiceProfileBadge = document.getElementById('voice-profile-badge') as HTMLElement | null;
+const voiceProfileDesc = document.getElementById('voice-profile-desc') as HTMLElement | null;
+const startVoiceEnrollBtn = document.getElementById(
+  'start-voice-enroll-btn'
+) as HTMLButtonElement | null;
+const resetVoiceProfileBtn = document.getElementById(
+  'reset-voice-profile-btn'
+) as HTMLButtonElement | null;
+const voiceEnrollCard = document.getElementById('voice-enroll-card') as HTMLElement | null;
+const voiceEnrollStepPill = document.getElementById('voice-enroll-step-pill') as HTMLElement | null;
+const voiceEnrollStatus = document.getElementById('voice-enroll-status') as HTMLElement | null;
+const voiceEnrollPrompt = document.getElementById('voice-enroll-prompt') as HTMLElement | null;
+const voiceEnrollStopBtn = document.getElementById(
+  'voice-enroll-stop-btn'
+) as HTMLButtonElement | null;
+const voiceEnrollCancelBtn = document.getElementById(
+  'voice-enroll-cancel-btn'
+) as HTMLButtonElement | null;
+const voiceEnrollDots = Array.from(
+  document.querySelectorAll<HTMLElement>('.voice-enroll-dot[data-enroll-dot]')
+);
+
+let activeVoiceEnrollStep: number | null = null;
+
+function voiceEnrollPhraseForStep(step: number): string {
+  const wake = wakeWordLabel();
+  const suffix = VOICE_ENROLL_SUFFIXES[step] || VOICE_ENROLL_SUFFIXES[0];
+  return `"${wake}, ${suffix}"`;
+}
+
+function renderVoiceProfileStatus() {
+  const vp = currentConfig.voiceProfile;
+  if (vp && vp.sampleCount > 0) {
+    if (voiceProfileBadge) {
+      voiceProfileBadge.textContent = `Trained (${Math.round(vp.pitchHz)} Hz)`;
+      voiceProfileBadge.className = 'gauge-tag tag-ok';
+    }
+    if (startVoiceEnrollBtn) startVoiceEnrollBtn.textContent = 'Retrain voice';
+    resetVoiceProfileBtn?.classList.remove('hidden');
+    if (voiceProfileDesc) {
+      const aliasNote =
+        vp.learnedWakeAliases && vp.learnedWakeAliases.length > 0
+          ? ` Also learned how you say "${wakeWordLabel()}" (${vp.learnedWakeAliases.join(', ')}).`
+          : '';
+      voiceProfileDesc.textContent = `Voice profile active (${vp.sampleCount} phrases, ~${Math.round(vp.pitchHz)} Hz pitch). Helps ignore YouTube songs and other voices.${aliasNote}`;
+    }
+  } else {
+    if (voiceProfileBadge) {
+      voiceProfileBadge.textContent = 'Not trained';
+      voiceProfileBadge.className = 'gauge-tag';
+    }
+    if (startVoiceEnrollBtn) startVoiceEnrollBtn.textContent = 'Teach your voice';
+    resetVoiceProfileBtn?.classList.add('hidden');
+    if (voiceProfileDesc) {
+      voiceProfileDesc.textContent =
+        'Say 3 short phrases (like Siri setup) so saywhen learns your voice pitch, loudness, and how you pronounce your wake word. Helps ignore YouTube songs and other voices.';
+    }
+  }
+}
+
+function renderVoiceEnrollStepUi(step: number, statusText?: string) {
+  if (voiceEnrollStepPill) {
+    voiceEnrollStepPill.textContent = `Phrase ${step + 1} of ${VOICE_ENROLL_SUFFIXES.length}`;
+  }
+  if (voiceEnrollPrompt) {
+    voiceEnrollPrompt.textContent = voiceEnrollPhraseForStep(step);
+  }
+  if (voiceEnrollStatus) {
+    voiceEnrollStatus.textContent =
+      statusText || 'Listening... speak at your normal volume (stops automatically when you pause)';
+  }
+  for (const dot of voiceEnrollDots) {
+    const idx = Number(dot.dataset.enrollDot || 0);
+    dot.classList.toggle('is-done', idx < step);
+    dot.classList.toggle('is-active', idx === step);
+  }
+}
+
+async function beginVoiceEnrollStep(step: number) {
+  activeVoiceEnrollStep = step;
+  voiceEnrollCard?.classList.remove('hidden');
+  if (startVoiceEnrollBtn) startVoiceEnrollBtn.disabled = true;
+  renderVoiceEnrollStepUi(step);
+  try {
+    await invoke('start_listening', { source: `voice_enroll:${step}` });
+  } catch (err) {
+    activeVoiceEnrollStep = null;
+    if (startVoiceEnrollBtn) startVoiceEnrollBtn.disabled = false;
+    showError(String(err));
+  }
+}
+
+async function cancelVoiceEnroll() {
+  activeVoiceEnrollStep = null;
+  voiceEnrollCard?.classList.add('hidden');
+  if (startVoiceEnrollBtn) startVoiceEnrollBtn.disabled = false;
+  try {
+    await invoke('cancel_listening');
+  } catch {
+    // Ignore if not currently listening.
+  }
+}
+
 function initSettingsUi() {
   initTheme();
   initZoom();
   renderAllowlistChips();
   renderHotkeyButton();
   renderGuideHotkey();
+  renderVoiceProfileStatus();
+  startVoiceEnrollBtn?.addEventListener('click', () => void beginVoiceEnrollStep(0));
+  resetVoiceProfileBtn?.addEventListener('click', async () => {
+    try {
+      await cancelVoiceEnroll();
+      currentConfig = await invoke<DictationConfig>('reset_voice_profile');
+      renderVoiceProfileStatus();
+    } catch (err) {
+      showError(String(err));
+    }
+  });
+  voiceEnrollStopBtn?.addEventListener('click', () => {
+    void invoke('stop_and_transcribe').catch((err) => showError(String(err)));
+  });
+  voiceEnrollCancelBtn?.addEventListener('click', () => void cancelVoiceEnroll());
   hotkeyRecordBtn?.addEventListener('click', beginHotkeyRecording);
   hotkeyRecordBtn?.addEventListener('blur', stopHotkeyRecording);
   hotkeyResetBtn?.addEventListener('click', () => void saveHotkey('Alt+Space'));
@@ -1561,7 +1698,7 @@ function updatePipelineUiState(
     } else {
       deckStatus.textContent = 'Check it, then it sends';
       deckSubtitle.textContent = currentConfig.cancelOnSpeech
-        ? 'To stop it, say "cancel", shake your head or press Esc. Nod or press Enter to send now.'
+        ? 'Keep talking to add more, or say "cancel", shake your head, or press Esc to stop.'
         : 'To stop it, shake your head or press Esc. Nod or press Enter to send now.';
     }
     startListenBtn.disabled = true;
@@ -1963,7 +2100,7 @@ function processVisionFrame(now: number) {
 
       const restingMar = Math.max(
         0.006,
-        Math.min(0.045, currentConfig.calibratedRestingMar || 0.016)
+        Math.min(0.03, currentConfig.calibratedRestingMar || 0.016)
       );
       const isYawning = mar > 0.45 || jawOpen > 0.35;
       const isSmiling =
@@ -2385,6 +2522,7 @@ async function syncConfigToBackend() {
   updateLlmPrivacyBadge();
   updateCalibrationDisplay();
   updateHistoryBadgeDisplay();
+  renderVoiceProfileStatus();
   refreshRangeFills();
 
   try {
@@ -2420,6 +2558,7 @@ async function initApp() {
     selectedModelId = snapshot.selectedModelId;
     renderHotkeyButton();
     renderGuideHotkey();
+    renderVoiceProfileStatus();
 
     // The review step is the product's safety promise. Older settings could turn
     // it off; always turn it back on and persist the correction once.
@@ -2536,6 +2675,11 @@ async function initApp() {
     showPreviewBanner(event.payload);
   });
 
+  await listen('preview-resumed', () => {
+    hidePreviewBanner();
+    deckSubtitle.textContent = 'Continuing your thought... keep talking.';
+  });
+
   let chimeLockWarned = false;
   await listen<boolean>('wake-word-heard', (event) => {
     if (currentConfig.wakeChimeEnabled === false) return;
@@ -2575,7 +2719,48 @@ async function initApp() {
     showPracticeResult(event.payload);
   });
 
+  await listen<VoiceEnrollStepEvent>('voice-enroll-step', (event) => {
+    const p = event.payload;
+    currentConfig = { ...currentConfig, voiceProfile: p.profile };
+    renderVoiceProfileStatus();
+    const nextStep = p.step + 1;
+    if (nextStep < p.totalSteps) {
+      renderVoiceEnrollStepUi(nextStep, 'Got it! Get ready for the next phrase...');
+      window.setTimeout(() => {
+        if (activeVoiceEnrollStep !== null) {
+          void beginVoiceEnrollStep(nextStep);
+        }
+      }, 650);
+    } else {
+      activeVoiceEnrollStep = null;
+      if (startVoiceEnrollBtn) startVoiceEnrollBtn.disabled = false;
+      if (voiceEnrollStepPill) voiceEnrollStepPill.textContent = 'Voice ready';
+      if (voiceEnrollPrompt) {
+        voiceEnrollPrompt.textContent = `Trained on 3 phrases (~${Math.round(p.profile.pitchHz)} Hz)`;
+      }
+      if (voiceEnrollStatus) {
+        voiceEnrollStatus.textContent =
+          'All set! saywhen now knows your voice and wake word pronunciation.';
+      }
+      for (const dot of voiceEnrollDots) {
+        dot.classList.remove('is-active');
+        dot.classList.add('is-done');
+      }
+      window.setTimeout(() => {
+        if (activeVoiceEnrollStep === null) {
+          voiceEnrollCard?.classList.add('hidden');
+        }
+      }, 2400);
+    }
+  });
+
   await listen<string>('pipeline-error', (event) => {
+    if (activeVoiceEnrollStep !== null) {
+      const retryStep = activeVoiceEnrollStep;
+      renderVoiceEnrollStepUi(retryStep, `${event.payload} Click Teach your voice to try again.`);
+      activeVoiceEnrollStep = null;
+      if (startVoiceEnrollBtn) startVoiceEnrollBtn.disabled = false;
+    }
     if (practiceListening) {
       resetPractice();
       if (obPracticeStatus) obPracticeStatus.textContent = event.payload;
@@ -2591,6 +2776,7 @@ async function initApp() {
     currentConfig = event.payload;
     renderHotkeyButton();
     renderGuideHotkey();
+    renderVoiceProfileStatus();
     toggleHud.checked = currentConfig.hudEnabled;
     toggleAdaptiveFps.checked = currentConfig.adaptiveFpsEnabled !== false;
     toggleHistoryPersistence.checked = currentConfig.historyPersistenceEnabled !== false;
@@ -2614,6 +2800,18 @@ async function initApp() {
 
   await listen<string>('utterance-discarded', (event) => {
     deckSubtitle.textContent = event.payload;
+    if (activeVoiceEnrollStep !== null) {
+      const retryStep = activeVoiceEnrollStep;
+      renderVoiceEnrollStepUi(
+        retryStep,
+        'Did not catch enough speech. Listening again, speak at your normal volume...'
+      );
+      window.setTimeout(() => {
+        if (activeVoiceEnrollStep === retryStep) {
+          void beginVoiceEnrollStep(retryStep);
+        }
+      }, 700);
+    }
     if (practiceListening) {
       practiceListening = false;
       resetPractice();

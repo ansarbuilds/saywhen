@@ -487,6 +487,62 @@ pub fn is_spoken_cancel_command(input: &str) -> bool {
     )
 }
 
+/// Checks if a short phrase spoken while a `PREVIEW` countdown is active is an explicit
+/// request to cancel the preview (`"cancel"`, `"scratch that"`, `"stop"`, `"abort"`,
+/// `"never mind"`, `"no wait"`). Any other speech during `PREVIEW` is treated as the user
+/// continuing their thought after a pause and is stitched onto the previewed text.
+pub fn is_preview_spoken_cancel_command(input: &str) -> bool {
+    if is_spoken_cancel_command(input) {
+        return true;
+    }
+    let normalized = input
+        .trim()
+        .trim_matches(|c: char| ".!,?;:\"'".contains(c))
+        .trim()
+        .to_lowercase();
+    matches!(
+        normalized.as_str(),
+        "scratch that" | "stop" | "abort" | "no wait" | "wait cancel"
+    )
+}
+
+/// Stitches a previously previewed transcript (`prefix`) with the continuation spoken when
+/// the user resumed talking during `PREVIEW`. Deduplicates a repeated bridge word at the
+/// boundary (for example `"...switch between different applications."` + `"applications like Antigravity"`).
+pub fn stitch_continued_transcript(prefix: &str, continuation: &str) -> String {
+    let p = prefix.trim();
+    let c = continuation.trim();
+    if p.is_empty() {
+        return c.to_string();
+    }
+    if c.is_empty() {
+        return p.to_string();
+    }
+
+    let last_word = p
+        .split_whitespace()
+        .last()
+        .unwrap_or("")
+        .trim_matches(|ch: char| !ch.is_alphanumeric())
+        .to_ascii_lowercase();
+    let mut c_words = c.split_whitespace();
+    let first_raw = c_words.next().unwrap_or("");
+    let first_word = first_raw
+        .trim_matches(|ch: char| !ch.is_alphanumeric())
+        .to_ascii_lowercase();
+
+    if last_word.len() >= 3 && last_word == first_word {
+        let rest = c[first_raw.len()..].trim_start();
+        let p_no_dot = p.trim_end_matches('.');
+        if rest.is_empty() {
+            return p.to_string();
+        }
+        return format!("{p_no_dot} {rest}");
+    }
+
+    format!("{p} {c}")
+}
+
 /// Applies spoken `"scratch that"` self-correction:
 /// - If `"scratch that"` appears mid-utterance (e.g., `"git checkout main, scratch that, git checkout feat"`),
 ///   discards everything before the last `"scratch that"` and returns `("git checkout feat", true)`.
@@ -903,5 +959,24 @@ mod tests {
             sanitize_llm_cleanup_output("Sure, here is the command: cargo test", "cargo test"),
             "cargo test"
         );
+    }
+
+    #[test]
+    fn test_preview_resume_stitching_and_cancel_phrases() {
+        assert_eq!(
+            stitch_continued_transcript(
+                "I'm trying to see what if I want to switch between different applications.",
+                "applications like Antigravity."
+            ),
+            "I'm trying to see what if I want to switch between different applications like Antigravity."
+        );
+        assert_eq!(
+            stitch_continued_transcript("First part of the thought.", "And here is the rest."),
+            "First part of the thought. And here is the rest."
+        );
+        assert!(is_preview_spoken_cancel_command("Cancel."));
+        assert!(is_preview_spoken_cancel_command("Scratch that!"));
+        assert!(is_preview_spoken_cancel_command("Stop"));
+        assert!(!is_preview_spoken_cancel_command("applications like Antigravity"));
     }
 }

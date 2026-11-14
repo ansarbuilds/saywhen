@@ -2995,6 +2995,69 @@ body.did-error .gate-status-badge { animation: badge-error 0.6s var(--ease-out) 
 
 .guide-note { margin: -2px 0 12px; color: var(--muted); font-size: 12.5px; }
 
+.voice-enroll-card {
+  margin: 4px 0 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--card-hi);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.voice-enroll-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.voice-enroll-step-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.voice-enroll-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.voice-enroll-prompt {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  padding: 6px 0 2px;
+}
+.voice-enroll-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.voice-enroll-dot {
+  width: 24px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+}
+.voice-enroll-dot.is-active {
+  background: var(--accent);
+}
+.voice-enroll-dot.is-done {
+  background: var(--ok);
+}
+.voice-enroll-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 html[data-motion='reduced'] *,
 html[data-motion='reduced'] *::before,
 html[data-motion='reduced'] *::after {

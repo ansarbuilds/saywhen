@@ -63,9 +63,10 @@ https://github.com/user-attachments/assets/6867215a-d32f-4b9c-a871-fb03f6e047f6
 
 <img src="docs/visuals/page-modes.jpg" alt="Four ways to send, all cancelable. Just pause (default): stop talking and a short countdown runs, then it sends. Nod to send: nothing goes until you nod. Say send it: end with send it to press Enter. Type only (best first try): your words are typed and Enter is never pressed." width="100%">
 
-- Cancel with **Esc**, a head shake, or by talking again during the countdown. Or say "scratch that".
+- Pause to think and keep talking during the countdown to continue your draft. Cancel with **Esc**, a head shake, or by saying "scratch that" or "cancel".
 - Enter is pressed only in apps you trust. Terminals and code editors are trusted by default. In chat, email and browsers, saywhen only types.
 - If the app in front changes during the countdown, saywhen stops and types nothing.
+- Playing music or looking at a second monitor? Turn on the wake word in Settings -> Listening, or record the 3-phrase **Teach your voice** profile so saywhen recognizes how you say the wake word and ignores background lyrics.
 
 <details>
 <summary>See the animated state machine and desktop app screenshots</summary>
@@ -152,9 +153,9 @@ The first run downloads the camera model (about 4 MB) and can take 5 to 15 minut
 
 ### First launch
 
-1. **Download a speech model.** Settings, then Speech model, then Download. Tiny is about 75 MB and the fastest. Base is more accurate.
+1. **Download a speech model.** Settings, then Speech model, then Download. Tiny (~75 MB) is the fastest, Base (~142 MB) is balanced, Small (~465 MB) is high accuracy, and Large v3 Turbo (~547 MB) is the most accurate.
 2. **Allow the microphone and camera** when your computer asks.
-3. **Allow Accessibility (Mac only).** Setup guide in the sidebar, then the orange badge. Turn on **saywhen**, or **saywhen-dev** if you built it. Remove old saywhen entries first if macOS is confused.
+3. **Allow Accessibility (Mac only).** Setup guide in the sidebar, then the orange badge. Turn on **saywhen** (or **saywhen-dev** and your terminal/IDE if you run `npx tauri dev` inside an integrated terminal). Remove old saywhen entries first if macOS is confused.
 4. **Pick Type only** on Home for a first try, so Enter is never pressed.
 5. **Turn on the camera.** Look at the screen with your mouth closed and click **Calibrate**.
 6. Open a terminal, look at it, and say "git status".

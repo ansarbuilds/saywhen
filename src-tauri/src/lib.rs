@@ -323,6 +323,16 @@ fn request_accessibility_settings() -> Result<(), String> {
     open_accessibility_settings()
 }
 
+#[tauri::command]
+fn reset_voice_profile(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DictationConfig, String> {
+    let updated = state.audio.reset_voice_profile()?;
+    let _ = app.emit("dictation-config-updated", &updated);
+    Ok(updated)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     whisper_rs::install_logging_hooks();
@@ -440,6 +450,7 @@ pub fn run() {
             download_whisper_model,
             manual_inject_text,
             request_accessibility_settings,
+            reset_voice_profile,
             flag_false_trigger,
             clear_utterance_history,
         ])
