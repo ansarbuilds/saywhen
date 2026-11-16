@@ -1,7 +1,12 @@
+use crate::parakeet::{
+    download_parakeet_model, is_parakeet_installed, parakeet_installed_bytes, parakeet_model_dir,
+    ParakeetModel, PARAKEET_APPROX_MB, PARAKEET_MODEL_ID,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
@@ -37,9 +42,20 @@ pub struct TranscriberEngine {
     cached_state: Mutex<Option<(String, WhisperState)>>,
     fast_loaded_model: Mutex<Option<(String, Arc<WhisperContext>)>>,
     fast_cached_state: Mutex<Option<(String, WhisperState)>>,
+    parakeet_model: Mutex<Option<ParakeetModel>>,
     selected_model_id: Mutex<String>,
     app_models_dir: Option<PathBuf>,
     download_lock: Mutex<()>,
+    shutting_down: AtomicBool,
+    active_infer: AtomicUsize,
+}
+
+struct InferGuard<'a>(&'a AtomicUsize);
+
+impl Drop for InferGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 fn model_filename(model_id: &str) -> Option<&'static str> {
@@ -64,10 +80,19 @@ impl TranscriberEngine {
             cached_state: Mutex::new(None),
             fast_loaded_model: Mutex::new(None),
             fast_cached_state: Mutex::new(None),
+            parakeet_model: Mutex::new(None),
             selected_model_id: Mutex::new("tiny.en".to_string()),
             app_models_dir: app_data_dir.map(|d| d.join("models")),
+            shutting_down: AtomicBool::new(false),
+            active_infer: AtomicUsize::new(0),
         };
         let models_dir = engine.resolve_models_dir();
+        if is_parakeet_installed(&models_dir) {
+            if let Ok(mut selected) = engine.selected_model_id.lock() {
+                *selected = PARAKEET_MODEL_ID.to_string();
+            }
+            return engine;
+        }
         for (id, file) in [
             ("large-v3-turbo", "ggml-large-v3-turbo-q5_0.bin"),
             ("small.en", "ggml-small.en.bin"),
@@ -96,9 +121,10 @@ impl TranscriberEngine {
             candidates.push(app_dir.clone());
         }
 
-        // Prefer a candidate directory that already has a downloaded Whisper .bin model
+        // Prefer a candidate directory that already has an installed ASR model.
         for candidate in &candidates {
-            if candidate.join("ggml-tiny.en.bin").exists()
+            if is_parakeet_installed(candidate)
+                || candidate.join("ggml-tiny.en.bin").exists()
                 || candidate.join("ggml-base.en.bin").exists()
                 || candidate.join("ggml-small.en.bin").exists()
                 || candidate.join("ggml-large-v3-turbo-q5_0.bin").exists()
@@ -121,17 +147,46 @@ impl TranscriberEngine {
 
     /// Path the downloader writes to, so the UI can follow its progress.
     pub fn model_download_path(&self, model_id: &str) -> Option<PathBuf> {
+        if model_id == PARAKEET_MODEL_ID {
+            return Some(parakeet_model_dir(&self.resolve_models_dir()));
+        }
         let filename = model_filename(model_id)?;
         Some(self.resolve_models_dir().join(filename).with_extension("bin.part"))
     }
 
+    /// Bytes downloaded so far for the active model download.
+    pub fn model_download_bytes(&self, model_id: &str) -> u64 {
+        if model_id == PARAKEET_MODEL_ID {
+            return parakeet_installed_bytes(&self.resolve_models_dir());
+        }
+        self.model_download_path(model_id)
+            .and_then(|path| std::fs::metadata(path).ok())
+            .map(|metadata| metadata.len())
+            .unwrap_or(0)
+    }
+
     pub fn list_models(&self) -> Vec<ModelInfo> {
         let dir = self.resolve_models_dir();
-        let specs = [
+        let parakeet_installed = is_parakeet_installed(&dir);
+        let parakeet_size_mb = if parakeet_installed {
+            parakeet_installed_bytes(&dir) / (1024 * 1024)
+        } else {
+            PARAKEET_APPROX_MB
+        };
+        let mut models = vec![ModelInfo {
+            id: PARAKEET_MODEL_ID.to_string(),
+            filename: PARAKEET_MODEL_ID.to_string(),
+            label: "Parakeet TDT 0.6B v2 (Fastest & Best Accuracy, ~631 MB)".to_string(),
+            size_mb: parakeet_size_mb,
+            installed: parakeet_installed,
+            path: parakeet_model_dir(&dir).to_string_lossy().to_string(),
+        }];
+
+        let whisper_specs = [
             (
                 "tiny.en",
                 "ggml-tiny.en.bin",
-                "Whisper Tiny.en (Fastest, ~75 MB)",
+                "Whisper Tiny.en (Lightweight, ~75 MB)",
                 75u64,
             ),
             (
@@ -149,33 +204,31 @@ impl TranscriberEngine {
             (
                 "large-v3-turbo",
                 "ggml-large-v3-turbo-q5_0.bin",
-                "Whisper Large v3 Turbo (Best Accuracy, ~547 MB)",
+                "Whisper Large v3 Turbo (Best Whisper, ~547 MB)",
                 547u64,
             ),
         ];
 
-        specs
-            .iter()
-            .map(|(id, filename, label, default_mb)| {
-                let full_path = dir.join(filename);
-                let installed = validate_downloaded_model(&full_path).is_ok();
-                let size_mb = if installed {
-                    std::fs::metadata(&full_path)
-                        .map(|m| m.len() / (1024 * 1024))
-                        .unwrap_or(*default_mb)
-                } else {
-                    *default_mb
-                };
-                ModelInfo {
-                    id: id.to_string(),
-                    filename: filename.to_string(),
-                    label: label.to_string(),
-                    size_mb,
-                    installed,
-                    path: full_path.to_string_lossy().to_string(),
-                }
-            })
-            .collect()
+        for (id, filename, label, default_mb) in whisper_specs {
+            let full_path = dir.join(filename);
+            let installed = validate_downloaded_model(&full_path).is_ok();
+            let size_mb = if installed {
+                std::fs::metadata(&full_path)
+                    .map(|m| m.len() / (1024 * 1024))
+                    .unwrap_or(default_mb)
+            } else {
+                default_mb
+            };
+            models.push(ModelInfo {
+                id: id.to_string(),
+                filename: filename.to_string(),
+                label: label.to_string(),
+                size_mb,
+                installed,
+                path: full_path.to_string_lossy().to_string(),
+            });
+        }
+        models
     }
 
     pub fn set_selected_model(&self, model_id: &str) -> Result<String, String> {
@@ -201,9 +254,80 @@ impl TranscriberEngine {
         self.selected_model_id.lock().unwrap().clone()
     }
 
-    fn ensure_fast_context(&self, model_path: &Path) -> Result<Arc<WhisperContext>, String> {
+    fn ensure_parakeet_loaded(&self, models_dir: &Path) -> Result<(), String> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Transcriber is shutting down".to_string());
+        }
+        let mut guard = self.parakeet_model.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(ParakeetModel::load(models_dir)?);
+        }
+        Ok(())
+    }
+
+    fn transcribe_parakeet_pcm(
+        &self,
+        samples_16k: &[f32],
+        peak_vad_prob: f32,
+        try_only: bool,
+    ) -> Result<TranscriptionResult, String> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Transcriber is shutting down".to_string());
+        }
+        let _active = InferGuard(&self.active_infer);
+        self.active_infer.fetch_add(1, Ordering::SeqCst);
+
+        let models_dir = self.resolve_models_dir();
+        if !try_only {
+            self.ensure_parakeet_loaded(&models_dir)?;
+        }
+
+        let start = Instant::now();
+        let mut guard = if try_only {
+            self.parakeet_model
+                .try_lock()
+                .map_err(|_| "Parakeet model busy".to_string())?
+        } else {
+            self.parakeet_model.lock().unwrap()
+        };
+        let model = guard
+            .as_mut()
+            .ok_or_else(|| "Parakeet model is not loaded yet".to_string())?;
+
+        let pcm_input = normalize_speech_pcm_no_pad(samples_16k);
+        let raw_text = model.transcribe(&pcm_input)?;
+        let (cleaned, end_phrase_triggered) = strip_end_phrase(raw_text.trim());
+
+        let inference_ms = start.elapsed().as_millis() as u64;
+        let audio_duration_ms = ((samples_16k.len() as f64 / 16000.0) * 1000.0) as u64;
+        let rtf = if audio_duration_ms > 0 {
+            (inference_ms as f32) / (audio_duration_ms as f32)
+        } else {
+            0.0
+        };
+
+        Ok(TranscriptionResult {
+            text: cleaned,
+            audio_duration_ms,
+            inference_ms,
+            rtf,
+            model_used: PARAKEET_MODEL_ID.to_string(),
+            peak_vad_prob,
+            end_phrase_triggered,
+            discarded_reason: None,
+        })
+    }
+
+    fn ensure_whisper_context(
+        &self,
+        cache: &Mutex<Option<(String, Arc<WhisperContext>)>>,
+        model_path: &Path,
+    ) -> Result<Arc<WhisperContext>, String> {
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Transcriber is shutting down".to_string());
+        }
         let path_key = model_path.to_string_lossy().to_string();
-        let mut guard = self.fast_loaded_model.lock().unwrap();
+        let mut guard = cache.lock().unwrap();
         if let Some((ref loaded_key, ref ctx)) = *guard {
             if loaded_key == &path_key {
                 return Ok(Arc::clone(ctx));
@@ -211,7 +335,10 @@ impl TranscriberEngine {
         }
 
         if !model_path.exists() {
-            return self.ensure_context(model_path);
+            return Err(format!(
+                "Whisper model file not found at {}. Please download the model first.",
+                path_key
+            ));
         }
 
         let mut ctx_params = WhisperContextParameters::default();
@@ -219,41 +346,36 @@ impl TranscriberEngine {
         ctx_params.flash_attn(true);
 
         let ctx = WhisperContext::new_with_params(model_path, ctx_params)
-            .map_err(|e| format!("Failed to initialize fast WhisperContext: {:?}", e))?;
+            .map_err(|e| format!("Failed to initialize WhisperContext: {:?}", e))?;
         let arc_ctx = Arc::new(ctx);
-        *guard = Some((path_key, Arc::clone(&arc_ctx)));
+        if !self.shutting_down.load(Ordering::SeqCst) {
+            *guard = Some((path_key, Arc::clone(&arc_ctx)));
+        }
         Ok(arc_ctx)
     }
 
-    /// Low-latency transcription pass used for mid-utterance partial checks and early wake-word
-    /// verification so they complete in ~60-110 ms and never block final utterance decoding.
-    pub fn transcribe_pcm_fast(
+    fn run_whisper_pcm(
         &self,
+        ctx_cache: &Mutex<Option<(String, Arc<WhisperContext>)>>,
+        state_cache: &Mutex<Option<(String, WhisperState)>>,
+        model_id: &str,
+        model_path: &Path,
         samples_16k: &[f32],
         peak_vad_prob: f32,
+        fast_mode: bool,
     ) -> Result<TranscriptionResult, String> {
-        let selected_id = self.get_selected_model_id();
-        if selected_id == "tiny.en" || selected_id == "base.en" {
-            return self.transcribe_pcm(samples_16k, peak_vad_prob);
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return Err("Transcriber is shutting down".to_string());
         }
-        let models_dir = self.resolve_models_dir();
-        let (fast_id, fast_file) = if validate_downloaded_model(&models_dir.join("ggml-base.en.bin")).is_ok() {
-            ("base.en", "ggml-base.en.bin")
-        } else if validate_downloaded_model(&models_dir.join("ggml-tiny.en.bin")).is_ok() {
-            ("tiny.en", "ggml-tiny.en.bin")
-        } else {
-            return self.transcribe_pcm(samples_16k, peak_vad_prob);
-        };
-        if samples_16k.len() < 1600 {
-            return Err("Audio segment too short (< 100 ms)".to_string());
-        }
-        let model_path = models_dir.join(fast_file);
+        self.active_infer.fetch_add(1, Ordering::SeqCst);
+        let _active = InferGuard(&self.active_infer);
+
         let path_key = model_path.to_string_lossy().to_string();
-        let ctx = self.ensure_fast_context(&model_path)?;
+        let ctx = self.ensure_whisper_context(ctx_cache, model_path)?;
         let start = Instant::now();
+
         let mut state = {
-            let taken = self
-                .fast_cached_state
+            let taken = state_cache
                 .lock()
                 .ok()
                 .and_then(|mut g| g.take())
@@ -263,45 +385,76 @@ impl TranscriberEngine {
                 Some(s) => s,
                 None => ctx
                     .create_state()
-                    .map_err(|e| format!("Failed to create fast WhisperState: {:?}", e))?,
+                    .map_err(|e| format!("Failed to create WhisperState: {:?}", e))?,
             }
         };
+
         let n_threads = std::thread::available_parallelism()
             .map(|n| n.get().clamp(2, 8) as i32)
             .unwrap_or(4);
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_n_threads(n_threads);
-        params.set_language(Some("en"));
-        params.set_translate(false);
-        params.set_temperature(0.0);
-        params.set_temperature_inc(0.0);
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
-        params.set_no_context(true);
-        params.set_single_segment(false);
 
-        let pcm_input = normalize_and_pad_speech_pcm(samples_16k);
-        let infer_res = state
-            .full(params, &pcm_input)
-            .map_err(|e| format!("Whisper fast inference failed: {:?}", e));
-        if infer_res.is_err() {
-            if let Ok(mut g) = self.fast_cached_state.lock() {
+        // Chunk Whisper audio past 28s along low-energy pauses so long dictation never hits
+        // the 30s context boundary or drops early words.
+        let chunks = split_long_pcm_chunks(samples_16k, 16_000 * 28, 16_000 * 20);
+        let mut raw_text = String::new();
+
+        for chunk in chunks {
+            if self.shutting_down.load(Ordering::SeqCst) {
+                return Err("Transcriber is shutting down".to_string());
+            }
+            let strategy = if fast_mode || model_id == "tiny.en" || model_id == "base.en" {
+                SamplingStrategy::Greedy {
+                    best_of: if fast_mode { 1 } else { 2 },
+                }
+            } else {
+                SamplingStrategy::BeamSearch {
+                    beam_size: 3,
+                    patience: 1.0,
+                }
+            };
+
+            let mut params = FullParams::new(strategy);
+            params.set_n_threads(n_threads);
+            params.set_language(Some("en"));
+            params.set_translate(false);
+            params.set_temperature(0.0);
+            params.set_temperature_inc(if fast_mode { 0.0 } else { 0.2 });
+            params.set_no_speech_thold(0.6);
+            params.set_print_special(false);
+            params.set_print_progress(false);
+            params.set_print_realtime(false);
+            params.set_print_timestamps(false);
+            params.set_no_context(true);
+            params.set_single_segment(false);
+
+            let pcm_input = normalize_and_pad_speech_pcm(chunk);
+            if let Err(e) = state.full(params, &pcm_input) {
+                if !self.shutting_down.load(Ordering::SeqCst) {
+                    if let Ok(mut g) = state_cache.lock() {
+                        *g = Some((path_key, state));
+                    }
+                }
+                return Err(format!("Whisper inference failed: {:?}", e));
+            }
+            for segment in state.as_iter() {
+                if let Ok(seg_str) = segment.to_str_lossy() {
+                    let s = seg_str.trim();
+                    if !s.is_empty() {
+                        if !raw_text.is_empty() {
+                            raw_text.push(' ');
+                        }
+                        raw_text.push_str(s);
+                    }
+                }
+            }
+        }
+
+        if !self.shutting_down.load(Ordering::SeqCst) {
+            if let Ok(mut g) = state_cache.lock() {
                 *g = Some((path_key, state));
             }
-            infer_res?;
-            unreachable!();
         }
-        let mut raw_text = String::new();
-        for segment in state.as_iter() {
-            if let Ok(seg_str) = segment.to_str_lossy() {
-                raw_text.push_str(&seg_str);
-            }
-        }
-        if let Ok(mut g) = self.fast_cached_state.lock() {
-            *g = Some((path_key, state));
-        }
+
         let cleaned_raw = clean_whisper_hallucinations(&raw_text);
         let (mut cleaned, end_phrase_triggered) = strip_end_phrase(&cleaned_raw);
         let mut discarded_reason = None;
@@ -320,44 +473,112 @@ impl TranscriberEngine {
         } else {
             0.0
         };
+
         Ok(TranscriptionResult {
             text: cleaned,
             audio_duration_ms,
             inference_ms,
             rtf,
-            model_used: fast_id.to_string(),
+            model_used: model_id.to_string(),
             peak_vad_prob,
             end_phrase_triggered,
             discarded_reason,
         })
     }
+
+    /// Low-latency transcription pass used for mid-utterance partial checks and early wake-word
+    /// verification so they complete quickly and never block final utterance decoding.
+    pub fn transcribe_pcm_fast(
+        &self,
+        samples_16k: &[f32],
+        peak_vad_prob: f32,
+    ) -> Result<TranscriptionResult, String> {
+        if samples_16k.len() < 1600 {
+            return Err("Audio segment too short (< 100 ms)".to_string());
+        }
+        let selected_id = self.get_selected_model_id();
+        if selected_id == PARAKEET_MODEL_ID {
+            if let Ok(res) = self.transcribe_parakeet_pcm(samples_16k, peak_vad_prob, true) {
+                return Ok(res);
+            }
+        }
+        if selected_id == "tiny.en" || selected_id == "base.en" {
+            return self.transcribe_pcm(samples_16k, peak_vad_prob);
+        }
+        let models_dir = self.resolve_models_dir();
+        let (fast_id, fast_file) =
+            if validate_downloaded_model(&models_dir.join("ggml-base.en.bin")).is_ok() {
+                ("base.en", "ggml-base.en.bin")
+            } else if validate_downloaded_model(&models_dir.join("ggml-tiny.en.bin")).is_ok() {
+                ("tiny.en", "ggml-tiny.en.bin")
+            } else {
+                return self.transcribe_pcm(samples_16k, peak_vad_prob);
+            };
+        let model_path = models_dir.join(fast_file);
+        self.run_whisper_pcm(
+            &self.fast_loaded_model,
+            &self.fast_cached_state,
+            fast_id,
+            &model_path,
+            samples_16k,
+            peak_vad_prob,
+            true,
+        )
+    }
+
+    /// Checks whether the selected model is installed on disk; contexts load lazily on the
     /// first transcription, so `is_loaded` is false right after launch.
     pub fn is_model_available(&self) -> bool {
         let selected_id = self.get_selected_model_id();
+        let models_dir = self.resolve_models_dir();
+        if selected_id == PARAKEET_MODEL_ID {
+            return is_parakeet_installed(&models_dir);
+        }
         let filename = model_filename(&selected_id).unwrap_or("ggml-tiny.en.bin");
-        validate_downloaded_model(&self.resolve_models_dir().join(filename)).is_ok()
+        validate_downloaded_model(&models_dir.join(filename)).is_ok()
     }
 
     pub fn is_loaded(&self) -> bool {
-        self.loaded_model
+        let parakeet_up = self
+            .parakeet_model
             .lock()
             .map(|guard| guard.is_some())
-            .unwrap_or(false)
+            .unwrap_or(false);
+        let whisper_up = self
+            .loaded_model
+            .lock()
+            .map(|guard| guard.is_some())
+            .unwrap_or(false);
+        parakeet_up || whisper_up
     }
 
     pub fn unload(&self) {
-        if let Ok(mut state_guard) = self.cached_state.lock() {
-            *state_guard = None;
+        self.shutting_down.store(true, Ordering::SeqCst);
+        let clear_caches = || {
+            if let Ok(mut state_guard) = self.cached_state.lock() {
+                *state_guard = None;
+            }
+            if let Ok(mut guard) = self.loaded_model.lock() {
+                *guard = None;
+            }
+            if let Ok(mut state_guard) = self.fast_cached_state.lock() {
+                *state_guard = None;
+            }
+            if let Ok(mut guard) = self.fast_loaded_model.lock() {
+                *guard = None;
+            }
+            if let Ok(mut guard) = self.parakeet_model.lock() {
+                *guard = None;
+            }
+        };
+        clear_caches();
+        // Wait for any background inference thread holding an Arc<WhisperContext> so
+        // ggml_metal_rsets_free never sees live Metal residency sets during exit().
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        while self.active_infer.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(15));
         }
-        if let Ok(mut guard) = self.loaded_model.lock() {
-            *guard = None;
-        }
-        if let Ok(mut state_guard) = self.fast_cached_state.lock() {
-            *state_guard = None;
-        }
-        if let Ok(mut guard) = self.fast_loaded_model.lock() {
-            *guard = None;
-        }
+        clear_caches();
     }
 
     pub fn download_model(&self, model_id: &str) -> Result<ModelInfo, String> {
@@ -365,13 +586,23 @@ impl TranscriberEngine {
             .download_lock
             .lock()
             .map_err(|_| "Model download lock failed")?;
+        let dir = self.resolve_models_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create models dir: {}", e))?;
+
+        if model_id == PARAKEET_MODEL_ID {
+            download_parakeet_model(&dir)?;
+            return self
+                .list_models()
+                .into_iter()
+                .find(|m| m.id == model_id)
+                .ok_or_else(|| "Model metadata missing after download".to_string());
+        }
+
         let filename = model_filename(model_id)
             .ok_or_else(|| format!("Unsupported model id: {}", model_id))?;
         let expected_sha256 = pinned_model_sha256(filename)
             .ok_or_else(|| format!("No pinned checksum for model: {}", model_id))?;
 
-        let dir = self.resolve_models_dir();
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create models dir: {}", e))?;
         let dest = dir.join(filename);
         let url = format!(
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/{}/{}",
@@ -427,33 +658,6 @@ impl TranscriberEngine {
             .ok_or_else(|| "Model metadata missing after download".to_string())
     }
 
-    fn ensure_context(&self, model_path: &Path) -> Result<Arc<WhisperContext>, String> {
-        let path_key = model_path.to_string_lossy().to_string();
-        let mut guard = self.loaded_model.lock().unwrap();
-        if let Some((ref loaded_key, ref ctx)) = *guard {
-            if loaded_key == &path_key {
-                return Ok(Arc::clone(ctx));
-            }
-        }
-
-        if !model_path.exists() {
-            return Err(format!(
-                "Whisper model file not found at {}. Please download the model first.",
-                path_key
-            ));
-        }
-
-        let mut ctx_params = WhisperContextParameters::default();
-        ctx_params.use_gpu(true);
-        ctx_params.flash_attn(true);
-
-        let ctx = WhisperContext::new_with_params(model_path, ctx_params)
-            .map_err(|e| format!("Failed to initialize WhisperContext: {:?}", e))?;
-        let arc_ctx = Arc::new(ctx);
-        *guard = Some((path_key, Arc::clone(&arc_ctx)));
-        Ok(arc_ctx)
-    }
-
     pub fn transcribe_pcm(
         &self,
         samples_16k: &[f32],
@@ -464,119 +668,104 @@ impl TranscriberEngine {
         }
 
         let selected_id = self.get_selected_model_id();
+        if selected_id == PARAKEET_MODEL_ID {
+            return self.transcribe_parakeet_pcm(samples_16k, peak_vad_prob, false);
+        }
         let filename = model_filename(&selected_id).unwrap_or("ggml-tiny.en.bin");
         let model_path = self.resolve_models_dir().join(filename);
-        let path_key = model_path.to_string_lossy().to_string();
-        let ctx = self.ensure_context(&model_path)?;
-
-        let start = Instant::now();
-        let mut state = {
-            let taken = self
-                .cached_state
-                .lock()
-                .ok()
-                .and_then(|mut g| g.take())
-                .filter(|(k, _)| k == &path_key)
-                .map(|(_, s)| s);
-            match taken {
-                Some(s) => s,
-                None => ctx
-                    .create_state()
-                    .map_err(|e| format!("Failed to create WhisperState: {:?}", e))?,
-            }
-        };
-
-        let n_threads = std::thread::available_parallelism()
-            .map(|n| n.get().clamp(2, 8) as i32)
-            .unwrap_or(4);
-
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_n_threads(n_threads);
-        params.set_language(Some("en"));
-        params.set_translate(false);
-        params.set_temperature(0.0);
-        params.set_temperature_inc(0.0);
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
-        params.set_no_context(true);
-        params.set_single_segment(false);
-
-        let pcm_input = normalize_and_pad_speech_pcm(samples_16k);
-
-        let infer_res = state
-            .full(params, &pcm_input)
-            .map_err(|e| format!("Whisper inference failed: {:?}", e));
-
-        if infer_res.is_err() {
-            if let Ok(mut g) = self.cached_state.lock() {
-                *g = Some((path_key, state));
-            }
-            infer_res?;
-            unreachable!();
-        }
-
-        let mut raw_text = String::new();
-        for segment in state.as_iter() {
-            if let Ok(seg_str) = segment.to_str_lossy() {
-                raw_text.push_str(&seg_str);
-            }
-        }
-        if let Ok(mut g) = self.cached_state.lock() {
-            *g = Some((path_key, state));
-        }
-
-        let cleaned_raw = clean_whisper_hallucinations(&raw_text);
-        let (mut cleaned, end_phrase_triggered) = strip_end_phrase(&cleaned_raw);
-        let mut discarded_reason = None;
-        if is_likely_silence_hallucination(&cleaned, peak_vad_prob) {
-            discarded_reason = Some(format!(
-                "Discarded \"{}\" as a likely Whisper hallucination (peak VAD {:.2})",
-                cleaned.trim(),
-                peak_vad_prob
-            ));
-            cleaned.clear();
-        }
-        let inference_ms = start.elapsed().as_millis() as u64;
-        let audio_duration_ms = ((samples_16k.len() as f64 / 16000.0) * 1000.0) as u64;
-        let rtf = if audio_duration_ms > 0 {
-            (inference_ms as f32) / (audio_duration_ms as f32)
-        } else {
-            0.0
-        };
-
-        Ok(TranscriptionResult {
-            text: cleaned,
-            audio_duration_ms,
-            inference_ms,
-            rtf,
-            model_used: selected_id,
+        self.run_whisper_pcm(
+            &self.loaded_model,
+            &self.cached_state,
+            &selected_id,
+            &model_path,
+            samples_16k,
             peak_vad_prob,
-            end_phrase_triggered,
-            discarded_reason,
-        })
+            false,
+        )
     }
+}
+
+/// Splits audio longer than `max_chunk_samples` at low-energy pause points so long
+/// monologues never hit Whisper's 30-second context window limit.
+fn split_long_pcm_chunks(
+    samples_16k: &[f32],
+    max_chunk_samples: usize,
+    min_chunk_samples: usize,
+) -> Vec<&[f32]> {
+    if samples_16k.len() <= max_chunk_samples {
+        return vec![samples_16k];
+    }
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    let window = 1_600usize; // 100 ms energy window
+
+    while start < samples_16k.len() {
+        let remaining = samples_16k.len() - start;
+        if remaining <= max_chunk_samples {
+            chunks.push(&samples_16k[start..]);
+            break;
+        }
+        let search_lo = start + min_chunk_samples.min(max_chunk_samples);
+        let search_hi = (start + max_chunk_samples).min(samples_16k.len());
+        let mut best_split = search_hi;
+        let mut best_energy = f32::MAX;
+        let mut pos = search_lo;
+        while pos + window <= search_hi {
+            let energy: f32 = samples_16k[pos..pos + window]
+                .iter()
+                .map(|s| s * s)
+                .sum();
+            if energy < best_energy {
+                best_energy = energy;
+                best_split = pos + window / 2;
+            }
+            pos += window / 2;
+        }
+        chunks.push(&samples_16k[start..best_split]);
+        start = best_split;
+    }
+    chunks
+}
+
+fn compute_percentile_gain(samples_16k: &[f32]) -> f32 {
+    // Use the 99.5th percentile of absolute amplitude so a single mic pop never suppresses speech gain.
+    let mut mags: Vec<f32> = samples_16k
+        .iter()
+        .step_by(4)
+        .map(|s| s.abs())
+        .collect();
+    let ref_amp = if mags.is_empty() {
+        0.0
+    } else {
+        let idx = ((mags.len() - 1) * 199) / 200;
+        let (_, nth, _) = mags.select_nth_unstable_by(idx, |a, b| a.total_cmp(b));
+        *nth
+    };
+    if (0.010..0.60).contains(&ref_amp) {
+        (0.70 / ref_amp).min(6.0)
+    } else {
+        1.0
+    }
+}
+
+fn normalize_speech_pcm_no_pad(samples_16k: &[f32]) -> Vec<f32> {
+    let gain = compute_percentile_gain(samples_16k);
+    samples_16k
+        .iter()
+        .map(|&s| (s * gain).clamp(-0.98, 0.98))
+        .collect()
 }
 
 fn normalize_and_pad_speech_pcm(samples_16k: &[f32]) -> Vec<f32> {
     let min_samples = 16_800usize;
-    let peak = samples_16k
-        .iter()
-        .map(|s| s.abs())
-        .fold(0.0f32, f32::max);
-    let gain = if (0.012..0.65).contains(&peak) {
-        (0.75 / peak).min(5.0)
-    } else {
-        1.0
-    };
-    let mut out = Vec::with_capacity(samples_16k.len().max(min_samples));
+    let tail_pad_samples = 2_400usize; // 150 ms trailing silence protects final consonants
+    let gain = compute_percentile_gain(samples_16k);
+    let target_len = (samples_16k.len() + tail_pad_samples).max(min_samples);
+    let mut out = Vec::with_capacity(target_len);
     for &s in samples_16k {
         out.push((s * gain).clamp(-0.98, 0.98));
     }
-    if out.len() < min_samples {
-        out.resize(min_samples, 0.0);
-    }
+    out.resize(target_len, 0.0);
     out
 }
 
@@ -922,6 +1111,19 @@ mod tests {
     }
 
     #[test]
+    fn test_split_long_pcm_chunks_preserves_all_samples_at_pause() {
+        // 35 seconds total, with a quiet pause around 24 seconds.
+        let mut samples = vec![0.3f32; 16_000 * 35];
+        for s in &mut samples[16_000 * 24..16_000 * 25] {
+            *s = 0.0;
+        }
+        let chunks = split_long_pcm_chunks(&samples, 16_000 * 28, 16_000 * 20);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].len() + chunks[1].len(), samples.len());
+        assert!(chunks[0].len() >= 16_000 * 24 && chunks[0].len() <= 16_000 * 25);
+    }
+
+    #[test]
     #[ignore = "requires a local Whisper model and working GPU; run explicitly on a desktop"]
     fn test_metal_whisper_pipeline_benchmark() {
         let engine = TranscriberEngine::new();
@@ -942,5 +1144,6 @@ mod tests {
             );
             assert_eq!(warm.audio_duration_ms, 1500);
         }
+        engine.unload();
     }
 }

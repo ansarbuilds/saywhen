@@ -694,7 +694,9 @@ pub fn compute_adaptive_silence_timeout_ms(turn: &TurnState, cfg: &TurnTakingCon
     };
 
     let connective_bonus = if turn.ends_with_connective { 850 } else { 0 };
-    let effective_max_cap = if speech_ms > 2500 || turn.ends_with_connective {
+    let effective_max_cap = if speech_ms > 8000 {
+        max_cap.max(3000)
+    } else if speech_ms > 2500 || turn.ends_with_connective {
         max_cap.max(2600)
     } else {
         max_cap

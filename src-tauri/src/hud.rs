@@ -125,6 +125,9 @@ pub fn show_main_window(app: &AppHandle) {
 
 pub fn request_quit(app: &AppHandle) {
     QUITTING.store(true, Ordering::SeqCst);
+    if let Some(state) = app.try_state::<crate::AppState>() {
+        state.transcriber.unload();
+    }
     app.exit(0);
 }
 

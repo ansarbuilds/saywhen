@@ -1472,12 +1472,16 @@ function updateLlmPrivacyBadge() {
   badge.className = `gauge-tag ${isLocal ? 'tag-ok' : 'tag-warn'}`;
 }
 
+function formatModelPillLabel(modelId: string): string {
+  return modelId.startsWith('parakeet') ? modelId : `whisper-${modelId}`;
+}
+
 function renderModelsDropdown() {
   modelSelect.innerHTML = '';
   for (const m of modelsCatalog) {
     const opt = document.createElement('option');
     opt.value = m.id;
-    const rec = m.id === 'tiny.en' ? ' [Recommended]' : '';
+    const rec = m.id === 'parakeet-tdt-0.6b-v2' ? ' [Recommended]' : '';
     const status = m.installed ? 'Installed' : 'Download';
     opt.textContent = `${m.label}${rec} (${status})`;
     if (m.id === selectedModelId) {
@@ -1485,7 +1489,7 @@ function renderModelsDropdown() {
     }
     modelSelect.appendChild(opt);
   }
-  activeModelPill.textContent = `whisper-${selectedModelId}`;
+  activeModelPill.textContent = formatModelPillLabel(selectedModelId);
   updateModelDownloadButtonState();
   syncSetupChecklist();
 }
@@ -1814,6 +1818,41 @@ function extractHeadPose(matrixData: number[]): { yaw: number; pitch: number } {
   };
 }
 
+function countAngleReversals(values: number[], minSwingDeg: number): number {
+  if (values.length < 3) return 0;
+  let anchor = values[0];
+  let lastDir = 0; // +1 increasing, -1 decreasing
+  let reversals = 0;
+
+  for (let i = 1; i < values.length; i++) {
+    const v = values[i];
+    const diff = v - anchor;
+    if (lastDir === 0) {
+      if (Math.abs(diff) >= minSwingDeg) {
+        lastDir = diff > 0 ? 1 : -1;
+        anchor = v;
+      }
+    } else if (lastDir === 1) {
+      if (v > anchor) {
+        anchor = v;
+      } else if (anchor - v >= minSwingDeg) {
+        reversals += 1;
+        lastDir = -1;
+        anchor = v;
+      }
+    } else {
+      if (v < anchor) {
+        anchor = v;
+      } else if (v - anchor >= minSwingDeg) {
+        reversals += 1;
+        lastDir = 1;
+        anchor = v;
+      }
+    }
+  }
+  return reversals;
+}
+
 function detectHeadGesture(now: number): string {
   if (now - lastGestureTime < 1200 || poseWindow.length < 6) {
     return 'none';
@@ -1822,13 +1861,18 @@ function detectHeadGesture(now: number): string {
   const pitches = poseWindow.map((p) => p.pitch);
   const yawSpan = Math.max(...yaws) - Math.min(...yaws);
   const pitchSpan = Math.max(...pitches) - Math.min(...pitches);
+  const yawReversals = countAngleReversals(yaws, 10.0);
+  const pitchReversals = countAngleReversals(pitches, 7.5);
 
-  if (yawSpan >= 16.0 && yawSpan > pitchSpan * 1.4) {
+  // Require real back-and-forth oscillation so a smooth glance across the screen never cancels speech.
+  if (yawReversals >= 2 && yawSpan >= 18.0 && yawSpan > pitchSpan * 1.35) {
     lastGestureTime = now;
+    poseWindow.length = 0;
     return 'shake';
   }
-  if (pitchSpan >= 9.0 && pitchSpan > yawSpan * 1.15) {
+  if (pitchReversals >= 1 && pitchSpan >= 11.0 && pitchSpan > yawSpan * 1.15) {
     lastGestureTime = now;
+    poseWindow.length = 0;
     return 'nod';
   }
   return 'none';
@@ -2043,7 +2087,7 @@ function processVisionFrame(now: number) {
       }
 
       poseWindow.push({ timestamp: now, yaw, pitch });
-      while (poseWindow.length > 0 && now - poseWindow[0].timestamp > 750) {
+      while (poseWindow.length > 0 && now - poseWindow[0].timestamp > 950) {
         poseWindow.shift();
       }
 
@@ -3067,7 +3111,7 @@ modelSelect.addEventListener('change', async () => {
     try {
       await invoke('select_whisper_model', { modelId: chosenId });
       selectedModelId = chosenId;
-      activeModelPill.textContent = `whisper-${selectedModelId}`;
+      activeModelPill.textContent = formatModelPillLabel(selectedModelId);
     } catch (err) {
       showError(String(err));
     }

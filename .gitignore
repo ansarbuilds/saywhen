@@ -8,6 +8,7 @@ src-tauri/gen/
 models/*.bin
 models/*.gguf
 models/*.onnx
+models/parakeet-*/
 *.task
 *.wasm
 

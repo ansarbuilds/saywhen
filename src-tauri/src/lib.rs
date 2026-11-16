@@ -3,6 +3,7 @@ pub mod cleanup;
 pub mod history;
 pub mod hud;
 pub mod inject;
+pub mod parakeet;
 pub mod transcribe;
 pub mod turn_taking;
 pub mod wake_word;
@@ -236,19 +237,15 @@ async fn download_whisper_model(
         .find(|model| model.id == model_id)
         .map(|model| model.size_mb.saturating_mul(1024 * 1024))
         .unwrap_or(0);
-    let part_path = transcriber.model_download_path(&model_id);
     let stop = Arc::new(AtomicBool::new(false));
     let progress_app = app.clone();
     let progress_model = model_id.clone();
+    let progress_transcriber = Arc::clone(&transcriber);
     let progress_stop = Arc::clone(&stop);
     let poller = std::thread::spawn(move || {
         let mut reported = u64::MAX;
         while !progress_stop.load(Ordering::Relaxed) {
-            let downloaded = part_path
-                .as_ref()
-                .and_then(|path| std::fs::metadata(path).ok())
-                .map(|metadata| metadata.len())
-                .unwrap_or(0);
+            let downloaded = progress_transcriber.model_download_bytes(&progress_model);
             if downloaded != reported {
                 reported = downloaded;
                 let _ = progress_app.emit(

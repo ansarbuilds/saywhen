@@ -630,6 +630,8 @@ struct SharedCaptureBuffer {
     pre_roll: VecDeque<f32>,
     vad_pending: VecDeque<f32>,
     utterance_pcm: Vec<f32>,
+    /// Samples captured during TRANSCRIBING / PREVIEW so continuing speech never drops a syllable.
+    continuation_pcm: Vec<f32>,
     state: PipelineState,
     listening_started_at: Option<Instant>,
     listening_started_at_ms: u64,
@@ -686,6 +688,7 @@ impl SharedCaptureBuffer {
             pre_roll: VecDeque::with_capacity(PREROLL_SAMPLES + 1024),
             vad_pending: VecDeque::with_capacity(VAD_CHUNK_SAMPLES * 4),
             utterance_pcm: Vec::with_capacity(16_000 * 10),
+            continuation_pcm: Vec::with_capacity(16_000 * 4),
             state: PipelineState::IDLE,
             listening_started_at: None,
             listening_started_at_ms: 0,
@@ -753,6 +756,7 @@ impl SharedCaptureBuffer {
     fn begin_listening(&mut self, source: &str, seed_speech_frames: usize) {
         let now_ms = self.now_ms();
         self.utterance_pcm.clear();
+        self.continuation_pcm.clear();
         // Prepend the 500ms circular pre-roll ring buffer so the first syllable is never clipped
         self.utterance_pcm.extend(self.pre_roll.iter().copied());
         self.state = PipelineState::LISTENING;
@@ -784,6 +788,48 @@ impl SharedCaptureBuffer {
         if source == WAKE_WORD_TRIGGER {
             wake_log!("[saywhen wake] voice heard while not facing the screen: checking for the wake word");
         }
+    }
+
+    /// Upgrade an unconfirmed wake-word candidate to a confirmed trigger (camera or hotkey)
+    /// without clearing `utterance_pcm` so speech already spoken is never lost.
+    fn upgrade_wake_candidate_to(&mut self, source: &str) {
+        self.trigger_source = source.to_string();
+        self.wake_confirmed = false;
+        self.wake_check_in_flight = false;
+        self.wake_check_done = true;
+        self.wake_awaiting_command = false;
+        self.wake_confirmed_at_ms = 0;
+        self.last_speech_at_ms = self.now_ms();
+    }
+
+    /// Resume listening after `TRANSCRIBING` / `PREVIEW`, keeping every sample captured in
+    /// `continuation_pcm` so speech spoken while transcribing is never dropped.
+    fn resume_listening_with_continuation(
+        &mut self,
+        source: &str,
+        prefix: Option<String>,
+        seed_speech_frames: usize,
+        voice_profile: Option<&VoiceProfile>,
+    ) {
+        let carried_audio = std::mem::take(&mut self.continuation_pcm);
+        self.begin_listening(source, seed_speech_frames);
+        if !carried_audio.is_empty() {
+            self.utterance_pcm.clear();
+            let take_len = carried_audio.len().min(MAX_UTTERANCE_SAMPLES);
+            self.utterance_pcm
+                .extend_from_slice(&carried_audio[carried_audio.len() - take_len..]);
+        }
+        if let Some(vp) = voice_profile {
+            self.peak_speech_rms = self.peak_speech_rms.max(vp.typical_rms * 0.70);
+        }
+        if source == WAKE_WORD_TRIGGER {
+            self.wake_confirmed = true;
+            self.wake_check_done = true;
+        }
+        if let Some(ref p) = prefix {
+            self.partial_transcript = p.clone();
+        }
+        self.carried_transcript_prefix = prefix;
     }
 
     fn is_unconfirmed_wake_candidate(&self) -> bool {
@@ -819,6 +865,7 @@ impl SharedCaptureBuffer {
         self.next_utterance_id = self.next_utterance_id.saturating_add(1);
         self.state = PipelineState::TRANSCRIBING;
         self.listening_started_at = None;
+        self.continuation_pcm.clear();
         let start_with_preroll_ms = self.listening_started_at_ms.saturating_sub(500);
         let samples = std::mem::take(&mut self.utterance_pcm);
         let peak_vad = self.peak_vad_prob;
@@ -881,6 +928,7 @@ impl SharedCaptureBuffer {
     fn cancel_active_or_preview(&mut self, turn_cfg: &TurnTakingConfig) {
         self.state = self.resting_state(turn_cfg);
         self.utterance_pcm.clear();
+        self.continuation_pcm.clear();
         self.listening_started_at = None;
         self.pending_preview = None;
         self.carried_transcript_prefix = None;
@@ -1105,6 +1153,12 @@ fn build_cpal_stream(
                 && guard.utterance_pcm.len() < MAX_UTTERANCE_SAMPLES
             {
                 guard.utterance_pcm.push(sample);
+            } else if matches!(
+                guard.state,
+                PipelineState::TRANSCRIBING | PipelineState::PREVIEW
+            ) && guard.continuation_pcm.len() < MAX_UTTERANCE_SAMPLES
+            {
+                guard.continuation_pcm.push(sample);
             }
         }
     };
@@ -1540,7 +1594,6 @@ fn run_audio_worker(
                     }
                     if guard.state == PipelineState::IDLE
                         || guard.state == PipelineState::ARMED
-                        || (guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER)
                     {
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
@@ -1550,6 +1603,15 @@ fn run_audio_worker(
                             0
                         };
                         guard.begin_listening(&source, seed);
+                        if !source.starts_with("voice_enroll:") {
+                            if let Some(ref vp) = cfg.voice_profile {
+                                guard.peak_speech_rms =
+                                    guard.peak_speech_rms.max(vp.typical_rms * 0.70);
+                            }
+                        }
+                    } else if guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER
+                    {
+                        guard.upgrade_wake_candidate_to(&source);
                         if !source.starts_with("voice_enroll:") {
                             if let Some(ref vp) = cfg.voice_profile {
                                 guard.peak_speech_rms =
@@ -1647,19 +1709,12 @@ fn run_audio_worker(
                                 }
                             });
                             let seed = guard.consecutive_vad_frames.min(2).max(1);
-                            guard.begin_listening(&source, seed);
-                            if let Some(ref vp) = cfg.voice_profile {
-                                guard.peak_speech_rms =
-                                    guard.peak_speech_rms.max(vp.typical_rms * 0.70);
-                            }
-                            if source == WAKE_WORD_TRIGGER {
-                                guard.wake_confirmed = true;
-                                guard.wake_check_done = true;
-                            }
-                            if let Some(ref p) = prefix {
-                                guard.partial_transcript = p.clone();
-                            }
-                            guard.carried_transcript_prefix = prefix;
+                            guard.resume_listening_with_continuation(
+                                &source,
+                                prefix,
+                                seed,
+                                cfg.voice_profile.as_ref(),
+                            );
                             true
                         } else {
                             false
@@ -1674,6 +1729,7 @@ fn run_audio_worker(
                         let mut guard = shared.lock().unwrap();
                         if guard.state == PipelineState::PREVIEW {
                             let item = guard.pending_preview.take();
+                            guard.continuation_pcm.clear();
                             guard.state = guard.resting_state(&turn_cfg);
                             item
                         } else {
@@ -1708,21 +1764,15 @@ fn run_audio_worker(
                                 || !guard.vision.mouth_closed);
                         if spoke_during_tx {
                             let source = item.trigger_source.clone();
-                            let prefix = item.transcription.text.trim().to_string();
+                            let t = item.transcription.text.trim().to_string();
+                            let prefix = if t.is_empty() { None } else { Some(t) };
                             let seed = guard.consecutive_vad_frames.min(2).max(1);
-                            guard.begin_listening(&source, seed);
-                            if let Some(ref vp) = cfg.voice_profile {
-                                guard.peak_speech_rms =
-                                    guard.peak_speech_rms.max(vp.typical_rms * 0.70);
-                            }
-                            if source == WAKE_WORD_TRIGGER {
-                                guard.wake_confirmed = true;
-                                guard.wake_check_done = true;
-                            }
-                            if !prefix.is_empty() {
-                                guard.partial_transcript = prefix.clone();
-                                guard.carried_transcript_prefix = Some(prefix);
-                            }
+                            guard.resume_listening_with_continuation(
+                                &source,
+                                prefix,
+                                seed,
+                                cfg.voice_profile.as_ref(),
+                            );
                             true
                         } else {
                             guard.state = PipelineState::PREVIEW;
@@ -2958,5 +3008,37 @@ mod tests {
         assert!((again.vad_threshold - 0.55).abs() < f32::EPSILON);
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn wake_upgrade_and_continuation_preserve_utterance_audio() {
+        let mut buf = SharedCaptureBuffer::new();
+        buf.begin_listening(WAKE_WORD_TRIGGER, 3);
+        let first_part = vec![0.25f32; 16_000 * 6];
+        buf.utterance_pcm.extend_from_slice(&first_part);
+        buf.speech_frames_in_utterance = 40;
+
+        // Upgrading wake candidate to hands_free_multimodal keeps existing speech audio intact.
+        buf.upgrade_wake_candidate_to("hands_free_multimodal");
+        assert_eq!(buf.trigger_source, "hands_free_multimodal");
+        assert_eq!(buf.utterance_pcm.len(), first_part.len());
+        assert_eq!(buf.speech_frames_in_utterance, 40);
+
+        // Samples buffered during TRANSCRIBING / PREVIEW are carried into the resumed turn.
+        let _captured = buf.take_utterance_for_transcription(EndReason::Silence, 200, false);
+        assert_eq!(buf.state, PipelineState::TRANSCRIBING);
+        let during_tx = vec![0.4f32; 16_000 * 2];
+        buf.continuation_pcm.extend_from_slice(&during_tx);
+
+        buf.resume_listening_with_continuation(
+            "hands_free_multimodal",
+            Some("first part".to_string()),
+            2,
+            None,
+        );
+        assert_eq!(buf.state, PipelineState::LISTENING);
+        assert_eq!(buf.utterance_pcm, during_tx);
+        assert_eq!(buf.carried_transcript_prefix.as_deref(), Some("first part"));
+        assert!(buf.continuation_pcm.is_empty());
     }
 }

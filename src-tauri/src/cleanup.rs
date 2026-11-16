@@ -319,6 +319,8 @@ pub fn run_local_developer_cleanup_with_vocab(
         ("get push", "git push"),
         ("get pull", "git pull"),
         ("get stash pot", "git stash pop"),
+        ("gets dash pop", "git stash pop"),
+        ("gets dash", "git stash"),
         ("get stash", "git stash"),
         ("get commit", "git commit"),
         ("get checkout", "git checkout"),
@@ -328,6 +330,7 @@ pub fn run_local_developer_cleanup_with_vocab(
         ("gitlog onaline", "git log oneline"),
         ("git log onaline", "git log oneline"),
         ("git log online", "git log oneline"),
+        ("git logon a line", "git log oneline"),
         ("git commit message. ", "git commit message "),
         ("fix, turn-taking, hysteresis", "fix turn-taking hysteresis"),
         ("cargo fmt", "cargo fmt"),
@@ -337,6 +340,7 @@ pub fn run_local_developer_cleanup_with_vocab(
         ("cargo check", "cargo check"),
         ("cargo clippy", "cargo clippy"),
         ("src torrey", "src-tauri"),
+        ("src tori", "src-tauri"),
         ("s r c tauri", "src-tauri"),
         ("src tauri", "src-tauri"),
         ("czechmain.ts", "check main.ts"),
@@ -352,6 +356,7 @@ pub fn run_local_developer_cleanup_with_vocab(
         ("called \"thee turn taking\"", "called feat turn taking"),
         ("called \"vee turn taking.\"", "called feat turn taking"),
         ("called \"viketerntaking\"", "called feat turn taking"),
+        ("called feed turn taking", "called feat turn taking"),
     ];
 
     for (misheard, corrected) in &phonetic_replacements {
