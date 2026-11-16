@@ -2,6 +2,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { SaywhenAnnounce } from "./SaywhenAnnounce";
 import { SaywhenDemo } from "./SaywhenDemo";
+import { ReelLookTalkSent, ReelSafeAndPrivate, ReelSpeaksDeveloper, SaywhenReelHero } from "./InstagramReels";
 
 import { Cancel, Cleanup, FiveStates, HeroLoop, Privacy, Safety, SendStyles } from "./AnimatedLoops";
 import loopSpecs from "./loop-specs.json";
@@ -34,6 +35,38 @@ export const RemotionRoot: React.FC = () => {
         fps={30}
         width={1920}
         height={1080}
+      />
+      <Composition
+        id="ReelLookTalkSent"
+        component={ReelLookTalkSent}
+        durationInFrames={354}
+        fps={30}
+        width={1080}
+        height={1920}
+      />
+      <Composition
+        id="ReelSpeaksDeveloper"
+        component={ReelSpeaksDeveloper}
+        durationInFrames={300}
+        fps={30}
+        width={1080}
+        height={1920}
+      />
+      <Composition
+        id="SaywhenReelHero"
+        component={SaywhenReelHero}
+        durationInFrames={450}
+        fps={30}
+        width={1080}
+        height={1920}
+      />
+      <Composition
+        id="ReelSafeAndPrivate"
+        component={ReelSafeAndPrivate}
+        durationInFrames={300}
+        fps={30}
+        width={1080}
+        height={1920}
       />
       {loopSpecs.map(({ name, width, height, duration }) => (
         <Composition
