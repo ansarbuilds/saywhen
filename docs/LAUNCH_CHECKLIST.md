@@ -48,7 +48,7 @@ The GPU benchmark crashed inside Metal allocation in the restricted agent sessio
 1. Complete the gates for every platform being advertised. Omit unverified platform installers from a public release, or label them explicitly experimental.
 2. Choose an unused version and update `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and `src-tauri/tauri.conf.json` together. Run `npm run check:release`.
 3. Configure the Apple signing and notarization secrets listed in `.github/workflows/release.yml`. Verify the final downloaded app with `codesign --verify --deep --strict` and `spctl --assess --type execute`. Windows signing still needs separate configuration or a clearly disclosed unsigned beta.
-4. Push reviewed changes and a matching `v<version>` tag. The workflow creates a **draft prerelease**, not a public release. All intended matrix jobs must pass; a successful platform alone is not enough.
+4. Push reviewed changes and a matching `v<version>` tag. The workflow publishes a **prerelease**, not a stable release. All intended matrix jobs must pass; a successful platform alone is not enough.
 5. Download and test the actual installers. Add release notes with supported OS/hardware, signing status, first-run instructions, known limitations and the exact test evidence.
 6. Check the README demo links and attach the referenced video assets. The README clip links to the project page at `https://ansarbuilds.dev/p/saywhen/`, so that page must be live before the repository goes public. Publish the draft only after the gates pass. Mark it stable only after the hardware evidence supports that claim.
 

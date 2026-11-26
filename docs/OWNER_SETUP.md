@@ -37,7 +37,7 @@ saywhen does not yet publish updater files. Before the first build that should u
 3. Add the private key as `TAURI_SIGNING_PRIVATE_KEY`. If the key has a password, add `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 4. Do not commit the private key. If you lose it, installed copies cannot trust a new key without an app update that contains the new public key.
 
-The GitHub release workflow already creates a draft prerelease. Publish it only after you have installed that exact build on a clean Mac and a clean Windows PC. The [launch checklist](LAUNCH_CHECKLIST.md) is the list of those checks. Most of the hands-on rows are still open.
+The GitHub release workflow publishes a prerelease. Install that exact build on a clean Mac and a clean Windows PC before calling it stable. The [launch checklist](LAUNCH_CHECKLIST.md) is the list of those checks. Most of the hands-on rows are still open.
 
 ## Charging money
 

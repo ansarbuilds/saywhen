@@ -3,16 +3,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen_0.2.1_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.3.0/saywhen_0.3.0_aarch64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-22061c?style=for-the-badge&logo=apple&logoColor=f6f1ea" alt="Download for Mac (Apple Silicon)" height="44"></a>
   &nbsp;
-  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.2.1/saywhen_0.2.1_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/download/v0.3.0/saywhen_0.3.0_x64-setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-f6f1ea?style=for-the-badge&logoColor=22061c" alt="Download for Windows (64-bit)" height="44"></a>
   &nbsp;
   <a href="https://ansarbuilds.dev/p/saywhen/#try-it"><img src="https://img.shields.io/badge/Try_Interactive_Preview-fbb303?style=for-the-badge&logoColor=22061c" alt="Try Interactive Preview on ansarbuilds.dev" height="44"></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f6f1ea?labelColor=22061c" alt="License: MIT"></a>
-  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.1"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
+  <a href="https://github.com/ansarbuilds/saywhen/releases/tag/v0.3.0"><img src="https://img.shields.io/github/v/release/ansarbuilds/saywhen?include_prereleases&label=beta&color=fbb303&labelColor=22061c" alt="Latest beta release"></a>
   <a href="https://github.com/ansarbuilds/saywhen/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ansarbuilds/saywhen/ci.yml?branch=main&label=CI&labelColor=22061c" alt="CI"></a>
 </p>
 
@@ -131,12 +131,12 @@ The full checklist is [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md).
 
 ### Download the app
 
-Get the beta installer from the **[v0.2.1 release](https://github.com/ansarbuilds/saywhen/releases/tag/v0.2.1)**:
+Get the beta installer from the **[v0.3.0 release](https://github.com/ansarbuilds/saywhen/releases/tag/v0.3.0)**:
 
 - **Mac:** the `.dmg` file (`aarch64` is Apple Silicon, `x64` is Intel when that build is included). Drag saywhen into Applications.
 - **Windows:** the `-setup.exe` file.
 
-If your Mac says saywhen "is damaged" or "cannot be opened", this beta is not signed by Apple yet. Run this once, then open the app again:
+If your Mac says saywhen cannot be opened, this beta is not signed by Apple yet. Right-click the app, choose Open, then Open again. If it still says the app is damaged, run this once, then open the app again:
 
 ```bash
 xattr -cr /Applications/saywhen.app
@@ -168,7 +168,7 @@ The first run downloads the camera model (about 4 MB) and can take 5 to 15 minut
 
 ## Beta, honestly
 
-saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. The v0.2.1 download is behind the current code: Parakeet, Large v3 Turbo, voice enrollment, snippets, and the license screen are in the repository and not in that installer. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md), the [FAQ](docs/FAQ.md), or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
+saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The v0.3.0 installers are not signed, and hands-on checks on Windows hardware and Intel Macs are still open. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md), the [FAQ](docs/FAQ.md), or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
 
 What you have to set up yourself before a signed, paid release is listed in [owner setup](docs/OWNER_SETUP.md).
 

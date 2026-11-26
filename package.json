@@ -1,7 +1,7 @@
 {
   "name": "saywhen",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Hands-free, hotkey-free voice input for developers",
   "type": "module",
   "scripts": {
