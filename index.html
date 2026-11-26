@@ -7,6 +7,7 @@
     <title>saywhen</title>
     <script src="/boot.js"></script>
     <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/design/surfaces.css" />
   </head>
   <body data-state="IDLE" data-send-mode="pause" data-palette="saywhen" data-mood-colors="on">
     <div class="app-shell">
@@ -25,22 +26,22 @@
         <nav class="nav" id="app-nav" aria-label="Sections">
           <span class="nav-indicator" id="nav-indicator" aria-hidden="true"></span>
           <button class="nav-item is-active" data-tab="home" aria-current="page">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9 10 3.8 16.5 9v6.7a1 1 0 0 1-1 1h-3.3v-4.4H7.8v4.4H4.5a1 1 0 0 1-1-1z" /></svg>
+            <span class="nav-icon" data-icon="home"></span>
             <span>Home</span>
             <kbd class="nav-kbd" data-mod>1</kbd>
           </button>
           <button class="nav-item" data-tab="preferences">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h7M15 6h1M4 14h1M9 14h7" /><circle cx="13" cy="6" r="2" /><circle cx="7" cy="14" r="2" /></svg>
+            <span class="nav-icon" data-icon="settings"></span>
             <span>Settings</span>
             <kbd class="nav-kbd" data-mod>2</kbd>
           </button>
           <button class="nav-item" data-tab="lab">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h2.5l2-5 3 9 2-6 1.5 2H17" /></svg>
+            <span class="nav-icon" data-icon="activity"></span>
             <span>Diagnostics</span>
             <kbd class="nav-kbd" data-mod>3</kbd>
           </button>
           <button class="nav-item" data-tab="guide">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H15v11.5H5.5A1.5 1.5 0 0 0 4 16zM4 16a1.5 1.5 0 0 0 1.5 1.5H15V14.5" /><path d="M7.5 7h4.5M7.5 10h3" /></svg>
+            <span class="nav-icon" data-icon="book"></span>
             <span>Guide</span>
             <kbd class="nav-kbd" data-mod>4</kbd>
           </button>
@@ -618,6 +619,7 @@
                     <label class="field-label" for="quiet-end">Until</label>
                     <input type="time" id="quiet-end" class="text-control" value="07:00" />
                   </div>
+                  <p class="pref-footnote" id="quiet-hours-summary">Quiet hours are off. Hands-free can start any time.</p>
                   <label class="toggle-row">
                     <div>
                       <div class="toggle-title">Spoken punctuation</div>
@@ -839,7 +841,11 @@
                   </div>
                 </header>
                 <div class="pref-group">
-                  <p class="pref-footnote" id="license-status" role="status">Checking the trial...</p>
+                  <div class="license-card" id="license-status" role="status" data-tier="trial">
+                    <span class="license-eyebrow" id="license-eyebrow">Trial</span>
+                    <strong class="license-headline" id="license-headline">Checking the trial...</strong>
+                    <p class="license-detail" id="license-detail">Enforcement is off, so nothing is locked.</p>
+                  </div>
                   <div class="pref-row">
                     <div class="pref-text">
                       <label class="field-label" for="license-enforcement">Enforcement</label>
@@ -887,6 +893,16 @@
                       <button type="button" class="theme-choice-btn is-selected" data-theme-choice="system" aria-pressed="true">System</button>
                       <button type="button" class="theme-choice-btn" data-theme-choice="light" aria-pressed="false">Light</button>
                       <button type="button" class="theme-choice-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
+                    </div>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Density</label>
+                      <span class="pref-desc">Comfortable keeps the reading size. Compact tightens settings, history, and the home headline.</span>
+                    </div>
+                    <div class="theme-choice" role="group" aria-label="Density">
+                      <button type="button" class="theme-choice-btn is-selected" data-density="comfortable" aria-pressed="true">Comfortable</button>
+                      <button type="button" class="theme-choice-btn" data-density="compact" aria-pressed="false">Compact</button>
                     </div>
                   </div>
                   <div class="pref-row">
@@ -982,6 +998,13 @@
                       <span class="pref-desc" id="about-version">Beta</span>
                     </div>
                     <span class="gauge-tag tag-ok">Local-first</span>
+                  </div>
+                  <div class="pref-row pref-row-stack" id="menu-bar-preview">
+                    <div class="pref-text">
+                      <label class="field-label">Menu bar</label>
+                      <span class="pref-desc">The same items appear in the macOS menu bar and the Windows tray. Cancel only works while a line is waiting to send.</span>
+                    </div>
+                    <ul class="menu-preview" id="menu-preview"></ul>
                   </div>
                   <div class="pref-row">
                     <div class="pref-text">
@@ -1234,7 +1257,7 @@
         <div class="modal-body">
         <div class="modal-header">
           <img class="modal-logo" src="/src/assets/logo.png" alt="" width="56" height="56" draggable="false" />
-          <span class="modal-kicker">Welcome to saywhen</span>
+          <span class="modal-kicker" id="onboarding-progress">0 of 4 ready</span>
           <h2 class="modal-title" id="onboarding-title">Look. Talk. <em>Sent.</em></h2>
           <p class="modal-sub" id="onboarding-sub">saywhen types what you say into your terminal or coding assistant. No buttons, no hotkeys. It only listens while you are looking at the screen and talking.</p>
           <button id="onboarding-close-btn" class="modal-close" aria-label="Close">

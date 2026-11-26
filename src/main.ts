@@ -2,6 +2,8 @@ import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/
 import { invoke } from '@tauri-apps/api/core';
 import { initByokSettings } from './byok';
 import { initLicenseSettings } from './license-ui';
+import { historyCardModel, highlightMatch, historyRows } from './ui/history-view';
+import { densityMode, onboardingProgress, quietHoursSummary } from './ui/product-views';
 import { formatProfileLines, formatSnippetLines, parseProfileLines, parseSnippetLines } from './product-settings';
 import {
   acceleratorFromCodes,
@@ -508,6 +510,7 @@ const themeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[d
 const toggleHighContrast = document.getElementById('toggle-high-contrast') as HTMLInputElement | null;
 const toggleReduceMotion = document.getElementById('toggle-reduce-motion') as HTMLInputElement | null;
 const zoomButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-ui-zoom]'));
+const densityButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-density]'));
 const hotkeyRecordBtn = document.getElementById('hotkey-record-btn') as HTMLButtonElement | null;
 const hotkeyResetBtn = document.getElementById('hotkey-reset-btn') as HTMLButtonElement | null;
 const aboutVersion = document.getElementById('about-version');
@@ -639,10 +642,13 @@ function filterUtteranceFeed() {
   const cards = transcriptList.querySelectorAll<HTMLElement>('.utterance-card');
   for (const card of cards) {
     const hay = card.dataset.searchText || '';
-    if (!q || hay.includes(q)) {
-      card.classList.remove('hidden');
-    } else {
-      card.classList.add('hidden');
+    const visible = !q || hay.includes(q) || (q.startsWith('app:') && hay.includes(q.slice(4)));
+    card.classList.toggle('hidden', !visible);
+    const textEl = card.querySelector('.utterance-text');
+    const plain = card.dataset.plainText || '';
+    if (textEl) {
+      if (q && !q.startsWith('app:') && visible) textEl.innerHTML = highlightMatch(plain, q);
+      else textEl.textContent = plain;
     }
   }
 }
@@ -739,6 +745,9 @@ function syncOnboardingBadges() {
     obCameraBadge.textContent = cameraRunning ? 'On' : 'Off';
     obCameraBadge.classList.toggle('ob-ok', cameraRunning);
   }
+  const ready = [obModelBadge?.classList.contains('ob-ok'), obMicBadge?.classList.contains('ob-ok'), obCameraBadge?.classList.contains('ob-ok'), accessibilityPermissionTrusted].filter(Boolean).length;
+  const progress = document.getElementById('onboarding-progress');
+  if (progress) progress.textContent = onboardingProgress(ready, 4);
   syncPracticeControls();
 }
 
@@ -926,8 +935,35 @@ function initZoom() {
   }
 }
 
+function applyDensity(mode: string, persist = true) {
+  const density = densityMode(mode);
+  document.documentElement.dataset.density = density;
+  for (const button of densityButtons) {
+    const on = button.dataset.density === density;
+    button.classList.toggle('is-selected', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  if (persist) {
+    try {
+      localStorage.setItem('saywhen-density', density);
+    } catch {
+      // Storage can be unavailable; the choice still applies for this session.
+    }
+  }
+}
+
 function initTheme() {
   applyTheme(readThemeChoice(), false);
+  let savedDensity = 'comfortable';
+  try {
+    savedDensity = localStorage.getItem('saywhen-density') || 'comfortable';
+  } catch {
+    savedDensity = 'comfortable';
+  }
+  applyDensity(savedDensity, false);
+  for (const button of densityButtons) {
+    button.addEventListener('click', () => applyDensity(button.dataset.density || 'comfortable', true));
+  }
   applyContrast(localStorage.getItem('saywhen-contrast') === 'high', false);
   applyMotion(localStorage.getItem('saywhen-motion') === 'reduced', false);
   toggleHighContrast?.addEventListener('change', () => {
@@ -2301,35 +2337,39 @@ function appendUtteranceCard(
 
   const card = document.createElement('div');
   card.className = 'utterance-card';
-  card.dataset.searchText = `${cleanup.cleanedText} ${cleanup.rawText} ${targetPolicy.appName} ${triggerSource}`.toLowerCase();
-
-  const timeStr = new Date(timestampMs || Date.now()).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
   const sourceLabel = formatTriggerSource(triggerSource);
-  const displayTranscript =
-    cleanup.cleanedText.length > 0 ? cleanup.cleanedText : '(No speech detected in audio segment)';
 
-  const injectBadgeHtml = injection?.success
-    ? `<span class="u-badge u-badge-ok" title="${escapeHtml(injection.message)}">${injection.pressedEnter ? 'Sent to' : 'Pasted into'} ${escapeHtml(injection.targetApp || targetPolicy.appName)}</span>`
-    : injectionError
-      ? `<span class="u-badge" title="${escapeHtml(injectionError)}">Kept on clipboard</span>`
-      : `<span class="u-badge">Transcribed</span>`;
-
-  const cleanupBadgeHtml = cleanup.modified
-    ? `<span class="u-badge" title="${escapeHtml(cleanup.rawText)}">Cleaned</span>`
-    : '';
+  const model = historyCardModel({
+    cleanedText: cleanup.cleanedText,
+    rawText: cleanup.rawText,
+    appName: targetPolicy.appName,
+    triggerSource,
+    timestampMs: timestampMs || Date.now(),
+    nowMs: Date.now(),
+    inferenceMs: transcription.inferenceMs,
+    pressedEnter: Boolean(injection?.pressedEnter),
+    injected: Boolean(injection?.success),
+    failed: Boolean(injectionError),
+    modified: cleanup.modified,
+    destructive: Boolean(cleanup.isDestructiveCommand),
+    sourceLabel,
+  });
+  card.dataset.searchText = model.searchText;
+  card.dataset.dayGroup = model.dayGroup;
+  card.dataset.plainText = model.text;
+  card.dataset.timestampMs = String(timestampMs || Date.now());
 
   card.innerHTML = `
+    <div class="utterance-kicker">${escapeHtml(model.dayGroup)} · ${escapeHtml(model.relativeLabel)} · ${escapeHtml(model.wordLabel)}</div>
     <div class="utterance-text"></div>
     <div class="utterance-meta">
-      <span>${escapeHtml(timeStr)}</span>
-      <span>${escapeHtml(sourceLabel)}</span>
-      <span title="Whisper inference time">${transcription.inferenceMs} ms</span>
+      <span>${escapeHtml(model.timeLabel)}</span>
+      <span>${escapeHtml(model.sourceLabel)}</span>
+      <span title="Speech model time">${escapeHtml(model.inferenceLabel)}</span>
       <div class="utterance-badges">
-        ${injectBadgeHtml}
-        ${cleanupBadgeHtml}
+        <span class="u-badge ${injection?.success ? 'u-badge-ok' : ''}">${escapeHtml(model.deliveryLabel)}</span>
+        ${model.cleaned ? `<span class="u-badge" title="${escapeHtml(model.rawTitle)}">Cleaned</span>` : ''}
+        ${model.destructive ? '<span class="u-badge u-badge-danger">Risky command</span>' : ''}
       </div>
     </div>
     <div class="utterance-actions">
@@ -2340,7 +2380,12 @@ function appendUtteranceCard(
   `;
 
   const textEl = card.querySelector('.utterance-text') as HTMLElement;
-  textEl.textContent = displayTranscript;
+  const query = historySearchInput?.value?.trim() ?? '';
+  if (query && !query.toLowerCase().startsWith('app:')) {
+    textEl.innerHTML = highlightMatch(model.text, query);
+  } else {
+    textEl.textContent = model.text;
+  }
 
   let flagged = Boolean(ev.flaggedFalseTrigger);
   const flagBtn = card.querySelector('.btn-flag-false') as HTMLButtonElement;
@@ -2399,7 +2444,31 @@ function appendUtteranceCard(
   });
 
   transcriptList.prepend(card);
+  refreshHistoryDayHeadings();
   filterUtteranceFeed();
+}
+
+function sortHistoryCards() {
+  const cards = Array.from(transcriptList.querySelectorAll<HTMLElement>('.utterance-card'));
+  cards.sort((a, b) => Number(b.dataset.timestampMs || 0) - Number(a.dataset.timestampMs || 0));
+  for (const card of cards.reverse()) transcriptList.prepend(card);
+  refreshHistoryDayHeadings();
+}
+
+function refreshHistoryDayHeadings() {
+  const cards = Array.from(transcriptList.querySelectorAll<HTMLElement>('.utterance-card'));
+  transcriptList.querySelectorAll('.history-day').forEach((el) => el.remove());
+  const rows = historyRows(cards.map((card) => card.dataset.dayGroup || ''));
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (row.kind !== 'day') continue;
+    const next = rows.slice(i + 1).find((item) => item.kind === 'card');
+    if (!next || next.kind !== 'card') continue;
+    const heading = document.createElement('div');
+    heading.className = 'history-day';
+    heading.textContent = row.label;
+    cards[next.index].before(heading);
+  }
 }
 
 function minuteToClock(minute: number): string {
@@ -2453,6 +2522,10 @@ function applyProductFields(config: DictationConfig) {
   if (anchor) anchor.value = config.hudAnchor || 'bottom-center';
   if (channel) channel.value = config.updateChannel || 'stable';
   if (diagnostics) diagnostics.checked = Boolean(config.diagnosticsOptIn);
+  const quietNote = document.getElementById('quiet-hours-summary');
+  if (quietNote && quietStart && quietEnd) {
+    quietNote.textContent = quietHoursSummary(Boolean(quiet?.checked), quietStart.value, quietEnd.value);
+  }
   toggleHandsFree.checked = config.handsFreeEnabled !== false;
   renderSendMode();
 }
@@ -3536,6 +3609,45 @@ function applyDocumentationDemoState(demoMode: string) {
     document.getElementById('pref-listening')?.scrollIntoView();
     const stats = document.getElementById('desk-stats-badge');
     if (stats) stats.textContent = '12 said · 86 words · Terminal';
+  } else if (demoMode === 'history') {
+    appendUtteranceCard({
+      transcription: {
+        text: 'git clean -fd',
+        audioDurationMs: 1100,
+        inferenceMs: 140,
+        rtf: 0.12,
+        modelUsed: 'tiny.en',
+        peakVadProb: 0.9,
+        endPhraseTriggered: false,
+      },
+      cleanup: {
+        rawText: 'git clean dash f d',
+        cleanedText: 'git clean -fd',
+        modified: true,
+        modeUsed: 'local_dev_rules',
+        isDestructiveCommand: true,
+      },
+      targetPolicy: {
+        appName: 'Terminal',
+        policy: 'paste_only',
+        willPressEnter: false,
+        reason: 'Risky command',
+      },
+      injection: null,
+      injectionError: null,
+      triggerSource: 'hotkey',
+      timestampMs: Date.now() - 26 * 60 * 60 * 1000,
+    });
+    if (historySearchInput) historySearchInput.value = 'git';
+    sortHistoryCards();
+    filterUtteranceFeed();
+    document.getElementById('transcript-list')?.scrollIntoView({ block: 'center' });
+  } else if (demoMode === 'license') {
+    switchTab('preferences');
+    document.getElementById('pref-license')?.scrollIntoView({ block: 'start' });
+  } else if (demoMode === 'menu') {
+    switchTab('preferences');
+    document.getElementById('menu-bar-preview')?.scrollIntoView({ block: 'center' });
   }
 }
 

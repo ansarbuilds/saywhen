@@ -479,3 +479,10 @@ html.no-motion *::after {
     transition-duration: 1ms !important;
   }
 }
+
+.pill {
+  height: 34px;
+  gap: 8px;
+  padding: 0 12px 0 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}

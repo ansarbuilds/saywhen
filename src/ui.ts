@@ -2,6 +2,8 @@
 // transitions, slider fills, the state orb's live audio level and hero copy
 // swap animation. Nothing here talks to the backend.
 import { bootStage } from './stage';
+import { hudHint } from './ui/product-views';
+import { mountIcons, mountTrayPreview } from './ui/mount';
 
 type TabId = 'home' | 'preferences' | 'lab' | 'guide';
 
@@ -10,14 +12,6 @@ const TAB_META: Record<TabId, { num: string; title: string; subtitle: string }> 
   preferences: { num: '02', title: 'Settings', subtitle: 'Listening, sending, words and privacy' },
   lab: { num: '03', title: 'Diagnostics', subtitle: 'Live numbers, tests and a practice box' },
   guide: { num: '04', title: 'Guide', subtitle: 'How to use saywhen, what to do and what to avoid' },
-};
-
-const STATE_WORDS: Record<string, string> = {
-  IDLE: 'Waiting',
-  ARMED: 'Ready',
-  LISTENING: 'Listening',
-  TRANSCRIBING: 'Writing',
-  PREVIEW: 'Check',
 };
 
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -125,7 +119,7 @@ export function setUiState(state: string) {
   lastState = state;
   document.body.dataset.state = state;
   const word = document.getElementById('hero-state-word');
-  if (word) word.textContent = STATE_WORDS[state] ?? state;
+  if (word) word.textContent = hudHint(state);
   replay(document.getElementById('command-deck'), 'is-swapping');
   if (state !== 'LISTENING' && state !== 'ARMED') setAudioLevel(0, 0, false);
 }
@@ -140,6 +134,8 @@ function initNav() {
   if (new URLSearchParams(window.location.search).has('demo')) {
     document.documentElement.classList.add('no-motion');
   }
+  mountIcons();
+  mountTrayPreview();
   const modLabel = isMac ? '⌘' : 'Ctrl ';
   document.querySelectorAll<HTMLElement>('.nav-kbd[data-mod]').forEach((k) => {
     k.textContent = `${modLabel}${k.textContent}`;

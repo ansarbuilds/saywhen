@@ -1,0 +1,53 @@
+/* Design tokens for the main window and the HUD.
+   Spacing is a 4px grid. Type sizes are a fixed scale. Motion durations are named
+   so reduced-motion can zero them in one place. */
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 28px;
+  --text-display: 40px;
+  --leading-tight: 1.15;
+  --leading-body: 1.45;
+
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  --line: color-mix(in srgb, var(--ink) 10%, transparent);
+  --line-strong: color-mix(in srgb, var(--ink) 18%, transparent);
+  --surface: #fffcfe;
+  --surface-2: color-mix(in srgb, var(--paper) 72%, white);
+  --shadow-sm: 0 1px 0 color-mix(in srgb, white 70%, transparent) inset, 0 8px 24px rgba(34, 6, 28, 0.06);
+  --shadow-lg: 0 24px 60px rgba(34, 6, 28, 0.16);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--on-dark) 72%, white);
+
+  --z-nav: 5;
+  --z-sticky: 10;
+  --z-modal: 40;
+  --z-toast: 50;
+}
+
+html[data-motion='reduced'] {
+  --motion-fast: 0.01ms;
+  --motion-base: 0.01ms;
+  --motion-slow: 0.01ms;
+}

@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use crate::tray_menu::tray_label;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
@@ -141,19 +142,19 @@ pub fn should_hide_on_close() -> bool {
 }
 
 pub fn build_tray(app: &AppHandle, audio: Arc<AudioPipelineController>) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open saywhen", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", tray_label("open").unwrap_or("Open saywhen"), true, None::<&str>)?;
     let camera = MenuItem::with_id(
         app,
         "camera",
-        "Pause / Resume Camera Gate",
+        tray_label("camera").unwrap_or("Pause or resume the camera"),
         true,
         None::<&str>,
     )?;
-    let hud = MenuItem::with_id(app, "hud", "Show / Hide HUD Pill", true, None::<&str>)?;
-    let place = MenuItem::with_id(app, "place", "Move HUD to This Display", true, None::<&str>)?;
-    let cancel = MenuItem::with_id(app, "cancel", "Cancel Current Utterance", true, None::<&str>)?;
+    let hud = MenuItem::with_id(app, "hud", tray_label("hud").unwrap_or("Show or hide the pill"), true, None::<&str>)?;
+    let place = MenuItem::with_id(app, "place", tray_label("place").unwrap_or("Move the pill to this display"), true, None::<&str>)?;
+    let cancel = MenuItem::with_id(app, "cancel", tray_label("cancel").unwrap_or("Cancel the current line"), true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit saywhen", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tray_label("quit").unwrap_or("Quit saywhen"), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &camera, &hud, &place, &cancel, &sep, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id("saywhen-tray")

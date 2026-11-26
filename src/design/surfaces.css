@@ -1,0 +1,202 @@
+/* Surfaces built on the tokens. The older style.css still owns palette swaps.
+   These rules tighten the product surfaces: sidebar, hero, history, settings,
+   onboarding, and the license card. */
+
+@import './tokens.css';
+
+body {
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+  letter-spacing: -0.011em;
+}
+
+.sidebar {
+  background: color-mix(in srgb, var(--sidebar-bg) 88%, white);
+  border-right: 1px solid var(--line);
+}
+
+.brand h1 {
+  font-family: var(--font-display);
+  font-weight: 620;
+  letter-spacing: -0.04em;
+  font-size: 22px;
+}
+
+.nav-item {
+  border-radius: var(--r-sm);
+  min-height: 36px;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.nav-icon,
+.status-icon,
+.icon {
+  width: 16px;
+  height: 16px;
+}
+
+.hero {
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid color-mix(in srgb, white 18%, transparent);
+}
+
+.hero-state-word {
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  font-size: clamp(32px, 4vw, var(--text-display));
+  line-height: var(--leading-tight);
+}
+
+.card,
+.pref-group,
+.transcript-panel,
+.modal-card {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+
+.pref-section-head h3,
+.card-title h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+.toggle-row,
+.pref-row {
+  padding-block: var(--space-3);
+}
+
+.utterance-card {
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+}
+
+.utterance-kicker {
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  margin-bottom: var(--space-1);
+}
+
+.utterance-text mark {
+  background: color-mix(in srgb, var(--on-dark) 45%, white);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.u-badge-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.license-card {
+  display: grid;
+  gap: var(--space-1);
+  border-radius: var(--r-md);
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--on-dark) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--on-dark) 35%, var(--line));
+}
+
+.license-eyebrow,
+.history-day {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+}
+
+.license-headline {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  letter-spacing: -0.03em;
+  font-weight: 560;
+}
+
+.license-detail {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+}
+
+.history-day {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.menu-preview {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  min-width: 260px;
+  box-shadow: var(--shadow-sm);
+}
+
+.menu-preview li {
+  padding: 8px 10px;
+  border-radius: var(--r-xs);
+  font-size: var(--text-sm);
+}
+
+.menu-preview li + li {
+  border-top: 1px solid var(--line);
+}
+
+.nav-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.modal-kicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--on-dark) 18%, white);
+}
+
+.hero-grain,
+.hero-sheen {
+  opacity: 0.28;
+}
+
+.modal-card {
+  box-shadow: var(--shadow-lg);
+}
+
+.ob-step,
+.mode-card {
+  border-radius: var(--r-md);
+  transition: border-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+html[data-density='compact'] .hero-state-word {
+  font-size: 28px;
+}
+html[data-density='compact'] .toggle-row,
+html[data-density='compact'] .pref-row,
+html[data-density='compact'] .utterance-card {
+  padding-block: var(--space-2);
+}

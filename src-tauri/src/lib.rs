@@ -12,6 +12,7 @@ pub mod secrets;
 pub mod signal;
 pub mod snippets;
 pub mod transcribe;
+pub mod tray_menu;
 pub mod turn_taking;
 pub mod voice_commands;
 pub mod wake_word;

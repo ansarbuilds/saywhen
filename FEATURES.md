@@ -106,4 +106,20 @@ Each row is something the app actually does. "Shipped" means it was already in t
 82. Clipboard text and images restored when they are still the transcript. Shipped.
 83. Held modifiers released before paste. Shipped.
 
-The count in this file is 83. Each one is implemented. A later change should add a row only when the behavior lands in the code.
+84. Word count on each history card. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+85. Relative time, such as "5m ago", on each history card. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+86. History grouped into Today, Yesterday, and Earlier. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+87. Search highlights the matching words in a history card. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+88. A risky-command badge on a history card. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+89. License screen headline for trial, free, and Pro. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+90. Onboarding progress, such as "2 of 4 ready". [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+91. Tray menu wording comes from one tested list. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+92. HUD state word comes from the same hint map as the main window. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+93. Quiet-hours sentence under the time fields. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+94. A ten-icon set used by the design system. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+95. Shared spacing, type, motion, and focus tokens. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+96. Comfortable and compact density, remembered on this computer. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+97. History day headings that appear only when the day changes. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+98. Menu bar preview in Settings that uses the same words as the tray. [PR 27](https://github.com/ansarbuilds/saywhen/pull/27).
+
+The count in this file is 98. Each one is implemented. A later change should add a row only when the behavior lands in the code.

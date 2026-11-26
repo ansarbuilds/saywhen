@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { licenseView } from './ui/product-views';
 
 interface LicenseStatus {
   tier: string;
@@ -9,9 +10,26 @@ interface LicenseStatus {
   keyPresent: boolean;
 }
 
+function paintLicense(view: ReturnType<typeof licenseView>, detailOverride?: string): void {
+  const status = document.getElementById('license-status');
+  const eyebrow = document.getElementById('license-eyebrow');
+  const headline = document.getElementById('license-headline');
+  const detail = document.getElementById('license-detail');
+  if (eyebrow) eyebrow.textContent = view.eyebrow;
+  if (headline) headline.textContent = view.headline;
+  if (detail) detail.textContent = detailOverride ?? view.detail;
+  if (status) status.dataset.tier = view.eyebrow.toLowerCase();
+}
+
 function describe(status: LicenseStatus): string {
-  const tier = status.tier === 'pro' ? 'Pro' : status.tier === 'trial' ? 'Trial' : 'Free';
-  return `${tier}. ${status.message}`;
+  const view = licenseView({
+    tier: status.tier,
+    trialDaysLeft: status.trialDaysLeft,
+    checker: status.checker,
+    message: status.message,
+  });
+  paintLicense(view);
+  return `${view.eyebrow}. ${view.headline} ${view.detail}`;
 }
 
 export function initLicenseSettings(): void {
@@ -24,24 +42,27 @@ export function initLicenseSettings(): void {
   const refresh = async () => {
     try {
       const snap = await invoke<LicenseStatus>('license_status');
-      status.textContent = describe(snap);
+      describe(snap);
     } catch {
-      status.textContent = 'License status is available in the desktop app.';
+      paintLicense(
+        licenseView({ tier: 'trial', trialDaysLeft: 14, checker: 'development', message: '' }),
+        'This preview shows the 14-day trial copy. The desktop app checks the real trial. Enforcement is off, so nothing is locked.',
+      );
     }
   };
 
   save.addEventListener('click', async () => {
     const licenseKey = input.value.trim();
     if (!licenseKey) {
-      status.textContent = 'Paste a license key first.';
+      paintLicense({ eyebrow: 'License', headline: 'Paste a license key first.', detail: '', action: 'Add a license key' });
       return;
     }
     try {
       const snap = await invoke<LicenseStatus>('set_license_key', { licenseKey });
       input.value = '';
-      status.textContent = describe(snap);
+      describe(snap);
     } catch (err) {
-      status.textContent = String(err);
+      paintLicense({ eyebrow: 'License', headline: 'The key was not saved.', detail: String(err), action: 'Add a license key' });
     }
   });
 
@@ -49,9 +70,9 @@ export function initLicenseSettings(): void {
     try {
       const snap = await invoke<LicenseStatus>('clear_license_key');
       input.value = '';
-      status.textContent = describe(snap);
+      describe(snap);
     } catch (err) {
-      status.textContent = String(err);
+      paintLicense({ eyebrow: 'License', headline: 'The key is still saved.', detail: String(err), action: 'Add a license key' });
     }
   });
 
