@@ -68,6 +68,7 @@ fn vision_at_offset(frames: &[RecordedVisionSample], now_ms: u64) -> VisionTelem
             pitch: f.pitch,
             jaw_open: f.jaw_open,
             gesture: f.gesture.clone(),
+            local_minute: None,
         }
     } else {
         VisionTelemetryPayload {
