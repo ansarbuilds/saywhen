@@ -3,6 +3,17 @@ import { invoke } from '@tauri-apps/api/core';
 import { initByokSettings } from './byok';
 import { initLicenseSettings } from './license-ui';
 import { formatProfileLines, formatSnippetLines, parseProfileLines, parseSnippetLines } from './product-settings';
+import {
+  acceleratorFromCodes,
+  escapeHtml,
+  formatAccelerator,
+  formatCountdownSec,
+  formatDurationMs,
+  formatSignedDeg,
+  formatTriggerSource,
+  splitAllowlist,
+} from './text-format';
+import { classifyHeadGesture, computeMar, extractHeadPose, medianValue } from './vision-math';
 import { chooseVisionTickMs, VISION_TICK_ACTIVE_MS, type VisionPowerMode } from './vision-budget';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
@@ -509,11 +520,6 @@ const toggleSaveAudio = document.getElementById('toggle-save-audio') as HTMLInpu
 
 let facingScreenLatched = false;
 
-function formatSignedDeg(deg: number): string {
-  const rounded = Math.abs(deg) < 0.05 ? 0 : deg;
-  return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(1)}°`;
-}
-
 function updateCalibrationDisplay() {
   if (!valCalibration) return;
   const yaw0 = currentConfig.calibratedYawOffsetDeg || 0;
@@ -923,20 +929,6 @@ function initTheme() {
   });
 }
 
-function splitAllowlist(value: string): string[] {
-  const seen = new Set<string>();
-  const items: string[] = [];
-  for (const raw of value.split(',')) {
-    const name = raw.trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push(name);
-  }
-  return items;
-}
-
 function renderAllowlistChips() {
   const items = splitAllowlist(allowlistInput.value);
   allowlistChips.replaceChildren();
@@ -1044,21 +1036,11 @@ function updateSettingsNav() {
 let recordingHotkey = false;
 let hotkeyKeyHandler: ((event: KeyboardEvent) => void) | null = null;
 
-function formatAccelerator(accelerator: string): string {
-  const parts = (accelerator || 'Alt+Space').split('+');
-  const labels: Record<string, string> = isMac
-    ? { Cmd: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧' }
-    : { Cmd: 'Win', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
-  return parts
-    .map((part) => labels[part] ?? (part === 'Space' ? 'Space' : part.replace(/^Key/, '')))
-    .join(' + ');
-}
-
 function renderHotkeyButton() {
   if (!hotkeyRecordBtn) return;
   hotkeyRecordBtn.textContent = recordingHotkey
     ? 'Press keys...'
-    : formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space');
+    : formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space', isMac);
   hotkeyRecordBtn.classList.toggle('is-recording', recordingHotkey);
   try {
     localStorage.setItem('saywhen-hotkey', currentConfig.hotkeyAccelerator || 'Alt+Space');
@@ -1077,14 +1059,7 @@ function stopHotkeyRecording() {
 }
 
 function acceleratorFromEvent(event: KeyboardEvent): string | null {
-  const modifiers: string[] = [];
-  if (event.metaKey) modifiers.push('Cmd');
-  if (event.ctrlKey) modifiers.push('Ctrl');
-  if (event.altKey) modifiers.push('Alt');
-  if (event.shiftKey) modifiers.push('Shift');
-  if (modifiers.length === 0) return null;
-  if (/^(Meta|Control|Alt|Shift)/.test(event.code)) return null;
-  return [...modifiers, event.code].join('+');
+  return acceleratorFromCodes(event);
 }
 
 function beginHotkeyRecording() {
@@ -1129,7 +1104,7 @@ async function saveHotkey(accelerator: string) {
 function renderGuideHotkey() {
   const row = document.getElementById('guide-hotkey-row');
   if (!row) return;
-  const keys = formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space')
+  const keys = formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space', isMac)
     .split(' + ')
     .map((part) => `<kbd>${escapeHtml(part)}</kbd>`)
     .join(' ');
@@ -1358,17 +1333,6 @@ async function copyText(text: string) {
   if (!copied) throw new Error('Clipboard is not available');
 }
 
-function formatDurationMs(ms: number): string {
-  const totalTenths = Math.floor(ms / 100);
-  const tenths = totalTenths % 10;
-  const totalSeconds = Math.floor(totalTenths / 10);
-  const seconds = totalSeconds % 60;
-  const minutes = Math.floor(totalSeconds / 60);
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-  return `${mm}:${ss}.${tenths}`;
-}
-
 let actionPulseTimer: number | null = null;
 
 function pulseAction(kind: 'sent' | 'cancel' | 'error') {
@@ -1463,10 +1427,6 @@ function syncSetupChecklist() {
     spoke: setupHasSpoken,
   });
   syncOnboardingBadges();
-}
-
-function formatCountdownSec(ms: number): string {
-  return `${(ms / 1000).toFixed(1)} s`;
 }
 
 function updateLlmPrivacyBadge() {
@@ -1764,7 +1724,7 @@ function updatePipelineUiState(
       ? `Look at your screen and start talking, or start with "${wakeWordLabel()}" from anywhere.`
       : cameraRunning
       ? 'Look at your screen and start talking. Look away and it stops listening.'
-      : `Turn on the camera to talk hands-free, or press ${formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space')
+      : `Turn on the camera to talk hands-free, or press ${formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space', isMac)
           .split(' + ')
           .map((part) => `<kbd>${escapeHtml(part)}</kbd>`)
           .join(' ')}`;
@@ -1776,29 +1736,6 @@ function updatePipelineUiState(
     stopListenBtn.disabled = true;
     cancelListenBtn.disabled = true;
   }
-}
-
-// MediaPipe Vision Gate Math
-function distance2D(a: NormalizedLandmark, b: NormalizedLandmark): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-// When the head turns away from the camera the mouth looks narrower (by cos(yaw)) while the
-// lip gap stays about the same, so a plain ratio grows with head turn. Undo that so the
-// resting baseline and speech thresholds mean the same thing at 0 and at 60 degrees.
-const MAR_YAW_CORRECTION_MIN_COS = 0.4; // about 66 degrees
-
-function computeMAR(landmarks: NormalizedLandmark[], cameraYawDeg = 0): number {
-  const vCenter = distance2D(landmarks[13], landmarks[14]);
-  const vLeft = distance2D(landmarks[82], landmarks[87]);
-  const vRight = distance2D(landmarks[312], landmarks[317]);
-  const horizSeen = distance2D(landmarks[78], landmarks[308]);
-  const cosYaw = Math.max(MAR_YAW_CORRECTION_MIN_COS, Math.cos((cameraYawDeg * Math.PI) / 180));
-  const horiz = horizSeen / cosYaw;
-  if (horiz < 1e-6) return 0;
-  return (vCenter + vLeft + vRight) / (3.0 * horiz);
 }
 
 // Must match turn_taking.rs (SIDE_CAMERA_YAW_*_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG).
@@ -1816,79 +1753,19 @@ let faceAwaySince = 0;
 // MediaPipe Face Landmarker outputs a 4x4 column-major facial transform.
 // Use the rotation row (r20, r21, r22) so pitch moves on nods; the old third-column
 // asin() pitch barely changed during vertical head motion in practice.
-function extractHeadPose(matrixData: number[]): { yaw: number; pitch: number } {
-  if (matrixData.length < 12) {
-    return { yaw: 0, pitch: 0 };
-  }
-  const r20 = matrixData[2];
-  const r21 = matrixData[6];
-  const r22 = matrixData[10];
-  const yawRad = Math.atan2(-r20, Math.hypot(r21, r22));
-  const pitchRad = Math.atan2(r21, r22);
-  return {
-    yaw: yawRad * (180 / Math.PI),
-    pitch: pitchRad * (180 / Math.PI),
-  };
-}
-
-function countAngleReversals(values: number[], minSwingDeg: number): number {
-  if (values.length < 3) return 0;
-  let anchor = values[0];
-  let lastDir = 0; // +1 increasing, -1 decreasing
-  let reversals = 0;
-
-  for (let i = 1; i < values.length; i++) {
-    const v = values[i];
-    const diff = v - anchor;
-    if (lastDir === 0) {
-      if (Math.abs(diff) >= minSwingDeg) {
-        lastDir = diff > 0 ? 1 : -1;
-        anchor = v;
-      }
-    } else if (lastDir === 1) {
-      if (v > anchor) {
-        anchor = v;
-      } else if (anchor - v >= minSwingDeg) {
-        reversals += 1;
-        lastDir = -1;
-        anchor = v;
-      }
-    } else {
-      if (v < anchor) {
-        anchor = v;
-      } else if (v - anchor >= minSwingDeg) {
-        reversals += 1;
-        lastDir = 1;
-        anchor = v;
-      }
-    }
-  }
-  return reversals;
-}
-
 function detectHeadGesture(now: number): string {
   if (now - lastGestureTime < 1200 || poseWindow.length < 6) {
     return 'none';
   }
-  const yaws = poseWindow.map((p) => p.yaw);
-  const pitches = poseWindow.map((p) => p.pitch);
-  const yawSpan = Math.max(...yaws) - Math.min(...yaws);
-  const pitchSpan = Math.max(...pitches) - Math.min(...pitches);
-  const yawReversals = countAngleReversals(yaws, 10.0);
-  const pitchReversals = countAngleReversals(pitches, 7.5);
-
-  // Require real back-and-forth oscillation so a smooth glance across the screen never cancels speech.
-  if (yawReversals >= 2 && yawSpan >= 18.0 && yawSpan > pitchSpan * 1.35) {
+  const gesture = classifyHeadGesture(
+    poseWindow.map((p) => p.yaw),
+    poseWindow.map((p) => p.pitch),
+  );
+  if (gesture !== 'none') {
     lastGestureTime = now;
     poseWindow.length = 0;
-    return 'shake';
   }
-  if (pitchReversals >= 1 && pitchSpan >= 11.0 && pitchSpan > yawSpan * 1.15) {
-    lastGestureTime = now;
-    poseWindow.length = 0;
-    return 'nod';
-  }
-  return 'none';
+  return gesture;
 }
 
 async function ensureFaceLandmarker(): Promise<FaceLandmarker> {
@@ -1991,12 +1868,6 @@ function setCalibrateLabel(text: string) {
   else calibrateVisionBtn.textContent = text;
 }
 
-function medianValue(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
 function finalizeVisionCalibration() {
   calibratingUntilTimestamp = 0;
   calibrateVisionBtn.disabled = false;
@@ -2081,7 +1952,7 @@ function processVisionFrame(now: number) {
         pitch = pose.pitch;
       }
 
-      const mar = computeMAR(landmarks, yaw);
+      const mar = computeMar(landmarks, yaw);
 
       marWindow.push({ timestamp: now, mar });
       while (marWindow.length > 0 && now - marWindow[0].timestamp > 320) {
@@ -2379,32 +2250,6 @@ function drawVadChart() {
   fill.addColorStop(1, themeRgba('--paper', 0));
   ctx.fillStyle = fill;
   ctx.fill();
-}
-
-// App names, window titles and error text come from other processes: never put them in HTML raw.
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatTriggerSource(source: string): string {
-  switch (source) {
-    case 'hands_free_multimodal':
-      return 'Hands-free';
-    case 'hotkey':
-      return 'Hotkey';
-    case 'manual':
-    case 'manual_stop':
-      return 'Manual';
-    case 'simulated_demo':
-      return 'Simulated';
-    default:
-      return String(source || '').replace(/_/g, ' ');
-  }
 }
 
 function appendUtteranceCard(

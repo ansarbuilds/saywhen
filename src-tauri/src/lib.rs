@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod cleanup;
+pub mod config;
 pub mod history;
 pub mod hud;
 pub mod inject;
@@ -7,6 +8,7 @@ pub mod license;
 pub mod parakeet;
 pub mod profiles;
 pub mod secrets;
+pub mod signal;
 pub mod snippets;
 pub mod transcribe;
 pub mod turn_taking;
