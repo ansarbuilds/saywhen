@@ -140,8 +140,19 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         with:
           tagName: v__VERSION__
-          releaseName: 'saywhen v__VERSION__'
-          releaseBody: 'Local-first hands-free voice input for developers (macOS Apple Silicon, macOS Intel and Windows x64).'
-          releaseDraft: true
+          releaseName: 'saywhen v__VERSION__ beta'
+          releaseBody: |
+            saywhen v0.3.0 is an unsigned beta for Apple Silicon, Intel Mac, and 64-bit Windows. The updater is off. License enforcement is off, so the 14-day trial does not lock a feature.
+
+            How to open an unsigned build
+
+            macOS: If Gatekeeper blocks the app, right-click saywhen and choose Open, then Open again. If macOS says the app is damaged or cannot be opened, run `xattr -cr /Applications/saywhen.app` and open it again.
+
+            Windows: If SmartScreen says Windows protected your PC, choose More info, then Run anyway.
+
+            Apple Silicon and Intel disk images are produced by CI. Intel has not been opened on an Intel Mac. Windows has not been opened on a Windows PC.
+
+            Since v0.2.1: cleanup keys stay out of the command line and in the keychain or a private file; snippets, per-app profiles, history export, and voice commands; a local trial with enforcement off; quiet hours and spoken punctuation; a shared design for the window, settings, onboarding, history, license, HUD, and menu bar. Parakeet and Whisper Large v3 Turbo can be downloaded. The repository feature list has 98 rows. No new accuracy or battery number is claimed.
+          releaseDraft: false
           prerelease: true
           args: ${{ matrix.args }}

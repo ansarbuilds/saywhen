@@ -17,7 +17,7 @@ Each row is something the app actually does. "Shipped" means it was already in t
 11. Recordable push-to-talk shortcut. Shipped.
 12. Opt-in wake word when you are not facing the screen. Shipped.
 13. Wake-word chime. Shipped.
-14. Three-phrase voice enrollment. Shipped on main, not in the v0.2.1 installer.
+14. Three-phrase voice enrollment. Included in the v0.3.0 installer. It was not in v0.2.1.
 15. Quiet hours that block hands-free start and leave the hotkey alone. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 16. Minimum speech length so coughs are dropped. Shipped.
 17. Adaptive silence timeout. Shipped.
@@ -27,8 +27,8 @@ Each row is something the app actually does. "Shipped" means it was already in t
 
 ## Speech and words
 
-21. On-device Whisper tiny, base, small, and Large v3 Turbo. Shipped. Large v3 Turbo is on main, not in v0.2.1.
-22. On-device Parakeet TDT 0.6B v2. Shipped on main, not in v0.2.1.
+21. On-device Whisper tiny, base, small, and Large v3 Turbo. Included in the v0.3.0 installer. Large v3 Turbo was not in v0.2.1.
+22. On-device Parakeet TDT 0.6B v2. Included in the v0.3.0 installer. It was not in v0.2.1.
 23. Model download with progress. Shipped.
 24. Model advice for speed, balanced, or accuracy from the models that are installed. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26). It is a preference order, not a measured ranking.
 25. English-only models stay in English. [PR 22](https://github.com/ansarbuilds/saywhen/pull/22).
