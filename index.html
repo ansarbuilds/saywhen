@@ -700,6 +700,15 @@
                       <label class="field-label" for="llm-model-input">Model</label>
                       <input type="text" id="llm-model-input" class="text-control" value="qwen2.5-coder:1.5b" />
                     </div>
+                    <div class="field-group">
+                      <label class="field-label" for="llm-api-key-input">API key</label>
+                      <input type="password" id="llm-api-key-input" class="text-control" autocomplete="off" spellcheck="false" placeholder="Only for a remote endpoint" />
+                      <div class="allowlist-editor">
+                        <button type="button" class="btn-xs btn-accent" id="llm-api-key-save">Save key</button>
+                        <button type="button" class="btn-xs btn-quiet" id="llm-api-key-clear">Remove key</button>
+                      </div>
+                      <p class="pref-footnote" id="llm-key-status" role="status">Checking whether a key is saved...</p>
+                    </div>
                   </div>
                   <label class="toggle-row">
                     <div>

@@ -4,6 +4,7 @@ pub mod history;
 pub mod hud;
 pub mod inject;
 pub mod parakeet;
+pub mod secrets;
 pub mod transcribe;
 pub mod turn_taking;
 pub mod wake_word;
@@ -78,11 +79,9 @@ fn get_system_status(app: AppHandle, state: State<'_, AppState>) -> SystemStatus
 
 #[tauri::command]
 fn start_listening(state: State<'_, AppState>, source: Option<String>) -> Result<(), String> {
-    state
-        .audio
-        .send_command(AudioCommand::StartListening(
-            source.unwrap_or_else(|| "ui_button".to_string()),
-        ))
+    state.audio.send_command(AudioCommand::StartListening(
+        source.unwrap_or_else(|| "ui_button".to_string()),
+    ))
 }
 
 #[tauri::command]
@@ -165,8 +164,10 @@ fn update_dictation_config(
                 let _ = state.audio.update_config(previous);
                 return Err(format!("That shortcut is already taken: {}", err));
             }
-            *state.hotkey.lock().map_err(|_| "Shortcut lock failed".to_string())? =
-                requested_hotkey;
+            *state
+                .hotkey
+                .lock()
+                .map_err(|_| "Shortcut lock failed".to_string())? = requested_hotkey;
         }
     }
     if !updated.history_persistence_enabled {
@@ -320,6 +321,29 @@ fn request_accessibility_settings() -> Result<(), String> {
     open_accessibility_settings()
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LlmApiKeyStatus {
+    present: bool,
+    backend: String,
+}
+
+#[tauri::command]
+fn set_llm_api_key(state: State<'_, AppState>, api_key: String) -> Result<(), String> {
+    state.audio.set_llm_api_key(&api_key)
+}
+
+#[tauri::command]
+fn clear_llm_api_key(state: State<'_, AppState>) -> Result<(), String> {
+    state.audio.clear_llm_api_key()
+}
+
+#[tauri::command]
+fn llm_api_key_status(state: State<'_, AppState>) -> LlmApiKeyStatus {
+    let (present, backend) = state.audio.llm_api_key_status();
+    LlmApiKeyStatus { present, backend }
+}
+
 #[tauri::command]
 fn reset_voice_profile(
     app: AppHandle,
@@ -354,8 +378,7 @@ pub fn run() {
             let hotkey_for_handler = Arc::clone(&current_hotkey);
             let escape = hud::escape_shortcut();
             #[cfg(target_os = "macos")]
-            let paste_last =
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyV);
+            let paste_last = Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyV);
             #[cfg(not(target_os = "macos"))]
             let paste_last = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyV);
 
@@ -370,9 +393,8 @@ pub fn run() {
                             sc == &*hotkey
                         };
                         if is_hotkey {
-                            let _ = audio_for_shortcut.send_command(AudioCommand::ToggleListening(
-                                "hotkey".to_string(),
-                            ));
+                            let _ = audio_for_shortcut
+                                .send_command(AudioCommand::ToggleListening("hotkey".to_string()));
                         } else if sc == &escape {
                             // Only registered while in PREVIEW (see hud::spawn_preview_escape_guard).
                             let _ = audio_for_shortcut.send_command(AudioCommand::CancelPreview(
@@ -387,10 +409,16 @@ pub fn run() {
 
             let initial_hotkey = current_hotkey.lock().unwrap().clone();
             if let Err(err) = app.global_shortcut().register(initial_hotkey) {
-                eprintln!("Warning: could not register the push-to-talk shortcut: {}", err);
+                eprintln!(
+                    "Warning: could not register the push-to-talk shortcut: {}",
+                    err
+                );
             }
             if let Err(err) = app.global_shortcut().register(paste_last) {
-                eprintln!("Warning: could not register the paste-last shortcut: {}", err);
+                eprintln!(
+                    "Warning: could not register the paste-last shortcut: {}",
+                    err
+                );
             }
 
             hud::spawn_preview_escape_guard(app_handle.clone(), Arc::clone(&audio_controller));
@@ -448,6 +476,9 @@ pub fn run() {
             manual_inject_text,
             request_accessibility_settings,
             reset_voice_profile,
+            set_llm_api_key,
+            clear_llm_api_key,
+            llm_api_key_status,
             flag_false_trigger,
             clear_utterance_history,
         ])

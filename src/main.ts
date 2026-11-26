@@ -1,5 +1,6 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
+import { initByokSettings } from './byok';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
@@ -3516,6 +3517,7 @@ function applyDocumentationDemoState(demoMode: string) {
 initSettingsUi();
 initCommandPalette();
 initIntro();
+initByokSettings();
 
 const urlParams = new URLSearchParams(window.location.search);
 const demoParam = urlParams.get('demo');

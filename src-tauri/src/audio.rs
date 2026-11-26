@@ -10,6 +10,10 @@ use crate::inject::{
     InjectionOutcome, InjectionTimingConfig, TargetChangePolicy,
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
+use crate::secrets::{
+    take_legacy_llm_api_key, validate_secret_value, DefaultSecretStore, SecretStore,
+    LLM_CLEANUP_API_KEY,
+};
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
 /// Wake word decision log (terminal, plus a temp file in development builds).
 macro_rules! wake_log {
@@ -18,14 +22,6 @@ macro_rules! wake_log {
     };
 }
 
-use crate::wake_word::{
-    early_wake_verdict_with_profile, effective_wake_word, extract_leading_wake_alias, first_word,
-    matches_voice_profile, merge_into_voice_profile, should_clear_wake_quiet_wait,
-    strip_wake_word_with_profile, wake_holds_turn, wake_vad_threshold, word_count,
-    EarlyWakeVerdict, VoiceProfile, DEFAULT_WAKE_WORD, VOICE_ENROLL_COMMAND_SUFFIXES,
-    WAKE_CHECK_MAX_SAMPLES, WAKE_CHECK_MIN_SAMPLES, WAKE_CHECK_MIN_SAMPLES_ON_PAUSE,
-    WAKE_DIAG_SOUND_LEVEL, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
-};
 use crate::turn_taking::{
     append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
     ends_with_connective, evaluate_arming_hysteresis, evaluate_audio_stream_health,
@@ -40,6 +36,14 @@ use crate::turn_taking::{
     DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
     MAX_CALIBRATED_RESTING_MAR, MAX_CALIBRATED_YAW_OFFSET_DEG, NOD_WAIT_TIMEOUT_MS,
     SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
+};
+use crate::wake_word::{
+    early_wake_verdict_with_profile, effective_wake_word, extract_leading_wake_alias, first_word,
+    matches_voice_profile, merge_into_voice_profile, should_clear_wake_quiet_wait,
+    strip_wake_word_with_profile, wake_holds_turn, wake_vad_threshold, word_count,
+    EarlyWakeVerdict, VoiceProfile, DEFAULT_WAKE_WORD, VOICE_ENROLL_COMMAND_SUFFIXES,
+    WAKE_CHECK_MAX_SAMPLES, WAKE_CHECK_MIN_SAMPLES, WAKE_CHECK_MIN_SAMPLES_ON_PAUSE,
+    WAKE_DIAG_SOUND_LEVEL, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
@@ -232,9 +236,6 @@ pub struct DictationConfig {
     /// Model identifier passed to the LLM cleanup endpoint.
     #[serde(default = "default_llm_model")]
     pub llm_model: String,
-    /// Optional Bearer API key kept in memory only (never serialized to settings.local.json).
-    #[serde(default, skip_serializing)]
-    pub llm_api_key: String,
     /// Optional 3-phrase Siri-style personal voice profile (pitch, spectral shape, near-field RMS,
     /// and learned Whisper wake-word spellings).
     #[serde(default)]
@@ -369,7 +370,6 @@ impl Default for DictationConfig {
             llm_cleanup_enabled: false,
             llm_endpoint_url: default_llm_endpoint_url(),
             llm_model: default_llm_model(),
-            llm_api_key: String::new(),
             voice_profile: None,
         }
     }
@@ -415,9 +415,10 @@ impl DictationConfig {
             .retain(|entry| !entry.trim().eq_ignore_ascii_case("saywhen"));
         // Saving utterance audio for tuning must always turn itself off when the app restarts.
         self.save_tuning_audio_enabled = false;
-        self.calibrated_yaw_offset_deg = self
-            .calibrated_yaw_offset_deg
-            .clamp(-MAX_CALIBRATED_YAW_OFFSET_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG);
+        self.calibrated_yaw_offset_deg = self.calibrated_yaw_offset_deg.clamp(
+            -MAX_CALIBRATED_YAW_OFFSET_DEG,
+            MAX_CALIBRATED_YAW_OFFSET_DEG,
+        );
         self.calibrated_resting_mar = self
             .calibrated_resting_mar
             .clamp(0.006, MAX_CALIBRATED_RESTING_MAR);
@@ -452,10 +453,7 @@ impl DictationConfig {
 
     /// Loads `<app_data_dir>/settings.local.json`. If that file does not exist yet, copies
     /// the first readable legacy `settings.local.json` into the app data directory.
-    pub fn load_with_legacy(
-        app_data_dir: &std::path::Path,
-        legacy: &[std::path::PathBuf],
-    ) -> Self {
+    pub fn load_with_legacy(app_data_dir: &std::path::Path, legacy: &[std::path::PathBuf]) -> Self {
         let path = Self::settings_file_path(app_data_dir);
         if let Some(parsed) = Self::read_settings_file(&path) {
             return parsed;
@@ -495,9 +493,8 @@ impl DictationConfig {
         persisted.save_tuning_audio_enabled = false;
         let json = serde_json::to_string_pretty(&persisted)
             .map_err(|e| format!("Could not save settings: {e}"))?;
-        std::fs::write(path, json).map_err(|e| {
-            format!("Could not save settings to {}: {e}", path.display())
-        })
+        std::fs::write(path, json)
+            .map_err(|e| format!("Could not save settings to {}: {e}", path.display()))
     }
 }
 
@@ -968,6 +965,9 @@ pub struct AudioPipelineController {
     config: Arc<Mutex<DictationConfig>>,
     shared: Arc<Mutex<SharedCaptureBuffer>>,
     settings_path: std::path::PathBuf,
+    /// Opt-in clean-up API key. Never serialized with settings.
+    llm_api_key: Arc<Mutex<String>>,
+    app_data_dir: std::path::PathBuf,
 }
 
 impl AudioPipelineController {
@@ -975,13 +975,28 @@ impl AudioPipelineController {
         let (cmd_tx, cmd_rx) = mpsc::channel::<AudioCommand>();
         let app_data_dir = resolve_settings_dir(&app_handle);
         let settings_path = DictationConfig::settings_file_path(&app_data_dir);
-        let config = Arc::new(Mutex::new(DictationConfig::load_for_app_data(&app_data_dir)));
+        let store = DefaultSecretStore::open(&app_data_dir);
+        if let Some(legacy) = take_legacy_llm_api_key(&settings_path) {
+            if validate_secret_value(&legacy).is_ok() {
+                let _ = store.set(LLM_CLEANUP_API_KEY, &legacy);
+            }
+        }
+        let loaded_key = store
+            .get(LLM_CLEANUP_API_KEY)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let llm_api_key = Arc::new(Mutex::new(loaded_key));
+        let config = Arc::new(Mutex::new(DictationConfig::load_for_app_data(
+            &app_data_dir,
+        )));
         let shared = Arc::new(Mutex::new(SharedCaptureBuffer::new()));
 
         let config_clone = Arc::clone(&config);
         let shared_clone = Arc::clone(&shared);
         let cmd_tx_for_worker = cmd_tx.clone();
         let settings_path_for_worker = settings_path.clone();
+        let llm_api_key_for_worker = Arc::clone(&llm_api_key);
 
         thread::spawn(move || {
             run_audio_worker(
@@ -992,6 +1007,7 @@ impl AudioPipelineController {
                 config_clone,
                 shared_clone,
                 settings_path_for_worker,
+                llm_api_key_for_worker,
             );
         });
 
@@ -1000,6 +1016,8 @@ impl AudioPipelineController {
             config,
             shared,
             settings_path,
+            llm_api_key,
+            app_data_dir,
         }
     }
 
@@ -1029,6 +1047,27 @@ impl AudioPipelineController {
         }
         // The new settings are live either way; a failed save is reported so it is not silent.
         saved.map(|_| new_cfg)
+    }
+
+    pub fn set_llm_api_key(&self, api_key: &str) -> Result<(), String> {
+        let trimmed = api_key.trim();
+        validate_secret_value(trimmed)?;
+        DefaultSecretStore::open(&self.app_data_dir).set(LLM_CLEANUP_API_KEY, trimmed)?;
+        *self.llm_api_key.lock().unwrap() = trimmed.to_string();
+        Ok(())
+    }
+
+    pub fn clear_llm_api_key(&self) -> Result<(), String> {
+        DefaultSecretStore::open(&self.app_data_dir).delete(LLM_CLEANUP_API_KEY)?;
+        *self.llm_api_key.lock().unwrap() = String::new();
+        Ok(())
+    }
+
+    pub fn llm_api_key_status(&self) -> (bool, String) {
+        let store = DefaultSecretStore::open(&self.app_data_dir);
+        let backend = store.backend(LLM_CLEANUP_API_KEY);
+        let present = !self.llm_api_key.lock().unwrap().trim().is_empty() || backend != "none";
+        (present, if present { backend } else { "none".to_string() })
     }
 
     pub fn reset_voice_profile(&self) -> Result<DictationConfig, String> {
@@ -1107,9 +1146,12 @@ fn build_cpal_stream(
     let device_name = device
         .name()
         .unwrap_or_else(|_| "Default Microphone".to_string());
-    let supported_config = device
-        .default_input_config()
-        .map_err(|e| format!("Failed to read microphone config for {}: {}", device_name, e))?;
+    let supported_config = device.default_input_config().map_err(|e| {
+        format!(
+            "Failed to read microphone config for {}: {}",
+            device_name, e
+        )
+    })?;
 
     let in_sample_rate = supported_config.sample_rate().0;
     let in_channels = supported_config.channels() as usize;
@@ -1122,7 +1164,10 @@ fn build_cpal_stream(
         if let Ok(mut guard) = err_shared.lock() {
             guard.stream_faulted = true;
         }
-        let _ = err_handle.emit("pipeline-error", format!("Microphone stream error: {}", err));
+        let _ = err_handle.emit(
+            "pipeline-error",
+            format!("Microphone stream error: {}", err),
+        );
     };
 
     let process_samples = move |mono_input: &[f32]| {
@@ -1187,8 +1232,7 @@ fn build_cpal_stream(
                         let mono: Vec<f32> = data
                             .chunks(in_channels.max(1))
                             .map(|frame| {
-                                let sum: f32 =
-                                    frame.iter().map(|&s| s as f32 / 32768.0).sum();
+                                let sum: f32 = frame.iter().map(|&s| s as f32 / 32768.0).sum();
                                 sum / frame.len() as f32
                             })
                             .collect();
@@ -1208,10 +1252,8 @@ fn build_cpal_stream(
                         let mono: Vec<f32> = data
                             .chunks(in_channels.max(1))
                             .map(|frame| {
-                                let sum: f32 = frame
-                                    .iter()
-                                    .map(|&s| (s as f32 - 32768.0) / 32768.0)
-                                    .sum();
+                                let sum: f32 =
+                                    frame.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
                                 sum / frame.len() as f32
                             })
                             .collect();
@@ -1422,6 +1464,7 @@ fn run_audio_worker(
     config: Arc<Mutex<DictationConfig>>,
     shared: Arc<Mutex<SharedCaptureBuffer>>,
     settings_path: std::path::PathBuf,
+    llm_api_key: Arc<Mutex<String>>,
 ) {
     let mut vad = match VoiceActivityDetector::builder()
         .sample_rate(16000)
@@ -1592,9 +1635,7 @@ fn run_audio_worker(
                         guard.pending_preview.take();
                         guard.cancel_active_or_preview(&turn_cfg);
                     }
-                    if guard.state == PipelineState::IDLE
-                        || guard.state == PipelineState::ARMED
-                    {
+                    if guard.state == PipelineState::IDLE || guard.state == PipelineState::ARMED {
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
                         } else if source == WAKE_WORD_TRIGGER {
@@ -1609,8 +1650,7 @@ fn run_audio_worker(
                                     guard.peak_speech_rms.max(vp.typical_rms * 0.70);
                             }
                         }
-                    } else if guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER
-                    {
+                    } else if guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER {
                         guard.upgrade_wake_candidate_to(&source);
                         if !source.starts_with("voice_enroll:") {
                             if let Some(ref vp) = cfg.voice_profile {
@@ -1882,8 +1922,9 @@ fn run_audio_worker(
                                     guard.post_roll_started_at_ms = Some(now_ms);
                                     guard.pending_end_reason = Some(EndReason::Nod);
                                 } else if cfg.post_roll_ms == 0 {
-                                    let _ = cmd_tx_self
-                                        .send(AudioCommand::StopAndTranscribe(Some(EndReason::Nod)));
+                                    let _ = cmd_tx_self.send(AudioCommand::StopAndTranscribe(
+                                        Some(EndReason::Nod),
+                                    ));
                                 }
                             }
                         }
@@ -2051,12 +2092,15 @@ fn run_audio_worker(
                     let config_for_tx = Arc::clone(&config);
                     let settings_path_for_tx = settings_path.clone();
                     let cfg_snapshot = config.lock().unwrap().clone();
+                    let llm_api_key_for_tx = llm_api_key.lock().unwrap().clone();
                     let turn_cfg_snapshot = cfg_snapshot.to_turn_taking_config();
                     let app_for_tx = app_handle.clone();
                     let tx_for_preview = cmd_tx_self.clone();
 
                     thread::spawn(move || {
-                        if let Some(step_str) = captured.trigger_source.strip_prefix("voice_enroll:") {
+                        if let Some(step_str) =
+                            captured.trigger_source.strip_prefix("voice_enroll:")
+                        {
                             let step: usize = step_str.parse().unwrap_or(0);
                             {
                                 let mut guard = shared_after.lock().unwrap();
@@ -2071,9 +2115,8 @@ fn run_audio_worker(
                                 String::new()
                             };
                             let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
-                            let learned_alias = VOICE_ENROLL_COMMAND_SUFFIXES
-                                .get(step)
-                                .and_then(|suffix| {
+                            let learned_alias =
+                                VOICE_ENROLL_COMMAND_SUFFIXES.get(step).and_then(|suffix| {
                                     extract_leading_wake_alias(&heard_text, wake_word, suffix)
                                 });
                             let existing = if step == 0 {
@@ -2092,10 +2135,13 @@ fn run_audio_worker(
                                         cfg_guard.voice_profile = Some(new_profile.clone());
                                         cfg_guard.clone()
                                     };
-                                    if let Err(err) = updated_cfg.save_to_path(&settings_path_for_tx) {
+                                    if let Err(err) =
+                                        updated_cfg.save_to_path(&settings_path_for_tx)
+                                    {
                                         eprintln!("saywhen: voice profile save warning: {err}");
                                     }
-                                    let _ = app_for_tx.emit("dictation-config-updated", &updated_cfg);
+                                    let _ =
+                                        app_for_tx.emit("dictation-config-updated", &updated_cfg);
                                     let _ = app_for_tx.emit(
                                         "voice-enroll-step",
                                         VoiceEnrollStepEvent {
@@ -2230,12 +2276,10 @@ fn run_audio_worker(
                                         let mut guard = shared_after.lock().unwrap();
                                         guard.state = guard.resting_state(&turn_cfg_snapshot);
                                     }
-                                    let reason = transcription
-                                        .discarded_reason
-                                        .clone()
-                                        .unwrap_or_else(|| {
-                                            "No speech recognized: nothing was sent".to_string()
-                                        });
+                                    let reason =
+                                        transcription.discarded_reason.clone().unwrap_or_else(
+                                            || "No speech recognized: nothing was sent".to_string(),
+                                        );
                                     let metrics_rec = UtteranceMetricsRecord {
                                         utterance_id: captured.utterance_id,
                                         timestamp_ms: unix_timestamp_ms(),
@@ -2292,7 +2336,7 @@ fn run_audio_worker(
                                         enabled: true,
                                         endpoint_url: cfg_snapshot.llm_endpoint_url.clone(),
                                         model: cfg_snapshot.llm_model.clone(),
-                                        api_key: cfg_snapshot.llm_api_key.clone(),
+                                        api_key: llm_api_key_for_tx.clone(),
                                         timeout_ms: 1200,
                                     };
                                     match run_opt_in_llm_cleanup(
@@ -2755,7 +2799,10 @@ fn run_audio_worker(
                     && guard.partial_checked_speech_frames != guard.speech_frames_in_utterance
                     && transcriber.is_loaded()
                 {
-                    let tail_len = guard.utterance_pcm.len().min((TARGET_SAMPLE_RATE as usize) * 2);
+                    let tail_len = guard
+                        .utterance_pcm
+                        .len()
+                        .min((TARGET_SAMPLE_RATE as usize) * 2);
                     if tail_len >= (TARGET_SAMPLE_RATE as usize) / 2 {
                         let start_idx = guard.utterance_pcm.len() - tail_len;
                         let tail_samples = guard.utterance_pcm[start_idx..].to_vec();
@@ -2952,7 +2999,10 @@ mod tests {
             parsed.clipboard_restore_delay_ms,
             DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
         );
-        assert_eq!(parsed.max_silence_timeout_ms, DEFAULT_MAX_SILENCE_TIMEOUT_MS);
+        assert_eq!(
+            parsed.max_silence_timeout_ms,
+            DEFAULT_MAX_SILENCE_TIMEOUT_MS
+        );
         assert_eq!(parsed.arm_yaw_enter_deg, DEFAULT_ARM_YAW_ENTER_DEG);
         assert_eq!(parsed.arm_yaw_exit_deg, DEFAULT_ARM_YAW_EXIT_DEG);
         assert_eq!(parsed.arm_dwell_ms, DEFAULT_ARM_DWELL_MS);
@@ -2977,10 +3027,8 @@ mod tests {
 
     #[test]
     fn settings_save_in_app_data_dir_and_prefer_it_over_legacy() {
-        let root = std::env::temp_dir().join(format!(
-            "saywhen-settings-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("saywhen-settings-test-{}", std::process::id()));
         let app_data = root.join("appdata");
         let legacy = root.join("legacy").join("settings.local.json");
         let _ = std::fs::remove_dir_all(&root);

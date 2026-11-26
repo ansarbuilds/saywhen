@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::io::Read;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,7 +46,11 @@ pub fn classify_llm_endpoint_privacy(endpoint_url: &str) -> &'static str {
         return "invalid_url";
     }
     let host = if host_port.starts_with('[') {
-        host_port.split(']').next().unwrap_or("").trim_start_matches('[')
+        host_port
+            .split(']')
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('[')
     } else {
         host_port.split(':').next().unwrap_or("")
     };
@@ -73,7 +77,11 @@ pub fn sanitize_llm_cleanup_output(raw_llm_output: &str, fallback: &str) -> Stri
             inner
         };
         s = after_lang.trim_end_matches("```").trim();
-    } else if s.starts_with('`') && s.ends_with('`') && s.len() > 2 && !s[1..s.len() - 1].contains('`') {
+    } else if s.starts_with('`')
+        && s.ends_with('`')
+        && s.len() > 2
+        && !s[1..s.len() - 1].contains('`')
+    {
         s = s[1..s.len() - 1].trim();
     }
     let lower = s.to_ascii_lowercase();
@@ -97,36 +105,70 @@ pub fn sanitize_llm_cleanup_output(raw_llm_output: &str, fallback: &str) -> Stri
     }
 }
 
-/// Calls an opt-in local Ollama (`http://127.0.0.1:11434/v1/chat/completions`) or OpenAI-compatible
-/// BYOK endpoint with a strict timeout. Never called unless `llm_cfg.enabled == true`.
-pub fn run_opt_in_llm_cleanup(
+/// A prepared clean-up request. The bearer token, when present, lives only in
+/// `authorization` and is never copied into the URL or the JSON body.
+#[derive(Debug, Clone)]
+pub struct PreparedLlmRequest {
+    pub url: String,
+    pub timeout_ms: u64,
+    pub authorization: Option<String>,
+    pub body: Vec<u8>,
+}
+
+pub fn redact_secret(message: &str, secret: &str) -> String {
+    let secret = secret.trim();
+    if secret.len() < 4 {
+        return message.to_string();
+    }
+    message.replace(secret, "[redacted]")
+}
+
+/// Builds the opt-in clean-up request. Remote endpoints must be HTTPS. The API
+/// key is rejected when it contains control characters, so it cannot inject headers.
+pub fn prepare_llm_request(
     deterministic_text: &str,
     custom_vocab: &str,
     llm_cfg: &LlmCleanupConfig,
-) -> Result<String, String> {
-    if !llm_cfg.enabled || deterministic_text.trim().is_empty() {
-        return Ok(deterministic_text.to_string());
-    }
+) -> Result<PreparedLlmRequest, String> {
     let privacy = classify_llm_endpoint_privacy(&llm_cfg.endpoint_url);
     if privacy == "invalid_url" {
         return Err(format!(
             "Invalid LLM cleanup endpoint URL '{}': kept deterministic transcript",
-            llm_cfg.endpoint_url
+            llm_cfg.endpoint_url.trim()
         ));
     }
-
-    let timeout_secs = format!("{:.2}", (llm_cfg.timeout_ms.clamp(250, 5000) as f64) / 1000.0);
+    let url = llm_cfg.endpoint_url.trim().to_string();
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(
+            "The clean-up endpoint URL contains characters that are not allowed".to_string(),
+        );
+    }
+    if url.contains('@') {
+        return Err("Put the API key in the key field, not inside the endpoint URL".to_string());
+    }
+    if privacy == "remote_byok" && !url.to_ascii_lowercase().starts_with("https://") {
+        return Err(
+            "A remote clean-up endpoint must use https. Local Ollama can stay on http://127.0.0.1."
+                .to_string(),
+        );
+    }
+    let api_key = llm_cfg.api_key.trim().to_string();
+    if !api_key.is_empty() && api_key.chars().any(|c| c.is_control()) {
+        return Err("The API key contains characters that are not allowed".to_string());
+    }
 
     let vocab_hint = if custom_vocab.trim().is_empty() {
         String::new()
     } else {
-        format!(" Preserve these exact custom terms: {}.", custom_vocab.trim())
+        format!(
+            " Preserve these exact custom terms: {}.",
+            custom_vocab.trim()
+        )
     };
     let sys_prompt = format!(
         "You are a deterministic developer dictation formatter. Output ONLY the cleaned CLI command or coding agent prompt with no markdown fences, no quotes, and no explanation.{}",
         vocab_hint
     );
-
     let payload = serde_json::json!({
         "model": llm_cfg.model.trim(),
         "temperature": 0.0,
@@ -136,67 +178,111 @@ pub fn run_opt_in_llm_cleanup(
             { "role": "user", "content": deterministic_text }
         ]
     });
-    let payload_bytes = serde_json::to_vec(&payload)
+    let body = serde_json::to_vec(&payload)
         .map_err(|e| format!("Failed to serialize LLM request payload: {}", e))?;
-
-    let mut cmd = Command::new("curl");
-    cmd.args([
-        "-sS",
-        "-f",
-        "--max-time",
-        &timeout_secs,
-        "-H",
-        "Content-Type: application/json",
-        "--data-binary",
-        "@-",
-    ]);
-    if !llm_cfg.api_key.trim().is_empty() {
-        cmd.arg("-H")
-            .arg(format!("Authorization: Bearer {}", llm_cfg.api_key.trim()));
+    if !api_key.is_empty()
+        && (body.windows(api_key.len()).any(|w| w == api_key.as_bytes()) || url.contains(&api_key))
+    {
+        return Err(
+            "Refusing to send a request that embeds the API key outside the Authorization header"
+                .to_string(),
+        );
     }
-    cmd.arg(llm_cfg.endpoint_url.trim())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    Ok(PreparedLlmRequest {
+        url,
+        timeout_ms: llm_cfg.timeout_ms.clamp(250, 5000),
+        authorization: if api_key.is_empty() {
+            None
+        } else {
+            Some(format!("Bearer {api_key}"))
+        },
+        body,
+    })
+}
 
-    let mut child = cmd.spawn().map_err(|e| {
-        format!(
-            "Opt-in LLM cleanup failed to launch curl ({}): kept deterministic transcript",
-            e
-        )
-    })?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(&payload_bytes);
-    }
-
-    let output = child.wait_with_output().map_err(|e| {
-        format!(
-            "Opt-in LLM cleanup failed waiting for response ({}): kept deterministic transcript",
-            e
-        )
-    })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+pub fn interpret_llm_response(
+    status: u16,
+    body: &[u8],
+    fallback: &str,
+    secret: &str,
+) -> Result<String, String> {
+    if !(200..300).contains(&status) {
+        let text = redact_secret(&String::from_utf8_lossy(body), secret);
+        let snippet: String = text.chars().take(180).collect();
         return Err(format!(
-            "Opt-in LLM cleanup request to '{}' failed ({}): kept deterministic transcript",
-            llm_cfg.endpoint_url,
-            stderr.trim()
+            "Opt-in LLM cleanup request failed with HTTP {status}: {snippet}"
         ));
     }
-
-    let body: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+    let parsed: serde_json::Value = serde_json::from_slice(body).map_err(|e| {
         format!(
             "Opt-in LLM cleanup response parse failed ({}): kept deterministic transcript",
             e
         )
     })?;
-
-    let content = body["choices"][0]["message"]["content"]
+    let content = parsed["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("");
-    Ok(sanitize_llm_cleanup_output(content, deterministic_text))
+    Ok(sanitize_llm_cleanup_output(content, fallback))
+}
+
+fn execute_prepared_llm_request(req: &PreparedLlmRequest) -> Result<(u16, Vec<u8>), String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_millis(req.timeout_ms))
+        .redirects(0)
+        .build();
+    let mut request = agent
+        .post(&req.url)
+        .set("Content-Type", "application/json")
+        .set("Accept", "application/json");
+    if let Some(authorization) = &req.authorization {
+        request = request.set("Authorization", authorization);
+    }
+    let secret = req
+        .authorization
+        .as_deref()
+        .and_then(|header| header.strip_prefix("Bearer "))
+        .unwrap_or("");
+    match request.send_bytes(&req.body) {
+        Ok(response) => read_llm_body(response.status(), response.into_reader(), secret),
+        Err(ureq::Error::Status(status, response)) => {
+            read_llm_body(status, response.into_reader(), secret)
+        }
+        Err(err) => Err(redact_secret(
+            &format!(
+                "Opt-in LLM cleanup request to '{}' failed ({err}): kept deterministic transcript",
+                req.url
+            ),
+            secret,
+        )),
+    }
+}
+
+fn read_llm_body(status: u16, reader: impl Read, secret: &str) -> Result<(u16, Vec<u8>), String> {
+    let mut body = Vec::new();
+    reader.take(65_536).read_to_end(&mut body).map_err(|err| {
+        redact_secret(
+            &format!("Opt-in LLM cleanup could not read the response ({err})"),
+            secret,
+        )
+    })?;
+    Ok((status, body))
+}
+
+/// Calls an opt-in local Ollama (`http://127.0.0.1:11434/v1/chat/completions`) or OpenAI-compatible
+/// BYOK endpoint with a strict timeout. Never called unless `llm_cfg.enabled == true`.
+/// The API key is sent as an HTTP header by the built-in client, never as a `curl` argument.
+pub fn run_opt_in_llm_cleanup(
+    deterministic_text: &str,
+    custom_vocab: &str,
+    llm_cfg: &LlmCleanupConfig,
+) -> Result<String, String> {
+    if !llm_cfg.enabled || deterministic_text.trim().is_empty() {
+        return Ok(deterministic_text.to_string());
+    }
+    let prepared = prepare_llm_request(deterministic_text, custom_vocab, llm_cfg)?;
+    let secret = llm_cfg.api_key.trim();
+    let (status, body) = execute_prepared_llm_request(&prepared)?;
+    interpret_llm_response(status, &body, deterministic_text, secret)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,17 +511,52 @@ pub fn run_local_developer_cleanup_with_vocab(
 
     // 3. If utterance starts with a known CLI binary that Whisper capitalized, lowercase the binary name
     let cli_binaries = [
-        "cargo", "git", "npm", "npx", "pnpm", "yarn", "bun", "node", "python", "python3", "pip",
-        "pytest", "docker", "kubectl", "terraform", "make", "cmake", "rustc", "rustup", "ls", "cd",
-        "cat", "grep", "rg", "find", "mkdir", "rm", "cp", "mv", "chmod", "chown", "curl", "ssh",
-        "brew", "claude", "codex", "echo", "export", "source",
+        "cargo",
+        "git",
+        "npm",
+        "npx",
+        "pnpm",
+        "yarn",
+        "bun",
+        "node",
+        "python",
+        "python3",
+        "pip",
+        "pytest",
+        "docker",
+        "kubectl",
+        "terraform",
+        "make",
+        "cmake",
+        "rustc",
+        "rustup",
+        "ls",
+        "cd",
+        "cat",
+        "grep",
+        "rg",
+        "find",
+        "mkdir",
+        "rm",
+        "cp",
+        "mv",
+        "chmod",
+        "chown",
+        "curl",
+        "ssh",
+        "brew",
+        "claude",
+        "codex",
+        "echo",
+        "export",
+        "source",
     ];
 
     let cli_subcommands = [
-        "build", "test", "check", "clippy", "fmt", "run", "status", "short", "diff", "head",
-        "log", "oneline", "branch", "list", "push", "origin", "pull", "rebase", "stash", "pop",
-        "commit", "message", "checkout", "get", "pods", "nodes", "services", "update", "all",
-        "targets", "release", "install", "add", "remove", "clean", "bench", "doc",
+        "build", "test", "check", "clippy", "fmt", "run", "status", "short", "diff", "head", "log",
+        "oneline", "branch", "list", "push", "origin", "pull", "rebase", "stash", "pop", "commit",
+        "message", "checkout", "get", "pods", "nodes", "services", "update", "all", "targets",
+        "release", "install", "add", "remove", "clean", "bench", "doc",
     ];
 
     let mut words: Vec<String> = s.split_whitespace().map(|w| w.to_string()).collect();
@@ -661,8 +782,7 @@ fn split_camel_or_hyphen_to_spaces(term: &str) -> String {
         }
         if i > 0
             && c.is_uppercase()
-            && (chars[i - 1].is_lowercase()
-                || (i + 1 < chars.len() && chars[i + 1].is_lowercase()))
+            && (chars[i - 1].is_lowercase() || (i + 1 < chars.len() && chars[i + 1].is_lowercase()))
         {
             s.push(' ');
         }
@@ -758,10 +878,45 @@ pub fn run_legacy_developer_cleanup(input: &str) -> String {
     }
     s = s.replace("-- ", "--").replace("./ ", "./");
     let cli_binaries = [
-        "cargo", "git", "npm", "npx", "pnpm", "yarn", "bun", "node", "python", "python3", "pip",
-        "pytest", "docker", "kubectl", "terraform", "make", "cmake", "rustc", "rustup", "ls", "cd",
-        "cat", "grep", "rg", "find", "mkdir", "rm", "cp", "mv", "chmod", "chown", "curl", "ssh",
-        "brew", "claude", "codex", "echo", "export", "source",
+        "cargo",
+        "git",
+        "npm",
+        "npx",
+        "pnpm",
+        "yarn",
+        "bun",
+        "node",
+        "python",
+        "python3",
+        "pip",
+        "pytest",
+        "docker",
+        "kubectl",
+        "terraform",
+        "make",
+        "cmake",
+        "rustc",
+        "rustup",
+        "ls",
+        "cd",
+        "cat",
+        "grep",
+        "rg",
+        "find",
+        "mkdir",
+        "rm",
+        "cp",
+        "mv",
+        "chmod",
+        "chown",
+        "curl",
+        "ssh",
+        "brew",
+        "claude",
+        "codex",
+        "echo",
+        "export",
+        "source",
     ];
     let mut words: Vec<String> = s.split_whitespace().map(|w| w.to_string()).collect();
     if let Some(first) = words.first_mut() {
@@ -798,7 +953,11 @@ pub fn check_destructive_command(cmd: &str) -> bool {
     dangerous_patterns.iter().any(|p| lower.contains(p))
 }
 
-fn replace_case_insensitive_word_start(haystack: &str, needle_lower: &str, replacement: &str) -> String {
+fn replace_case_insensitive_word_start(
+    haystack: &str,
+    needle_lower: &str,
+    replacement: &str,
+) -> String {
     let mut out = haystack.to_string();
     let lower = out.to_lowercase();
     if lower.starts_with(needle_lower) {
@@ -839,10 +998,7 @@ mod tests {
 
     #[test]
     fn test_developer_cleanup_preserves_flags_and_commands() {
-        let res = run_local_developer_cleanup(
-            "Um, Cargo build dash dash release.",
-            true,
-        );
+        let res = run_local_developer_cleanup("Um, Cargo build dash dash release.", true);
         assert_eq!(res.cleaned_text, "cargo build --release");
         assert!(res.modified);
         assert!(!res.is_destructive_command);
@@ -925,10 +1081,7 @@ mod tests {
         assert!(never_mind.canceled_by_voice);
 
         // 4. Trailing "paste only" / "just paste it" strips the suffix and sets force_paste_only
-        let paste_only = run_local_developer_cleanup(
-            "Git commit dash m wip, paste only.",
-            true,
-        );
+        let paste_only = run_local_developer_cleanup("Git commit dash m wip, paste only.", true);
         assert_eq!(paste_only.cleaned_text, "git commit -m wip");
         assert!(paste_only.force_paste_only);
         assert!(!paste_only.canceled_by_voice);
@@ -982,6 +1135,123 @@ mod tests {
         assert!(is_preview_spoken_cancel_command("Cancel."));
         assert!(is_preview_spoken_cancel_command("Scratch that!"));
         assert!(is_preview_spoken_cancel_command("Stop"));
-        assert!(!is_preview_spoken_cancel_command("applications like Antigravity"));
+        assert!(!is_preview_spoken_cancel_command(
+            "applications like Antigravity"
+        ));
+    }
+
+    #[test]
+    fn api_key_stays_out_of_the_url_and_body() {
+        let cfg = LlmCleanupConfig {
+            enabled: true,
+            endpoint_url: "https://api.example.com/v1/chat/completions".to_string(),
+            model: "gpt-4.1-mini".to_string(),
+            api_key: "sk-super-secret-value".to_string(),
+            timeout_ms: 1200,
+        };
+        let prepared = prepare_llm_request("git status", "", &cfg).unwrap();
+        assert!(prepared.url.starts_with("https://"));
+        assert!(!prepared.url.contains("sk-super-secret-value"));
+        assert!(!prepared
+            .body
+            .windows(b"sk-super-secret-value".len())
+            .any(|window| window == b"sk-super-secret-value"));
+        assert_eq!(
+            prepared.authorization.as_deref(),
+            Some("Bearer sk-super-secret-value")
+        );
+
+        let http_remote = LlmCleanupConfig {
+            endpoint_url: "http://api.example.com/v1/chat/completions".to_string(),
+            ..cfg.clone()
+        };
+        assert!(prepare_llm_request("git status", "", &http_remote).is_err());
+
+        let injected = LlmCleanupConfig {
+            api_key: "sk-bad\r\nX-Evil: 1".to_string(),
+            ..cfg
+        };
+        assert!(prepare_llm_request("git status", "", &injected).is_err());
+    }
+
+    #[test]
+    fn native_http_client_sends_the_key_only_as_a_header() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            sock.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            loop {
+                match sock.read(&mut tmp) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        buf.extend_from_slice(&tmp[..n]);
+                        if let Some(header_end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&buf[..header_end]);
+                            let length = headers.lines().find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                if name.eq_ignore_ascii_case("content-length") {
+                                    value.trim().parse::<usize>().ok()
+                                } else {
+                                    None
+                                }
+                            });
+                            if buf.len() >= header_end + 4 + length.unwrap_or(0) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            let reply = br#"{"choices":[{"message":{"content":"git status"}}]}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                reply.len()
+            );
+            let _ = sock.write_all(response.as_bytes());
+            let _ = sock.write_all(reply);
+            String::from_utf8_lossy(&buf).to_string()
+        });
+
+        let secret = "sk-header-only-secret";
+        let cfg = LlmCleanupConfig {
+            enabled: true,
+            endpoint_url: format!("http://{addr}/v1/chat/completions"),
+            model: "local".to_string(),
+            api_key: secret.to_string(),
+            timeout_ms: 2000,
+        };
+        let cleaned = run_opt_in_llm_cleanup("git status", "", &cfg).unwrap();
+        assert_eq!(cleaned, "git status");
+        let raw = server.join().unwrap();
+        let (headers, body) = raw.split_once("\r\n\r\n").unwrap_or((raw.as_str(), ""));
+        let request_line = headers.lines().next().unwrap_or("");
+        assert!(!request_line.contains(secret));
+        assert!(!body.contains(secret));
+        assert!(headers.contains(&format!("Authorization: Bearer {secret}")));
+        assert!(!headers.to_ascii_lowercase().contains("curl"));
+    }
+
+    #[test]
+    fn error_text_redacts_the_api_key() {
+        assert_eq!(
+            redact_secret("failed for sk-live-key-123 at host", "sk-live-key-123"),
+            "failed for [redacted] at host"
+        );
+        let parsed = interpret_llm_response(
+            401,
+            br#"{"error":"bad sk-live-key-123"}"#,
+            "git status",
+            "sk-live-key-123",
+        );
+        let message = parsed.unwrap_err();
+        assert!(message.contains("401"));
+        assert!(!message.contains("sk-live-key-123"));
     }
 }
