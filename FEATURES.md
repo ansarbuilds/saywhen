@@ -18,7 +18,7 @@ Each row is something the app actually does. "Shipped" means it was already in t
 12. Opt-in wake word when you are not facing the screen. Shipped.
 13. Wake-word chime. Shipped.
 14. Three-phrase voice enrollment. Shipped on main, not in the v0.2.1 installer.
-15. Quiet hours that block hands-free start and leave the hotkey alone. This pull request.
+15. Quiet hours that block hands-free start and leave the hotkey alone. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 16. Minimum speech length so coughs are dropped. Shipped.
 17. Adaptive silence timeout. Shipped.
 18. Post-roll so the last word is not clipped. Shipped.
@@ -30,14 +30,14 @@ Each row is something the app actually does. "Shipped" means it was already in t
 21. On-device Whisper tiny, base, small, and Large v3 Turbo. Shipped. Large v3 Turbo is on main, not in v0.2.1.
 22. On-device Parakeet TDT 0.6B v2. Shipped on main, not in v0.2.1.
 23. Model download with progress. Shipped.
-24. Model advice for speed, balanced, or accuracy from the models that are installed. This pull request. It is a preference order, not a measured ranking.
+24. Model advice for speed, balanced, or accuracy from the models that are installed. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26). It is a preference order, not a measured ranking.
 25. English-only models stay in English. [PR 22](https://github.com/ansarbuilds/saywhen/pull/22).
 26. Language choice for Large v3 Turbo. [PR 22](https://github.com/ansarbuilds/saywhen/pull/22).
 27. Local developer cleanup for CLI words and flags. Shipped.
 28. Custom vocabulary. Shipped.
 29. Snippets. [PR 22](https://github.com/ansarbuilds/saywhen/pull/22).
-30. Spoken punctuation. This pull request.
-31. Capitalize sentences. This pull request.
+30. Spoken punctuation. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
+31. Capitalize sentences. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 32. Scratch that. Shipped.
 33. Paste only voice override. Shipped.
 34. Send it / submit it end phrase. Shipped.
@@ -64,7 +64,7 @@ Each row is something the app actually does. "Shipped" means it was already in t
 ## Window
 
 51. Floating click-through status pill. Shipped.
-52. Pill position: bottom center, bottom left, bottom right, or top. This pull request.
+52. Pill position: bottom center, bottom left, bottom right, or top. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 53. Move the pill to the display under the pointer. Shipped.
 54. Tray menu, close-to-background, and Dock reopen. Shipped.
 55. Light, dark, and system theme. Shipped.
@@ -73,26 +73,26 @@ Each row is something the app actually does. "Shipped" means it was already in t
 58. Command palette. Shipped.
 59. First-run intro and setup checklist. Shipped.
 60. In-app Guide. Shipped.
-61. Keyboard shortcut list. This pull request.
+61. Keyboard shortcut list. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 62. Onboarding focus trap. Shipped.
 
 ## History and settings
 
 63. Seven-day local history with search. Shipped.
-64. History search by app, `app:Name`. This pull request.
+64. History search by app, `app:Name`. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 65. History export to Markdown. [PR 22](https://github.com/ansarbuilds/saywhen/pull/22).
 66. One-click history purge. Shipped.
-67. Local stats: utterances, words, and the app you dictate into most. This pull request.
-68. Settings export and import, with API keys refused. This pull request.
+67. Local stats: utterances, words, and the app you dictate into most. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
+68. Settings export and import, with API keys refused. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 69. False-trigger flag on a history card. Shipped.
-70. Update channel remembered as stable or beta. This pull request. Nothing is downloaded because of it.
+70. Update channel remembered as stable or beta. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26). Nothing is downloaded because of it.
 
 ## Privacy and license
 
 71. Camera frames stay in memory. Shipped.
 72. Audio discarded after transcription unless you opt in. Shipped.
 73. Session metrics that never store the transcript. Shipped.
-74. Opt-in diagnostic notes that stay on this computer. This pull request.
+74. Opt-in diagnostic notes that stay on this computer. [PR 26](https://github.com/ansarbuilds/saywhen/pull/26).
 75. Fourteen-day local trial. [PR 24](https://github.com/ansarbuilds/saywhen/pull/24).
 76. License enforcement off, soft, or required. [PR 24](https://github.com/ansarbuilds/saywhen/pull/24). Enforcement is off, so nothing is locked.
 77. Development license keys, documented as public and not for sale. [PR 24](https://github.com/ansarbuilds/saywhen/pull/24).
