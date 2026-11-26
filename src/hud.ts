@@ -3,6 +3,7 @@
 // takes focus, so the frontmost app stays the injection target.
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
+import { hudHint } from './ui/product-views';
 
 interface AudioTelemetryEvent {
   state: string;
@@ -55,19 +56,13 @@ interface DictationConfigLite {
   saveTuningAudioEnabled?: boolean;
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
+  hudAnchor?: string;
 }
 
 const FLASH_MS = 2600;
 
 const root = document.getElementById('hud-root') as HTMLElement;
 const label = document.getElementById('hud-label') as HTMLElement;
-const HUD_STATE_WORDS: Record<string, string> = {
-  IDLE: 'Waiting',
-  ARMED: 'Ready',
-  LISTENING: 'Listening',
-  TRANSCRIBING: 'Writing',
-  PREVIEW: 'Check',
-};
 const recBadge = document.getElementById('hud-rec') as HTMLElement | null;
 const detail = document.getElementById('hud-detail') as HTMLElement;
 const meterBars = Array.from(document.querySelectorAll<HTMLElement>('#hud-meter i'));
@@ -157,7 +152,7 @@ function render(t: AudioTelemetryEvent) {
   if (t.state !== lastRenderedState) {
     lastRenderedState = t.state;
     root.dataset.state = t.state;
-    label.textContent = HUD_STATE_WORDS[t.state] ?? t.state;
+    label.textContent = hudHint(t.state);
     replaySwap();
   }
   if (recBadge) {
@@ -314,6 +309,7 @@ async function initHud() {
     if (e.payload.sendMode) sendMode = e.payload.sendMode;
     if (typeof e.payload.cancelOnSpeech === 'boolean') cancelOnSpeech = e.payload.cancelOnSpeech;
     if (e.payload.uiPalette) root.dataset.palette = e.payload.uiPalette;
+    if (e.payload.hudAnchor) root.dataset.anchor = e.payload.hudAnchor;
     root.dataset.moodColors = e.payload.moodColors === false ? 'off' : 'on';
     if (recBadge && typeof e.payload.saveTuningAudioEnabled === 'boolean') {
       recBadge.classList.toggle('hidden', !e.payload.saveTuningAudioEnabled);

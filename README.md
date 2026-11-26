@@ -35,6 +35,12 @@
 
 <br>
 
+## Why developers pick it
+
+Wispr Flow, Superwhisper, VoiceInk, and Handy are hotkey dictation apps. Claude Code and Cursor also have their own voice buttons. saywhen is the one that starts when you look at the screen and talk, then waits through a preview you can cancel before it presses Enter, and only in apps you trust.
+
+That is the whole product. Speech stays on this computer. The camera keeps a few numbers, such as head angle and whether your lips are moving, and throws the picture away. There is no published head-to-head accuracy score against those other apps. The measurements we do have are in [what has been measured](docs/MEASUREMENTS.md), with the caveats written next to them.
+
 ## How it works
 
 <img src="docs/visuals/page-how.jpg" alt="No hotkey. Just look and talk. 01 Look: face the screen; saywhen keeps a few numbers, like head angle, and throws the picture away. 02 Talk: speak normally; the last half second is already kept, so your first word is never clipped. 03 Check, then sent: read it in a short preview; Esc, a head shake, or talking again cancels." width="100%">
@@ -162,7 +168,9 @@ The first run downloads the camera model (about 4 MB) and can take 5 to 15 minut
 
 ## Beta, honestly
 
-saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md), the [FAQ](docs/FAQ.md), or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
+saywhen runs on an Apple Silicon Mac, and automated tests pass on macOS and Windows. The installers are not signed yet, and hands-on checks on Windows hardware and Intel Macs are still open. The v0.2.1 download is behind the current code: Parakeet, Large v3 Turbo, voice enrollment, snippets, and the license screen are in the repository and not in that installer. Something not working? See [when something goes wrong](docs/TROUBLESHOOTING.md), the [FAQ](docs/FAQ.md), or [open an issue](https://github.com/ansarbuilds/saywhen/issues/new/choose).
+
+What you have to set up yourself before a signed, paid release is listed in [owner setup](docs/OWNER_SETUP.md).
 
 ## For coding assistants
 

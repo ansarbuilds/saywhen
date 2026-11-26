@@ -7,6 +7,7 @@
     <title>saywhen</title>
     <script src="/boot.js"></script>
     <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/design/surfaces.css" />
   </head>
   <body data-state="IDLE" data-send-mode="pause" data-palette="saywhen" data-mood-colors="on">
     <div class="app-shell">
@@ -25,22 +26,22 @@
         <nav class="nav" id="app-nav" aria-label="Sections">
           <span class="nav-indicator" id="nav-indicator" aria-hidden="true"></span>
           <button class="nav-item is-active" data-tab="home" aria-current="page">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9 10 3.8 16.5 9v6.7a1 1 0 0 1-1 1h-3.3v-4.4H7.8v4.4H4.5a1 1 0 0 1-1-1z" /></svg>
+            <span class="nav-icon" data-icon="home"></span>
             <span>Home</span>
             <kbd class="nav-kbd" data-mod>1</kbd>
           </button>
           <button class="nav-item" data-tab="preferences">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h7M15 6h1M4 14h1M9 14h7" /><circle cx="13" cy="6" r="2" /><circle cx="7" cy="14" r="2" /></svg>
+            <span class="nav-icon" data-icon="settings"></span>
             <span>Settings</span>
             <kbd class="nav-kbd" data-mod>2</kbd>
           </button>
           <button class="nav-item" data-tab="lab">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h2.5l2-5 3 9 2-6 1.5 2H17" /></svg>
+            <span class="nav-icon" data-icon="activity"></span>
             <span>Diagnostics</span>
             <kbd class="nav-kbd" data-mod>3</kbd>
           </button>
           <button class="nav-item" data-tab="guide">
-            <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H15v11.5H5.5A1.5 1.5 0 0 0 4 16zM4 16a1.5 1.5 0 0 0 1.5 1.5H15V14.5" /><path d="M7.5 7h4.5M7.5 10h3" /></svg>
+            <span class="nav-icon" data-icon="book"></span>
             <span>Guide</span>
             <kbd class="nav-kbd" data-mod>4</kbd>
           </button>
@@ -385,6 +386,7 @@
                   <div class="card-title">
                     <h4>Recent</h4>
                     <span class="gauge-tag tag-ok" id="history-ttl-badge" title="Anything older than 7 days is deleted automatically">7d Local</span>
+                    <span class="gauge-tag" id="desk-stats-badge" title="Counted on this computer from saved history">0 said</span>
                   </div>
                   <div class="feed-tools">
                     <label class="search-field">
@@ -399,6 +401,7 @@
                       />
                     </label>
                     <button id="paste-last-btn" class="btn-xs btn-quiet" title="Type the last transcript again, without pressing Enter">Paste last</button>
+                    <button id="export-history-btn" class="btn-xs btn-quiet" title="Download the saved history as Markdown">Export</button>
                     <button id="clear-feed-btn" class="btn-xs btn-quiet" title="Clear the list and delete saved history">Clear</button>
                   </div>
                 </div>
@@ -453,6 +456,7 @@
               <button type="button" class="settings-nav-item" data-settings-target="pref-sending">Sending</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-words">Words</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-privacy">Privacy</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-license">License</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-appearance">Appearance</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-about">About</button>
             </nav>
@@ -570,6 +574,100 @@
                     </div>
                     <input type="checkbox" id="toggle-adaptive-fps" checked />
                   </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="vision-power-select">Camera power</label>
+                      <span class="pref-desc">Low checks the camera 8 times a second while you face the screen (480 frames a minute instead of 909). Listening still uses the faster rate. This is a frame budget, not a battery test.</span>
+                    </div>
+                    <select id="vision-power-select" class="text-control">
+                      <option value="auto">Auto</option>
+                      <option value="full">Full</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="language-select">Language</label>
+                      <span class="pref-desc">Used by Large v3 Turbo. English-only models, including Parakeet, stay in English.</span>
+                    </div>
+                    <select id="language-select" class="text-control">
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                      <option value="fr">French</option>
+                      <option value="de">German</option>
+                      <option value="pt">Portuguese</option>
+                      <option value="it">Italian</option>
+                      <option value="ja">Japanese</option>
+                      <option value="zh">Chinese</option>
+                      <option value="ko">Korean</option>
+                      <option value="auto">Detect</option>
+                    </select>
+                  </div>
+                  <p class="pref-footnote">Say a whole command by itself to change saywhen instead of typing: &ldquo;pause listening&rdquo;, &ldquo;resume listening&rdquo;, &ldquo;type only mode&rdquo;, &ldquo;low power mode&rdquo;.</p>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Quiet hours</div>
+                      <div class="toggle-desc">Hands-free start stays off between these local times. The hotkey still works. A window that passes midnight is fine.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-quiet-hours" />
+                  </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="quiet-start">From</label>
+                    </div>
+                    <input type="time" id="quiet-start" class="text-control" value="22:00" />
+                    <label class="field-label" for="quiet-end">Until</label>
+                    <input type="time" id="quiet-end" class="text-control" value="07:00" />
+                  </div>
+                  <p class="pref-footnote" id="quiet-hours-summary">Quiet hours are off. Hands-free can start any time.</p>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Spoken punctuation</div>
+                      <div class="toggle-desc">Saying period, comma, question mark, or new line inserts that mark.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-spoken-punctuation" />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Capitalize sentences</div>
+                      <div class="toggle-desc">Capitalize the first letter after a period, question mark, or new line.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-capitalize" />
+                  </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="hud-anchor">Pill position</label>
+                      <span class="pref-desc">Where the floating status pill sits on the display.</span>
+                    </div>
+                    <select id="hud-anchor" class="text-control">
+                      <option value="bottom-center">Bottom center</option>
+                      <option value="bottom-left">Bottom left</option>
+                      <option value="bottom-right">Bottom right</option>
+                      <option value="top-center">Top center</option>
+                    </select>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="update-channel">Update channel</label>
+                      <span class="pref-desc">Remembered for a future updater. Nothing is downloaded because of this choice.</span>
+                    </div>
+                    <select id="update-channel" class="text-control">
+                      <option value="stable">Stable</option>
+                      <option value="beta">Beta</option>
+                    </select>
+                  </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Keep diagnostic notes</div>
+                      <div class="toggle-desc">A short list of problems stays on this computer so you can copy it. It is never uploaded.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-diagnostics" />
+                  </label>
+                  <div class="allowlist-editor">
+                    <button type="button" class="btn-xs btn-quiet" id="export-settings-btn">Export settings</button>
+                    <button type="button" class="btn-xs btn-quiet" id="import-settings-btn">Import settings</button>
+                    <input type="file" id="import-settings-file" accept="application/json" class="hidden" />
+                  </div>
                 </div>
               </section>
 
@@ -639,6 +737,13 @@
                       <button type="button" class="btn-xs btn-accent" id="add-frontmost-app-btn">Add the app in front</button>
                     </div>
                   </div>
+                  <div class="pref-row pref-row-stack">
+                    <div class="pref-text">
+                      <label class="field-label" for="app-profiles-input">Per-app send style</label>
+                      <span class="pref-desc">One app per line: name | pause, nod, phrase, or paste_only | extra words | language. Blank fields use the global setting. Example: Cursor | phrase | MediaPipe</span>
+                    </div>
+                    <textarea id="app-profiles-input" class="text-control" rows="4" spellcheck="false" placeholder="Cursor | phrase | MediaPipe"></textarea>
+                  </div>
                 </div>
               </section>
 
@@ -665,6 +770,13 @@
                     />
                   </div>
                   <p class="pref-footnote">This list is applied after the local clean-up pass, before the check step.</p>
+                  <div class="pref-row pref-row-stack">
+                    <div class="pref-text">
+                      <label class="field-label" for="snippets-input">Snippets</label>
+                      <span class="pref-desc">One per line, spoken phrase = exact text. &ldquo;my email = ada@example.com&rdquo;. The phrase has to stand on its own, so a short trigger does not rewrite a longer word.</span>
+                    </div>
+                    <textarea id="snippets-input" class="text-control" rows="4" spellcheck="false" placeholder="my email = ada@example.com"></textarea>
+                  </div>
                 </div>
               </section>
 
@@ -700,6 +812,15 @@
                       <label class="field-label" for="llm-model-input">Model</label>
                       <input type="text" id="llm-model-input" class="text-control" value="qwen2.5-coder:1.5b" />
                     </div>
+                    <div class="field-group">
+                      <label class="field-label" for="llm-api-key-input">API key</label>
+                      <input type="password" id="llm-api-key-input" class="text-control" autocomplete="off" spellcheck="false" placeholder="Only for a remote endpoint" />
+                      <div class="allowlist-editor">
+                        <button type="button" class="btn-xs btn-accent" id="llm-api-key-save">Save key</button>
+                        <button type="button" class="btn-xs btn-quiet" id="llm-api-key-clear">Remove key</button>
+                      </div>
+                      <p class="pref-footnote" id="llm-key-status" role="status">Checking whether a key is saved...</p>
+                    </div>
                   </div>
                   <label class="toggle-row">
                     <div>
@@ -711,9 +832,52 @@
                 </div>
               </section>
 
-              <section class="pref-section" id="pref-appearance">
+              <section class="pref-section" id="pref-license">
                 <header class="pref-section-head">
                   <span class="pref-num" aria-hidden="true">05</span>
+                  <div>
+                    <h3>License</h3>
+                    <p>A 14-day trial is tracked on this computer. Enforcement is off, so nothing is locked.</p>
+                  </div>
+                </header>
+                <div class="pref-group">
+                  <div class="license-card" id="license-status" role="status" data-tier="trial">
+                    <span class="license-eyebrow" id="license-eyebrow">Trial</span>
+                    <strong class="license-headline" id="license-headline">Checking the trial...</strong>
+                    <p class="license-detail" id="license-detail">Enforcement is off, so nothing is locked.</p>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="license-enforcement">Enforcement</label>
+                      <span class="pref-desc">Off keeps every feature. Required holds snippets, per-app profiles, history export, cloud clean-up, and other languages for Pro. Dictation itself stays available.</span>
+                    </div>
+                    <select id="license-enforcement" class="text-control">
+                      <option value="off">Off</option>
+                      <option value="soft">Soft, warn only</option>
+                      <option value="required">Required</option>
+                    </select>
+                  </div>
+                  <div class="pref-row pref-row-stack">
+                    <div class="pref-text">
+                      <label class="field-label" for="license-endpoint">License server</label>
+                      <span class="pref-desc">Leave this empty during development. The built-in checker uses a public test secret and must not be how you charge money. A real Lemon Squeezy, Paddle, or Stripe check belongs on your server, which returns valid, tier, and expiresAtMs.</span>
+                    </div>
+                    <input type="url" id="license-endpoint" class="text-control" placeholder="https://licenses.example.com/check" spellcheck="false" autocomplete="off" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="license-key-input">License key</label>
+                    <input type="password" id="license-key-input" class="text-control" autocomplete="off" spellcheck="false" />
+                    <div class="allowlist-editor">
+                      <button type="button" class="btn-xs btn-accent" id="license-key-save">Save key</button>
+                      <button type="button" class="btn-xs btn-quiet" id="license-key-clear">Remove key</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="pref-section" id="pref-appearance">
+                <header class="pref-section-head">
+                  <span class="pref-num" aria-hidden="true">06</span>
                   <div>
                     <h3>Appearance</h3>
                     <p>Theme and accent. It also colours the floating pill.</p>
@@ -729,6 +893,16 @@
                       <button type="button" class="theme-choice-btn is-selected" data-theme-choice="system" aria-pressed="true">System</button>
                       <button type="button" class="theme-choice-btn" data-theme-choice="light" aria-pressed="false">Light</button>
                       <button type="button" class="theme-choice-btn" data-theme-choice="dark" aria-pressed="false">Dark</button>
+                    </div>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label">Density</label>
+                      <span class="pref-desc">Comfortable keeps the reading size. Compact tightens settings, history, and the home headline.</span>
+                    </div>
+                    <div class="theme-choice" role="group" aria-label="Density">
+                      <button type="button" class="theme-choice-btn is-selected" data-density="comfortable" aria-pressed="true">Comfortable</button>
+                      <button type="button" class="theme-choice-btn" data-density="compact" aria-pressed="false">Compact</button>
                     </div>
                   </div>
                   <div class="pref-row">
@@ -811,7 +985,7 @@
               </section>
               <section class="pref-section" id="pref-about">
                 <header class="pref-section-head">
-                  <span class="pref-num" aria-hidden="true">06</span>
+                  <span class="pref-num" aria-hidden="true">07</span>
                   <div>
                     <h3>About</h3>
                     <p>Version, support and the diagnostics to copy when something fails.</p>
@@ -824,6 +998,13 @@
                       <span class="pref-desc" id="about-version">Beta</span>
                     </div>
                     <span class="gauge-tag tag-ok">Local-first</span>
+                  </div>
+                  <div class="pref-row pref-row-stack" id="menu-bar-preview">
+                    <div class="pref-text">
+                      <label class="field-label">Menu bar</label>
+                      <span class="pref-desc">The same items appear in the macOS menu bar and the Windows tray. Cancel only works while a line is waiting to send.</span>
+                    </div>
+                    <ul class="menu-preview" id="menu-preview"></ul>
                   </div>
                   <div class="pref-row">
                     <div class="pref-text">
@@ -1076,7 +1257,7 @@
         <div class="modal-body">
         <div class="modal-header">
           <img class="modal-logo" src="/src/assets/logo.png" alt="" width="56" height="56" draggable="false" />
-          <span class="modal-kicker">Welcome to saywhen</span>
+          <span class="modal-kicker" id="onboarding-progress">0 of 4 ready</span>
           <h2 class="modal-title" id="onboarding-title">Look. Talk. <em>Sent.</em></h2>
           <p class="modal-sub" id="onboarding-sub">saywhen types what you say into your terminal or coding assistant. No buttons, no hotkeys. It only listens while you are looking at the screen and talking.</p>
           <button id="onboarding-close-btn" class="modal-close" aria-label="Close">

@@ -1,10 +1,27 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
+import { initByokSettings } from './byok';
+import { initLicenseSettings } from './license-ui';
+import { historyCardModel, highlightMatch, historyRows } from './ui/history-view';
+import { densityMode, onboardingProgress, quietHoursSummary } from './ui/product-views';
+import { formatProfileLines, formatSnippetLines, parseProfileLines, parseSnippetLines } from './product-settings';
+import {
+  acceleratorFromCodes,
+  escapeHtml,
+  formatAccelerator,
+  formatCountdownSec,
+  formatDurationMs,
+  formatSignedDeg,
+  formatTriggerSource,
+  splitAllowlist,
+} from './text-format';
+import { classifyHeadGesture, computeMar, extractHeadPose, medianValue } from './vision-math';
+import { chooseVisionTickMs, VISION_TICK_ACTIVE_MS, type VisionPowerMode } from './vision-budget';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
 import { playWakeChime, unlockChimeOnFirstInteraction } from './chime';
-import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
+import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState, switchTab } from './ui';
 import { initSetupChecklist, reopenSetupChecklist, updateSetupChecklist } from './setup';
 import { initCommandPalette } from './commands';
 import { initIntro } from './intro';
@@ -75,6 +92,20 @@ interface DictationConfig {
   uiPalette: string;
   moodColors: boolean;
   customVocab: string;
+  snippets?: { trigger: string; expansion: string }[];
+  appProfiles?: { app: string; sendMode?: SendMode; extraVocab?: string; language?: string }[];
+  visionPowerMode?: VisionPowerMode;
+  transcriptionLanguage?: string;
+  licenseEnforcement?: string;
+  licenseEndpoint?: string;
+  quietHoursEnabled?: boolean;
+  quietHoursStartMinute?: number;
+  quietHoursEndMinute?: number;
+  spokenPunctuation?: boolean;
+  capitalizeSentences?: boolean;
+  hudAnchor?: string;
+  updateChannel?: string;
+  diagnosticsOptIn?: boolean;
   historyPersistenceEnabled: boolean;
   llmCleanupEnabled: boolean;
   llmEndpointUrl: string;
@@ -92,6 +123,7 @@ interface VisionTelemetryPayload {
   pitch: number;
   jawOpen: number;
   gesture: string;
+  localMinute?: number;
 }
 
 interface ModelInfo {
@@ -264,6 +296,20 @@ let currentConfig: DictationConfig = {
   uiPalette: 'saywhen',
   moodColors: true,
   customVocab: '',
+  snippets: [],
+  appProfiles: [],
+  visionPowerMode: 'auto',
+  transcriptionLanguage: 'en',
+  licenseEnforcement: 'off',
+  licenseEndpoint: '',
+  quietHoursEnabled: false,
+  quietHoursStartMinute: 22 * 60,
+  quietHoursEndMinute: 7 * 60,
+  spokenPunctuation: false,
+  capitalizeSentences: false,
+  hudAnchor: 'bottom-center',
+  updateChannel: 'stable',
+  diagnosticsOptIn: false,
   historyPersistenceEnabled: true,
   llmCleanupEnabled: false,
   llmEndpointUrl: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -298,9 +344,6 @@ let releaseVisionKeepAlive: (() => void) | null = null;
 // rAF stops entirely when the main window is hidden or occluded, and main-thread
 // timers get throttled, but messages posted from a dedicated worker keep arriving.
 // This is what lets the camera gate keep working while saywhen runs in the background.
-const VISION_TICK_ACTIVE_MS = 66; // ~15.1 FPS when armed, listening, or facing screen
-const VISION_TICK_IDLE_AWAY_MS = 125; // 8.0 FPS when face present in IDLE but turned away > 3s
-const VISION_TICK_IDLE_NO_FACE_MS = 200; // 5.0 FPS when no face in frame > 3s (66.7% fewer inferences)
 let currentVisionTickMs = VISION_TICK_ACTIVE_MS;
 let lastFaceOnScreenTimestamp = 0;
 let currentPipelineState = 'IDLE';
@@ -467,6 +510,7 @@ const themeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[d
 const toggleHighContrast = document.getElementById('toggle-high-contrast') as HTMLInputElement | null;
 const toggleReduceMotion = document.getElementById('toggle-reduce-motion') as HTMLInputElement | null;
 const zoomButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-ui-zoom]'));
+const densityButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-density]'));
 const hotkeyRecordBtn = document.getElementById('hotkey-record-btn') as HTMLButtonElement | null;
 const hotkeyResetBtn = document.getElementById('hotkey-reset-btn') as HTMLButtonElement | null;
 const aboutVersion = document.getElementById('about-version');
@@ -495,11 +539,6 @@ const toggleSessionMetrics = document.getElementById('toggle-session-metrics') a
 const toggleSaveAudio = document.getElementById('toggle-save-audio') as HTMLInputElement;
 
 let facingScreenLatched = false;
-
-function formatSignedDeg(deg: number): string {
-  const rounded = Math.abs(deg) < 0.05 ? 0 : deg;
-  return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(1)}°`;
-}
 
 function updateCalibrationDisplay() {
   if (!valCalibration) return;
@@ -603,10 +642,13 @@ function filterUtteranceFeed() {
   const cards = transcriptList.querySelectorAll<HTMLElement>('.utterance-card');
   for (const card of cards) {
     const hay = card.dataset.searchText || '';
-    if (!q || hay.includes(q)) {
-      card.classList.remove('hidden');
-    } else {
-      card.classList.add('hidden');
+    const visible = !q || hay.includes(q) || (q.startsWith('app:') && hay.includes(q.slice(4)));
+    card.classList.toggle('hidden', !visible);
+    const textEl = card.querySelector('.utterance-text');
+    const plain = card.dataset.plainText || '';
+    if (textEl) {
+      if (q && !q.startsWith('app:') && visible) textEl.innerHTML = highlightMatch(plain, q);
+      else textEl.textContent = plain;
     }
   }
 }
@@ -703,6 +745,9 @@ function syncOnboardingBadges() {
     obCameraBadge.textContent = cameraRunning ? 'On' : 'Off';
     obCameraBadge.classList.toggle('ob-ok', cameraRunning);
   }
+  const ready = [obModelBadge?.classList.contains('ob-ok'), obMicBadge?.classList.contains('ob-ok'), obCameraBadge?.classList.contains('ob-ok'), accessibilityPermissionTrusted].filter(Boolean).length;
+  const progress = document.getElementById('onboarding-progress');
+  if (progress) progress.textContent = onboardingProgress(ready, 4);
   syncPracticeControls();
 }
 
@@ -890,8 +935,35 @@ function initZoom() {
   }
 }
 
+function applyDensity(mode: string, persist = true) {
+  const density = densityMode(mode);
+  document.documentElement.dataset.density = density;
+  for (const button of densityButtons) {
+    const on = button.dataset.density === density;
+    button.classList.toggle('is-selected', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  if (persist) {
+    try {
+      localStorage.setItem('saywhen-density', density);
+    } catch {
+      // Storage can be unavailable; the choice still applies for this session.
+    }
+  }
+}
+
 function initTheme() {
   applyTheme(readThemeChoice(), false);
+  let savedDensity = 'comfortable';
+  try {
+    savedDensity = localStorage.getItem('saywhen-density') || 'comfortable';
+  } catch {
+    savedDensity = 'comfortable';
+  }
+  applyDensity(savedDensity, false);
+  for (const button of densityButtons) {
+    button.addEventListener('click', () => applyDensity(button.dataset.density || 'comfortable', true));
+  }
   applyContrast(localStorage.getItem('saywhen-contrast') === 'high', false);
   applyMotion(localStorage.getItem('saywhen-motion') === 'reduced', false);
   toggleHighContrast?.addEventListener('change', () => {
@@ -908,20 +980,6 @@ function initTheme() {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (readThemeChoice() === 'system') applyTheme('system', false);
   });
-}
-
-function splitAllowlist(value: string): string[] {
-  const seen = new Set<string>();
-  const items: string[] = [];
-  for (const raw of value.split(',')) {
-    const name = raw.trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push(name);
-  }
-  return items;
 }
 
 function renderAllowlistChips() {
@@ -1031,21 +1089,11 @@ function updateSettingsNav() {
 let recordingHotkey = false;
 let hotkeyKeyHandler: ((event: KeyboardEvent) => void) | null = null;
 
-function formatAccelerator(accelerator: string): string {
-  const parts = (accelerator || 'Alt+Space').split('+');
-  const labels: Record<string, string> = isMac
-    ? { Cmd: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧' }
-    : { Cmd: 'Win', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
-  return parts
-    .map((part) => labels[part] ?? (part === 'Space' ? 'Space' : part.replace(/^Key/, '')))
-    .join(' + ');
-}
-
 function renderHotkeyButton() {
   if (!hotkeyRecordBtn) return;
   hotkeyRecordBtn.textContent = recordingHotkey
     ? 'Press keys...'
-    : formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space');
+    : formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space', isMac);
   hotkeyRecordBtn.classList.toggle('is-recording', recordingHotkey);
   try {
     localStorage.setItem('saywhen-hotkey', currentConfig.hotkeyAccelerator || 'Alt+Space');
@@ -1064,14 +1112,7 @@ function stopHotkeyRecording() {
 }
 
 function acceleratorFromEvent(event: KeyboardEvent): string | null {
-  const modifiers: string[] = [];
-  if (event.metaKey) modifiers.push('Cmd');
-  if (event.ctrlKey) modifiers.push('Ctrl');
-  if (event.altKey) modifiers.push('Alt');
-  if (event.shiftKey) modifiers.push('Shift');
-  if (modifiers.length === 0) return null;
-  if (/^(Meta|Control|Alt|Shift)/.test(event.code)) return null;
-  return [...modifiers, event.code].join('+');
+  return acceleratorFromCodes(event);
 }
 
 function beginHotkeyRecording() {
@@ -1116,7 +1157,7 @@ async function saveHotkey(accelerator: string) {
 function renderGuideHotkey() {
   const row = document.getElementById('guide-hotkey-row');
   if (!row) return;
-  const keys = formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space')
+  const keys = formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space', isMac)
     .split(' + ')
     .map((part) => `<kbd>${escapeHtml(part)}</kbd>`)
     .join(' ');
@@ -1345,17 +1386,6 @@ async function copyText(text: string) {
   if (!copied) throw new Error('Clipboard is not available');
 }
 
-function formatDurationMs(ms: number): string {
-  const totalTenths = Math.floor(ms / 100);
-  const tenths = totalTenths % 10;
-  const totalSeconds = Math.floor(totalTenths / 10);
-  const seconds = totalSeconds % 60;
-  const minutes = Math.floor(totalSeconds / 60);
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-  return `${mm}:${ss}.${tenths}`;
-}
-
 let actionPulseTimer: number | null = null;
 
 function pulseAction(kind: 'sent' | 'cancel' | 'error') {
@@ -1450,10 +1480,6 @@ function syncSetupChecklist() {
     spoke: setupHasSpoken,
   });
   syncOnboardingBadges();
-}
-
-function formatCountdownSec(ms: number): string {
-  return `${(ms / 1000).toFixed(1)} s`;
 }
 
 function updateLlmPrivacyBadge() {
@@ -1751,7 +1777,7 @@ function updatePipelineUiState(
       ? `Look at your screen and start talking, or start with "${wakeWordLabel()}" from anywhere.`
       : cameraRunning
       ? 'Look at your screen and start talking. Look away and it stops listening.'
-      : `Turn on the camera to talk hands-free, or press ${formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space')
+      : `Turn on the camera to talk hands-free, or press ${formatAccelerator(currentConfig.hotkeyAccelerator || 'Alt+Space', isMac)
           .split(' + ')
           .map((part) => `<kbd>${escapeHtml(part)}</kbd>`)
           .join(' ')}`;
@@ -1763,29 +1789,6 @@ function updatePipelineUiState(
     stopListenBtn.disabled = true;
     cancelListenBtn.disabled = true;
   }
-}
-
-// MediaPipe Vision Gate Math
-function distance2D(a: NormalizedLandmark, b: NormalizedLandmark): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-// When the head turns away from the camera the mouth looks narrower (by cos(yaw)) while the
-// lip gap stays about the same, so a plain ratio grows with head turn. Undo that so the
-// resting baseline and speech thresholds mean the same thing at 0 and at 60 degrees.
-const MAR_YAW_CORRECTION_MIN_COS = 0.4; // about 66 degrees
-
-function computeMAR(landmarks: NormalizedLandmark[], cameraYawDeg = 0): number {
-  const vCenter = distance2D(landmarks[13], landmarks[14]);
-  const vLeft = distance2D(landmarks[82], landmarks[87]);
-  const vRight = distance2D(landmarks[312], landmarks[317]);
-  const horizSeen = distance2D(landmarks[78], landmarks[308]);
-  const cosYaw = Math.max(MAR_YAW_CORRECTION_MIN_COS, Math.cos((cameraYawDeg * Math.PI) / 180));
-  const horiz = horizSeen / cosYaw;
-  if (horiz < 1e-6) return 0;
-  return (vCenter + vLeft + vRight) / (3.0 * horiz);
 }
 
 // Must match turn_taking.rs (SIDE_CAMERA_YAW_*_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG).
@@ -1803,79 +1806,19 @@ let faceAwaySince = 0;
 // MediaPipe Face Landmarker outputs a 4x4 column-major facial transform.
 // Use the rotation row (r20, r21, r22) so pitch moves on nods; the old third-column
 // asin() pitch barely changed during vertical head motion in practice.
-function extractHeadPose(matrixData: number[]): { yaw: number; pitch: number } {
-  if (matrixData.length < 12) {
-    return { yaw: 0, pitch: 0 };
-  }
-  const r20 = matrixData[2];
-  const r21 = matrixData[6];
-  const r22 = matrixData[10];
-  const yawRad = Math.atan2(-r20, Math.hypot(r21, r22));
-  const pitchRad = Math.atan2(r21, r22);
-  return {
-    yaw: yawRad * (180 / Math.PI),
-    pitch: pitchRad * (180 / Math.PI),
-  };
-}
-
-function countAngleReversals(values: number[], minSwingDeg: number): number {
-  if (values.length < 3) return 0;
-  let anchor = values[0];
-  let lastDir = 0; // +1 increasing, -1 decreasing
-  let reversals = 0;
-
-  for (let i = 1; i < values.length; i++) {
-    const v = values[i];
-    const diff = v - anchor;
-    if (lastDir === 0) {
-      if (Math.abs(diff) >= minSwingDeg) {
-        lastDir = diff > 0 ? 1 : -1;
-        anchor = v;
-      }
-    } else if (lastDir === 1) {
-      if (v > anchor) {
-        anchor = v;
-      } else if (anchor - v >= minSwingDeg) {
-        reversals += 1;
-        lastDir = -1;
-        anchor = v;
-      }
-    } else {
-      if (v < anchor) {
-        anchor = v;
-      } else if (v - anchor >= minSwingDeg) {
-        reversals += 1;
-        lastDir = 1;
-        anchor = v;
-      }
-    }
-  }
-  return reversals;
-}
-
 function detectHeadGesture(now: number): string {
   if (now - lastGestureTime < 1200 || poseWindow.length < 6) {
     return 'none';
   }
-  const yaws = poseWindow.map((p) => p.yaw);
-  const pitches = poseWindow.map((p) => p.pitch);
-  const yawSpan = Math.max(...yaws) - Math.min(...yaws);
-  const pitchSpan = Math.max(...pitches) - Math.min(...pitches);
-  const yawReversals = countAngleReversals(yaws, 10.0);
-  const pitchReversals = countAngleReversals(pitches, 7.5);
-
-  // Require real back-and-forth oscillation so a smooth glance across the screen never cancels speech.
-  if (yawReversals >= 2 && yawSpan >= 18.0 && yawSpan > pitchSpan * 1.35) {
+  const gesture = classifyHeadGesture(
+    poseWindow.map((p) => p.yaw),
+    poseWindow.map((p) => p.pitch),
+  );
+  if (gesture !== 'none') {
     lastGestureTime = now;
     poseWindow.length = 0;
-    return 'shake';
   }
-  if (pitchReversals >= 1 && pitchSpan >= 11.0 && pitchSpan > yawSpan * 1.15) {
-    lastGestureTime = now;
-    poseWindow.length = 0;
-    return 'nod';
-  }
-  return 'none';
+  return gesture;
 }
 
 async function ensureFaceLandmarker(): Promise<FaceLandmarker> {
@@ -1978,12 +1921,6 @@ function setCalibrateLabel(text: string) {
   else calibrateVisionBtn.textContent = text;
 }
 
-function medianValue(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
 function finalizeVisionCalibration() {
   calibratingUntilTimestamp = 0;
   calibrateVisionBtn.disabled = false;
@@ -2068,7 +2005,7 @@ function processVisionFrame(now: number) {
         pitch = pose.pitch;
       }
 
-      const mar = computeMAR(landmarks, yaw);
+      const mar = computeMar(landmarks, yaw);
 
       marWindow.push({ timestamp: now, mar });
       while (marWindow.length > 0 && now - marWindow[0].timestamp > 320) {
@@ -2186,13 +2123,14 @@ function processVisionFrame(now: number) {
 
       // Adaptive FPS scheduling: 15 FPS when active or on-screen, 8 FPS when face away > 3s in IDLE
       const pipelineActive = currentPipelineState !== 'IDLE' || isCalibrating;
-      const desiredTickMs =
-        !currentConfig.adaptiveFpsEnabled ||
-        pipelineActive ||
-        facingScreen ||
-        now - lastFaceOnScreenTimestamp < 3000
-          ? VISION_TICK_ACTIVE_MS
-          : VISION_TICK_IDLE_AWAY_MS;
+      const desiredTickMs = chooseVisionTickMs(
+        currentConfig.visionPowerMode || 'auto',
+        currentConfig.adaptiveFpsEnabled !== false,
+        pipelineActive,
+        true,
+        facingScreen,
+        now - lastFaceOnScreenTimestamp,
+      );
       setVisionTickerInterval(desiredTickMs);
 
       if (renderUi) {
@@ -2239,6 +2177,7 @@ function processVisionFrame(now: number) {
           pitch,
           jawOpen,
           gesture,
+          localMinute: new Date().getHours() * 60 + new Date().getMinutes(),
         } satisfies VisionTelemetryPayload,
       });
     } else {
@@ -2247,12 +2186,14 @@ function processVisionFrame(now: number) {
       }
 
       const pipelineActive = currentPipelineState !== 'IDLE' || isCalibrating;
-      const desiredTickMs =
-        !currentConfig.adaptiveFpsEnabled ||
-        pipelineActive ||
-        now - lastFaceOnScreenTimestamp < 3000
-          ? VISION_TICK_ACTIVE_MS
-          : VISION_TICK_IDLE_NO_FACE_MS;
+      const desiredTickMs = chooseVisionTickMs(
+        currentConfig.visionPowerMode || 'auto',
+        currentConfig.adaptiveFpsEnabled !== false,
+        pipelineActive,
+        false,
+        false,
+        now - lastFaceOnScreenTimestamp,
+      );
       setVisionTickerInterval(desiredTickMs);
 
       if (renderUi) {
@@ -2282,6 +2223,7 @@ function processVisionFrame(now: number) {
           pitch: 0,
           jawOpen: 0,
           gesture: 'none',
+          localMinute: new Date().getHours() * 60 + new Date().getMinutes(),
         } satisfies VisionTelemetryPayload,
       });
     }
@@ -2365,32 +2307,6 @@ function drawVadChart() {
   ctx.fill();
 }
 
-// App names, window titles and error text come from other processes: never put them in HTML raw.
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatTriggerSource(source: string): string {
-  switch (source) {
-    case 'hands_free_multimodal':
-      return 'Hands-free';
-    case 'hotkey':
-      return 'Hotkey';
-    case 'manual':
-    case 'manual_stop':
-      return 'Manual';
-    case 'simulated_demo':
-      return 'Simulated';
-    default:
-      return String(source || '').replace(/_/g, ' ');
-  }
-}
-
 function appendUtteranceCard(
   ev: UtteranceCompleteEvent,
   options?: { fromHistory?: boolean }
@@ -2421,35 +2337,39 @@ function appendUtteranceCard(
 
   const card = document.createElement('div');
   card.className = 'utterance-card';
-  card.dataset.searchText = `${cleanup.cleanedText} ${cleanup.rawText} ${targetPolicy.appName} ${triggerSource}`.toLowerCase();
-
-  const timeStr = new Date(timestampMs || Date.now()).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
   const sourceLabel = formatTriggerSource(triggerSource);
-  const displayTranscript =
-    cleanup.cleanedText.length > 0 ? cleanup.cleanedText : '(No speech detected in audio segment)';
 
-  const injectBadgeHtml = injection?.success
-    ? `<span class="u-badge u-badge-ok" title="${escapeHtml(injection.message)}">${injection.pressedEnter ? 'Sent to' : 'Pasted into'} ${escapeHtml(injection.targetApp || targetPolicy.appName)}</span>`
-    : injectionError
-      ? `<span class="u-badge" title="${escapeHtml(injectionError)}">Kept on clipboard</span>`
-      : `<span class="u-badge">Transcribed</span>`;
-
-  const cleanupBadgeHtml = cleanup.modified
-    ? `<span class="u-badge" title="${escapeHtml(cleanup.rawText)}">Cleaned</span>`
-    : '';
+  const model = historyCardModel({
+    cleanedText: cleanup.cleanedText,
+    rawText: cleanup.rawText,
+    appName: targetPolicy.appName,
+    triggerSource,
+    timestampMs: timestampMs || Date.now(),
+    nowMs: Date.now(),
+    inferenceMs: transcription.inferenceMs,
+    pressedEnter: Boolean(injection?.pressedEnter),
+    injected: Boolean(injection?.success),
+    failed: Boolean(injectionError),
+    modified: cleanup.modified,
+    destructive: Boolean(cleanup.isDestructiveCommand),
+    sourceLabel,
+  });
+  card.dataset.searchText = model.searchText;
+  card.dataset.dayGroup = model.dayGroup;
+  card.dataset.plainText = model.text;
+  card.dataset.timestampMs = String(timestampMs || Date.now());
 
   card.innerHTML = `
+    <div class="utterance-kicker">${escapeHtml(model.dayGroup)} · ${escapeHtml(model.relativeLabel)} · ${escapeHtml(model.wordLabel)}</div>
     <div class="utterance-text"></div>
     <div class="utterance-meta">
-      <span>${escapeHtml(timeStr)}</span>
-      <span>${escapeHtml(sourceLabel)}</span>
-      <span title="Whisper inference time">${transcription.inferenceMs} ms</span>
+      <span>${escapeHtml(model.timeLabel)}</span>
+      <span>${escapeHtml(model.sourceLabel)}</span>
+      <span title="Speech model time">${escapeHtml(model.inferenceLabel)}</span>
       <div class="utterance-badges">
-        ${injectBadgeHtml}
-        ${cleanupBadgeHtml}
+        <span class="u-badge ${injection?.success ? 'u-badge-ok' : ''}">${escapeHtml(model.deliveryLabel)}</span>
+        ${model.cleaned ? `<span class="u-badge" title="${escapeHtml(model.rawTitle)}">Cleaned</span>` : ''}
+        ${model.destructive ? '<span class="u-badge u-badge-danger">Risky command</span>' : ''}
       </div>
     </div>
     <div class="utterance-actions">
@@ -2460,7 +2380,12 @@ function appendUtteranceCard(
   `;
 
   const textEl = card.querySelector('.utterance-text') as HTMLElement;
-  textEl.textContent = displayTranscript;
+  const query = historySearchInput?.value?.trim() ?? '';
+  if (query && !query.toLowerCase().startsWith('app:')) {
+    textEl.innerHTML = highlightMatch(model.text, query);
+  } else {
+    textEl.textContent = model.text;
+  }
 
   let flagged = Boolean(ev.flaggedFalseTrigger);
   const flagBtn = card.querySelector('.btn-flag-false') as HTMLButtonElement;
@@ -2519,7 +2444,90 @@ function appendUtteranceCard(
   });
 
   transcriptList.prepend(card);
+  refreshHistoryDayHeadings();
   filterUtteranceFeed();
+}
+
+function sortHistoryCards() {
+  const cards = Array.from(transcriptList.querySelectorAll<HTMLElement>('.utterance-card'));
+  cards.sort((a, b) => Number(b.dataset.timestampMs || 0) - Number(a.dataset.timestampMs || 0));
+  for (const card of cards.reverse()) transcriptList.prepend(card);
+  refreshHistoryDayHeadings();
+}
+
+function refreshHistoryDayHeadings() {
+  const cards = Array.from(transcriptList.querySelectorAll<HTMLElement>('.utterance-card'));
+  transcriptList.querySelectorAll('.history-day').forEach((el) => el.remove());
+  const rows = historyRows(cards.map((card) => card.dataset.dayGroup || ''));
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (row.kind !== 'day') continue;
+    const next = rows.slice(i + 1).find((item) => item.kind === 'card');
+    if (!next || next.kind !== 'card') continue;
+    const heading = document.createElement('div');
+    heading.className = 'history-day';
+    heading.textContent = row.label;
+    cards[next.index].before(heading);
+  }
+}
+
+function minuteToClock(minute: number): string {
+  const clamped = Math.max(0, Math.min(1439, minute));
+  const hours = Math.floor(clamped / 60);
+  const mins = clamped % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function clockToMinute(value: string): number {
+  const [hours, mins] = value.split(':').map((part) => parseInt(part, 10));
+  if (!Number.isFinite(hours) || !Number.isFinite(mins)) return 0;
+  return Math.max(0, Math.min(1439, hours * 60 + mins));
+}
+
+function applyProductFields(config: DictationConfig) {
+  const snippets = document.getElementById('snippets-input') as HTMLTextAreaElement | null;
+  const profiles = document.getElementById('app-profiles-input') as HTMLTextAreaElement | null;
+  const power = document.getElementById('vision-power-select') as HTMLSelectElement | null;
+  const language = document.getElementById('language-select') as HTMLSelectElement | null;
+  if (snippets) snippets.value = formatSnippetLines(config.snippets);
+  if (profiles) {
+    profiles.value = formatProfileLines(
+      (config.appProfiles ?? []).map((item) => ({
+        app: item.app,
+        sendMode: item.sendMode,
+        extraVocab: item.extraVocab ?? '',
+        language: item.language,
+      })),
+    );
+  }
+  if (power) power.value = config.visionPowerMode || 'auto';
+  if (language) language.value = config.transcriptionLanguage || 'en';
+  const enforcement = document.getElementById('license-enforcement') as HTMLSelectElement | null;
+  const endpoint = document.getElementById('license-endpoint') as HTMLInputElement | null;
+  if (enforcement) enforcement.value = config.licenseEnforcement || 'off';
+  if (endpoint) endpoint.value = config.licenseEndpoint || '';
+  const quiet = document.getElementById('toggle-quiet-hours') as HTMLInputElement | null;
+  const quietStart = document.getElementById('quiet-start') as HTMLInputElement | null;
+  const quietEnd = document.getElementById('quiet-end') as HTMLInputElement | null;
+  const punct = document.getElementById('toggle-spoken-punctuation') as HTMLInputElement | null;
+  const caps = document.getElementById('toggle-capitalize') as HTMLInputElement | null;
+  const anchor = document.getElementById('hud-anchor') as HTMLSelectElement | null;
+  const channel = document.getElementById('update-channel') as HTMLSelectElement | null;
+  const diagnostics = document.getElementById('toggle-diagnostics') as HTMLInputElement | null;
+  if (quiet) quiet.checked = Boolean(config.quietHoursEnabled);
+  if (quietStart) quietStart.value = minuteToClock(config.quietHoursStartMinute ?? 22 * 60);
+  if (quietEnd) quietEnd.value = minuteToClock(config.quietHoursEndMinute ?? 7 * 60);
+  if (punct) punct.checked = Boolean(config.spokenPunctuation);
+  if (caps) caps.checked = Boolean(config.capitalizeSentences);
+  if (anchor) anchor.value = config.hudAnchor || 'bottom-center';
+  if (channel) channel.value = config.updateChannel || 'stable';
+  if (diagnostics) diagnostics.checked = Boolean(config.diagnosticsOptIn);
+  const quietNote = document.getElementById('quiet-hours-summary');
+  if (quietNote && quietStart && quietEnd) {
+    quietNote.textContent = quietHoursSummary(Boolean(quiet?.checked), quietStart.value, quietEnd.value);
+  }
+  toggleHandsFree.checked = config.handsFreeEnabled !== false;
+  renderSendMode();
 }
 
 async function syncConfigToBackend() {
@@ -2538,6 +2546,20 @@ async function syncConfigToBackend() {
     perAppRulesEnabled: togglePerApp.checked,
     autoSendAllowlist: allowlist,
     customVocab: customVocabInput.value.trim(),
+    snippets: parseSnippetLines((document.getElementById('snippets-input') as HTMLTextAreaElement | null)?.value || ''),
+    appProfiles: parseProfileLines((document.getElementById('app-profiles-input') as HTMLTextAreaElement | null)?.value || ''),
+    visionPowerMode: ((document.getElementById('vision-power-select') as HTMLSelectElement | null)?.value || 'auto') as VisionPowerMode,
+    transcriptionLanguage: (document.getElementById('language-select') as HTMLSelectElement | null)?.value || 'en',
+    licenseEnforcement: (document.getElementById('license-enforcement') as HTMLSelectElement | null)?.value || 'off',
+    licenseEndpoint: (document.getElementById('license-endpoint') as HTMLInputElement | null)?.value.trim() || '',
+    quietHoursEnabled: (document.getElementById('toggle-quiet-hours') as HTMLInputElement | null)?.checked || false,
+    quietHoursStartMinute: clockToMinute((document.getElementById('quiet-start') as HTMLInputElement | null)?.value || '22:00'),
+    quietHoursEndMinute: clockToMinute((document.getElementById('quiet-end') as HTMLInputElement | null)?.value || '07:00'),
+    spokenPunctuation: (document.getElementById('toggle-spoken-punctuation') as HTMLInputElement | null)?.checked || false,
+    capitalizeSentences: (document.getElementById('toggle-capitalize') as HTMLInputElement | null)?.checked || false,
+    hudAnchor: (document.getElementById('hud-anchor') as HTMLSelectElement | null)?.value || 'bottom-center',
+    updateChannel: (document.getElementById('update-channel') as HTMLSelectElement | null)?.value || 'stable',
+    diagnosticsOptIn: (document.getElementById('toggle-diagnostics') as HTMLInputElement | null)?.checked || false,
     // Enter is decided by the send mode now; app rules and the destructive guard still apply.
     autoPressEnter: true,
     sendMode: currentConfig.sendMode,
@@ -2624,6 +2646,7 @@ async function initApp() {
     previewCountdownDisplay.textContent = formatCountdownSec(currentConfig.previewCountdownMs);
     allowlistInput.value = currentConfig.autoSendAllowlist.join(', ');
     customVocabInput.value = currentConfig.customVocab || '';
+    applyProductFields(currentConfig);
 
     toggleCleanup.checked = currentConfig.cleanupEnabled;
     togglePerApp.checked = currentConfig.perAppRulesEnabled;
@@ -2667,6 +2690,7 @@ async function initApp() {
     updateCalibrationDisplay();
     updateHistoryBadgeDisplay();
     setupBackendReady = true;
+    void refreshDeskStats();
     syncSetupChecklist();
 
     if (Array.isArray(snapshot.recentHistory) && snapshot.recentHistory.length > 0) {
@@ -2798,6 +2822,15 @@ async function initApp() {
     }
   });
 
+  await listen<{ message: string }>('voice-command', (event) => {
+    const message = event.payload?.message || 'Updated from your voice.';
+    errorBannerText.textContent = message;
+    const hint = document.getElementById('error-banner-hint');
+    if (hint) hint.textContent = 'Nothing was typed.';
+    errorBanner.classList.remove('hidden');
+    pulseAction('sent');
+  });
+
   await listen<string>('pipeline-error', (event) => {
     if (activeVoiceEnrollStep !== null) {
       const retryStep = activeVoiceEnrollStep;
@@ -2834,6 +2867,7 @@ async function initApp() {
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
     updateHistoryBadgeDisplay();
+    applyProductFields(currentConfig);
   });
 
   await listen<string[]>('audio-devices-changed', (event) => {
@@ -3235,6 +3269,66 @@ clearTerminalBtn.addEventListener('click', () => {
 
 historySearchInput.addEventListener('input', filterUtteranceFeed);
 
+document.getElementById('export-settings-btn')?.addEventListener('click', async () => {
+  try {
+    const raw = await invoke<string>('export_settings');
+    const blob = new Blob([raw], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'saywhen-settings.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showError(String(err));
+  }
+});
+
+document.getElementById('import-settings-btn')?.addEventListener('click', () => {
+  document.getElementById('import-settings-file')?.click();
+});
+
+document.getElementById('import-settings-file')?.addEventListener('change', async (event) => {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try {
+    const raw = await file.text();
+    const updated = await invoke<DictationConfig>('import_settings', { raw });
+    currentConfig = updated;
+    applyProductFields(currentConfig);
+    showError('Settings imported on this computer.');
+  } catch (err) {
+    showError(String(err));
+  }
+});
+
+async function refreshDeskStats() {
+  const badge = document.getElementById('desk-stats-badge');
+  if (!badge) return;
+  try {
+    const stats = await invoke<{ utterances: number; words: number; topApp: string }>('desk_stats');
+    const app = stats.topApp ? ` · ${stats.topApp}` : '';
+    badge.textContent = `${stats.utterances} said · ${stats.words} words${app}`;
+  } catch {
+    badge.textContent = 'Stats stay on this computer';
+  }
+}
+
+document.getElementById('export-history-btn')?.addEventListener('click', async () => {
+  try {
+    const markdown = await invoke<string>('export_utterance_history', { format: 'markdown' });
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'saywhen-history.md';
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showError(String(err));
+  }
+});
+
 clearFeedBtn.addEventListener('click', () => {
   lastTranscriptText = '';
   transcriptList.innerHTML = '';
@@ -3510,12 +3604,58 @@ function applyDocumentationDemoState(demoMode: string) {
     updatePipelineUiState('IDLE', 0, 0);
     syncOnboardingBadges();
     openOnboardingModal();
+  } else if (demoMode === 'desk') {
+    switchTab('preferences');
+    document.getElementById('pref-listening')?.scrollIntoView();
+    const stats = document.getElementById('desk-stats-badge');
+    if (stats) stats.textContent = '12 said · 86 words · Terminal';
+  } else if (demoMode === 'history') {
+    appendUtteranceCard({
+      transcription: {
+        text: 'git clean -fd',
+        audioDurationMs: 1100,
+        inferenceMs: 140,
+        rtf: 0.12,
+        modelUsed: 'tiny.en',
+        peakVadProb: 0.9,
+        endPhraseTriggered: false,
+      },
+      cleanup: {
+        rawText: 'git clean dash f d',
+        cleanedText: 'git clean -fd',
+        modified: true,
+        modeUsed: 'local_dev_rules',
+        isDestructiveCommand: true,
+      },
+      targetPolicy: {
+        appName: 'Terminal',
+        policy: 'paste_only',
+        willPressEnter: false,
+        reason: 'Risky command',
+      },
+      injection: null,
+      injectionError: null,
+      triggerSource: 'hotkey',
+      timestampMs: Date.now() - 26 * 60 * 60 * 1000,
+    });
+    if (historySearchInput) historySearchInput.value = 'git';
+    sortHistoryCards();
+    filterUtteranceFeed();
+    document.getElementById('transcript-list')?.scrollIntoView({ block: 'center' });
+  } else if (demoMode === 'license') {
+    switchTab('preferences');
+    document.getElementById('pref-license')?.scrollIntoView({ block: 'start' });
+  } else if (demoMode === 'menu') {
+    switchTab('preferences');
+    document.getElementById('menu-bar-preview')?.scrollIntoView({ block: 'center' });
   }
 }
 
 initSettingsUi();
 initCommandPalette();
 initIntro();
+initByokSettings();
+initLicenseSettings();
 
 const urlParams = new URLSearchParams(window.location.search);
 const demoParam = urlParams.get('demo');

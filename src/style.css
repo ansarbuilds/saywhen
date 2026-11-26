@@ -3066,3 +3066,33 @@ html[data-motion='reduced'] *::after {
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+
+/* Shared rhythm for controls added after the first redesign.
+   Focus rings, time fields, and the history count sit on the same tokens. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--on-dark) 70%, white);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+input[type='time'].text-control,
+select.text-control {
+  min-height: 36px;
+  border-radius: var(--r-md);
+}
+
+#desk-stats-badge {
+  font-variant-numeric: tabular-nums;
+}

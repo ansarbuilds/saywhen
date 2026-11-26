@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+Not in the v0.2.1 installer. These commits are on main or in open pull requests.
+
+- Parakeet TDT 0.6B v2 and Whisper Large v3 Turbo can be downloaded as speech models. A 3-phrase voice enrollment teaches the wake word.
+- Optional AI clean-up no longer passes an API key to `curl`. The key is stored in the system keychain on macOS and Windows, or in a private file, and remote endpoints must use HTTPS.
+- Snippets, per-app send styles, history export, whole-utterance voice commands, a camera power setting, and a language choice for multilingual models.
+- Camera power Low schedules 480 frames a minute while you face the screen, against 909 at the normal tick. That is a 47.2% cut in scheduled frames, not a battery measurement. Listening still uses the faster tick.
+- A local 14-day trial and a license interface. Enforcement is off. The development key checker is public and is not a payment provider.
+- A training script for a talking-to-the-screen classifier. It does not ship weights and does not claim an accuracy until you give it a labeled file.
+
 ## v0.2.1 beta
 
 - Pinned Whisper Tiny/Base model downloads to a specific repository revision with verified SHA-256 checksums, bounded retries and GGML validation.

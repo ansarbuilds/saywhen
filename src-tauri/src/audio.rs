@@ -5,12 +5,23 @@ use crate::cleanup::{
 };
 use crate::history::append_history_entry;
 use crate::inject::{
-    default_auto_send_allowlist, detect_frontmost_app, evaluate_app_injection_policy,
-    evaluate_gaze_window_alignment, inject_text_into_focused_app, AppTargetPolicy,
-    InjectionOutcome, InjectionTimingConfig, TargetChangePolicy,
+    detect_frontmost_app, evaluate_app_injection_policy, evaluate_gaze_window_alignment,
+    inject_text_into_focused_app, AppTargetPolicy, InjectionOutcome, TargetChangePolicy,
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
+use crate::license::{
+    evaluate_license, license_allows, LicenseDecision, LicenseEnforcement, LicenseFeature,
+};
+use crate::profiles::{match_app_profile, merge_vocab};
+use crate::secrets::{
+    take_legacy_llm_api_key, validate_secret_value, DefaultSecretStore, SecretStore,
+    LICENSE_KEY_ACCOUNT, LLM_CLEANUP_API_KEY,
+};
+use crate::snippets::apply_snippets;
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
+use crate::voice_commands::{
+    describe_voice_command, parse_voice_command, VoiceCommand, VoiceCommandEvent,
+};
 /// Wake word decision log (terminal, plus a temp file in development builds).
 macro_rules! wake_log {
     ($($arg:tt)*) => {
@@ -18,14 +29,6 @@ macro_rules! wake_log {
     };
 }
 
-use crate::wake_word::{
-    early_wake_verdict_with_profile, effective_wake_word, extract_leading_wake_alias, first_word,
-    matches_voice_profile, merge_into_voice_profile, should_clear_wake_quiet_wait,
-    strip_wake_word_with_profile, wake_holds_turn, wake_vad_threshold, word_count,
-    EarlyWakeVerdict, VoiceProfile, DEFAULT_WAKE_WORD, VOICE_ENROLL_COMMAND_SUFFIXES,
-    WAKE_CHECK_MAX_SAMPLES, WAKE_CHECK_MIN_SAMPLES, WAKE_CHECK_MIN_SAMPLES_ON_PAUSE,
-    WAKE_DIAG_SOUND_LEVEL, WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
-};
 use crate::turn_taking::{
     append_session_metrics_line, detect_system_sleep_or_stall_jump, end_of_turn,
     ends_with_connective, evaluate_arming_hysteresis, evaluate_audio_stream_health,
@@ -34,16 +37,23 @@ use crate::turn_taking::{
     should_auto_start, should_cancel_preview_on_speech, should_count_vad_frame_in_turn,
     silence_countdown_ms, ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs,
     PreviewDeadline, RecordedVisionSample, SendMode, TuningRecordingSidecar, TurnState,
-    TurnTakingConfig, UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
-    DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
-    DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
-    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
-    MAX_CALIBRATED_RESTING_MAR, MAX_CALIBRATED_YAW_OFFSET_DEG, NOD_WAIT_TIMEOUT_MS,
+    TurnTakingConfig, UtteranceMetricsRecord, VisionPowerMode, DEFAULT_ARM_DWELL_MS,
+    DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG, DEFAULT_CALIBRATED_RESTING_MAR,
+    DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS, DEFAULT_MIN_SPEECH_HOTKEY_MS,
+    DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS, NOD_WAIT_TIMEOUT_MS,
     SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
+};
+use crate::wake_word::{
+    early_wake_verdict_with_profile, effective_wake_word, extract_leading_wake_alias, first_word,
+    matches_voice_profile, merge_into_voice_profile, should_clear_wake_quiet_wait,
+    strip_wake_word_with_profile, wake_holds_turn, wake_vad_threshold, word_count,
+    EarlyWakeVerdict, VoiceProfile, VOICE_ENROLL_COMMAND_SUFFIXES, WAKE_CHECK_MAX_SAMPLES,
+    WAKE_CHECK_MIN_SAMPLES, WAKE_CHECK_MIN_SAMPLES_ON_PAUSE, WAKE_DIAG_SOUND_LEVEL,
+    WAKE_REARM_QUIET_MS, WAKE_START_MIN_VAD_FRAMES, WAKE_WORD_TRIGGER,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -51,7 +61,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use voice_activity_detector::VoiceActivityDetector;
 
-const TARGET_SAMPLE_RATE: u32 = 16_000;
+use crate::signal::{downmix_to_mono_f32, resample_to_16k, TARGET_SAMPLE_RATE};
 const PREROLL_SAMPLES: usize = 8_000; // 500 ms at 16 kHz
 const VAD_CHUNK_SAMPLES: usize = 512; // 32 ms at 16 kHz (required by Silero VAD v5)
 const MAX_UTTERANCE_SAMPLES: usize = 16_000 * 60; // 60 seconds cap
@@ -90,6 +100,9 @@ pub struct VisionTelemetryPayload {
     pub pitch: f32,
     pub jaw_open: f32,
     pub gesture: String,
+    /// Local minute of the day, 0 to 1439, from the window clock. Used for quiet hours.
+    #[serde(default)]
+    pub local_minute: Option<u16>,
 }
 
 impl Default for VisionTelemetryPayload {
@@ -105,401 +118,12 @@ impl Default for VisionTelemetryPayload {
             pitch: 0.0,
             jaw_open: 0.0,
             gesture: "none".to_string(),
+            local_minute: None,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DictationConfig {
-    pub hands_free_enabled: bool,
-    pub vad_threshold: f32,
-    pub silence_timeout_ms: u64,
-    #[serde(default = "default_max_silence_timeout_ms")]
-    pub max_silence_timeout_ms: u64,
-    pub auto_stop_on_silence: bool,
-    pub cleanup_enabled: bool,
-    pub preview_enabled: bool,
-    pub preview_countdown_ms: u64,
-    /// How a finished utterance gets sent: "pause" | "nod" | "phrase" | "paste_only".
-    #[serde(default)]
-    pub send_mode: SendMode,
-    /// Talking during the preview countdown cancels it.
-    #[serde(default = "default_true")]
-    pub cancel_on_speech: bool,
-    pub cancel_on_look_away: bool,
-    pub per_app_rules_enabled: bool,
-    pub auto_send_allowlist: Vec<String>,
-    pub auto_inject: bool,
-    pub auto_press_enter: bool,
-    pub use_clipboard_paste: bool,
-    pub preferred_device: Option<String>,
-    /// Show the floating always-on-top HUD pill. Defaulted so older settings files still load.
-    #[serde(default = "default_true")]
-    pub hud_enabled: bool,
-    /// Global push-to-talk / hands-free shortcut, in global-hotkey syntax (for example "Alt+Space").
-    #[serde(default = "default_hotkey_accelerator")]
-    pub hotkey_accelerator: String,
-    /// Action when the focused app changes during the preview countdown ("abort" | "paste_only").
-    #[serde(default)]
-    pub on_target_changed: TargetChangePolicy,
-    /// Base delay (ms) between Cmd/Ctrl+V and pressing Return. Scaled with text length.
-    #[serde(default = "default_enter_delay_ms")]
-    pub enter_delay_ms: u64,
-    /// Optional per-app base Enter delay overrides keyed by app name, bundle id, or exe.
-    #[serde(default)]
-    pub per_app_enter_delay_ms: HashMap<String, u64>,
-    /// Delay (ms) before restoring the previous clipboard if unchanged.
-    #[serde(default = "default_clipboard_restore_delay_ms")]
-    pub clipboard_restore_delay_ms: u64,
-    /// Arming hysteresis enter yaw threshold in degrees (|yaw| <= this to start arming dwell).
-    #[serde(default = "default_arm_yaw_enter_deg")]
-    pub arm_yaw_enter_deg: f32,
-    /// Arming hysteresis exit yaw threshold in degrees (|yaw| > this for disarm_dwell_ms to disarm).
-    #[serde(default = "default_arm_yaw_exit_deg")]
-    pub arm_yaw_exit_deg: f32,
-    /// Arming hysteresis enter pitch threshold in degrees.
-    #[serde(default = "default_arm_pitch_enter_deg")]
-    pub arm_pitch_enter_deg: f32,
-    /// Arming hysteresis exit pitch threshold in degrees.
-    #[serde(default = "default_arm_pitch_exit_deg")]
-    pub arm_pitch_exit_deg: f32,
-    /// Dwell time (ms) inside the enter cone before IDLE -> ARMED so glancing past does not arm.
-    #[serde(default = "default_arm_dwell_ms")]
-    pub arm_dwell_ms: u64,
-    /// Dwell time (ms) outside the exit cone before ARMED -> IDLE so edge poses do not flicker.
-    #[serde(default = "default_disarm_dwell_ms")]
-    pub disarm_dwell_ms: u64,
-    /// Minimum voiced speech duration (ms) in hands-free mode before transcribing.
-    #[serde(default = "default_min_speech_ms")]
-    pub min_speech_ms: u64,
-    /// Minimum voiced speech duration (ms) for hotkey/manual starts.
-    #[serde(default = "default_min_speech_hotkey_ms")]
-    pub min_speech_hotkey_ms: u64,
-    /// Post-roll audio tail (ms) captured after end-of-turn so final words are not clipped.
-    #[serde(default = "default_post_roll_ms")]
-    pub post_roll_ms: u64,
-    /// Opt-in session metrics JSONL log in the OS app data dir (never contains transcript or audio).
-    #[serde(default)]
-    pub session_metrics_enabled: bool,
-    /// Opt-in utterance WAV + JSON sidecar saving to local `recordings/` for tuning.
-    /// Always resets to `false` when the app restarts.
-    #[serde(default)]
-    pub save_tuning_audio_enabled: bool,
-    /// Per-user calibrated neutral head yaw offset in degrees (0.0 = centered on webcam).
-    #[serde(default)]
-    pub calibrated_yaw_offset_deg: f32,
-    /// Per-user calibrated neutral head pitch offset in degrees.
-    #[serde(default)]
-    pub calibrated_pitch_offset_deg: f32,
-    /// Per-user calibrated resting closed-mouth MAR baseline.
-    #[serde(default = "default_calibrated_resting_mar")]
-    pub calibrated_resting_mar: f32,
-    /// Voice-only fallback: when the camera does not see you facing the screen, speech that
-    /// starts with the wake word still goes through. Off by default.
-    #[serde(default)]
-    pub wake_word_enabled: bool,
-    /// The wake word (default "eevee"; common spellings are matched too).
-    #[serde(default = "default_wake_word")]
-    pub wake_word: String,
-    /// Play a short chime when the wake word is heard (played by the main window).
-    #[serde(default = "default_true")]
-    pub wake_chime_enabled: bool,
-    /// Colour palette for the main window and HUD (presentation only).
-    #[serde(default = "default_ui_palette")]
-    pub ui_palette: String,
-    /// Each busy pipeline state borrows its own palette (presentation only).
-    #[serde(default = "default_true")]
-    pub mood_colors: bool,
-    /// Webcam is off to the side of the screen the user talks to (widens the head-turn allowance).
-    #[serde(default)]
-    pub side_camera_mode: bool,
-    /// Adaptive vision frame rate (low FPS in IDLE when away/no-face, 15 FPS when facing screen or armed).
-    #[serde(default = "default_true")]
-    pub adaptive_fps_enabled: bool,
-    /// Optional user-configured developer vocabulary terms (comma- or newline-separated).
-    #[serde(default)]
-    pub custom_vocab: String,
-    /// Persist recent utterances locally in `<app_data_dir>/utterance-history.jsonl`, auto-purged after 7 days.
-    #[serde(default = "default_true")]
-    pub history_persistence_enabled: bool,
-    /// Opt-in secondary AI cleanup pass via local Ollama (`127.0.0.1:11434`) or OpenAI-compatible BYOK endpoint.
-    #[serde(default)]
-    pub llm_cleanup_enabled: bool,
-    /// OpenAI-compatible chat completions URL (defaults to local Ollama loopback).
-    #[serde(default = "default_llm_endpoint_url")]
-    pub llm_endpoint_url: String,
-    /// Model identifier passed to the LLM cleanup endpoint.
-    #[serde(default = "default_llm_model")]
-    pub llm_model: String,
-    /// Optional Bearer API key kept in memory only (never serialized to settings.local.json).
-    #[serde(default, skip_serializing)]
-    pub llm_api_key: String,
-    /// Optional 3-phrase Siri-style personal voice profile (pitch, spectral shape, near-field RMS,
-    /// and learned Whisper wake-word spellings).
-    #[serde(default)]
-    pub voice_profile: Option<VoiceProfile>,
-}
-
-fn default_hotkey_accelerator() -> String {
-    "Alt+Space".to_string()
-}
-
-fn default_llm_endpoint_url() -> String {
-    "http://127.0.0.1:11434/v1/chat/completions".to_string()
-}
-
-fn default_llm_model() -> String {
-    "qwen2.5-coder:1.5b".to_string()
-}
-
-fn default_wake_word() -> String {
-    DEFAULT_WAKE_WORD.to_string()
-}
-
-fn default_ui_palette() -> String {
-    "saywhen".to_string()
-}
-
-fn default_calibrated_resting_mar() -> f32 {
-    DEFAULT_CALIBRATED_RESTING_MAR
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_enter_delay_ms() -> u64 {
-    DEFAULT_ENTER_DELAY_MS
-}
-
-fn default_clipboard_restore_delay_ms() -> u64 {
-    DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
-}
-
-fn default_max_silence_timeout_ms() -> u64 {
-    DEFAULT_MAX_SILENCE_TIMEOUT_MS
-}
-
-fn default_arm_yaw_enter_deg() -> f32 {
-    DEFAULT_ARM_YAW_ENTER_DEG
-}
-
-fn default_arm_yaw_exit_deg() -> f32 {
-    DEFAULT_ARM_YAW_EXIT_DEG
-}
-
-fn default_arm_pitch_enter_deg() -> f32 {
-    DEFAULT_ARM_PITCH_ENTER_DEG
-}
-
-fn default_arm_pitch_exit_deg() -> f32 {
-    DEFAULT_ARM_PITCH_EXIT_DEG
-}
-
-fn default_arm_dwell_ms() -> u64 {
-    DEFAULT_ARM_DWELL_MS
-}
-
-fn default_disarm_dwell_ms() -> u64 {
-    DEFAULT_DISARM_DWELL_MS
-}
-
-fn default_min_speech_ms() -> u64 {
-    DEFAULT_MIN_SPEECH_MS
-}
-
-fn default_min_speech_hotkey_ms() -> u64 {
-    DEFAULT_MIN_SPEECH_HOTKEY_MS
-}
-
-fn default_post_roll_ms() -> u64 {
-    DEFAULT_POST_ROLL_MS
-}
-
-impl Default for DictationConfig {
-    fn default() -> Self {
-        Self {
-            hands_free_enabled: true,
-            vad_threshold: 0.45,
-            silence_timeout_ms: 650,
-            max_silence_timeout_ms: DEFAULT_MAX_SILENCE_TIMEOUT_MS,
-            auto_stop_on_silence: true,
-            cleanup_enabled: true,
-            preview_enabled: true,
-            preview_countdown_ms: 1800,
-            send_mode: SendMode::Pause,
-            cancel_on_speech: true,
-            cancel_on_look_away: false,
-            per_app_rules_enabled: true,
-            auto_send_allowlist: default_auto_send_allowlist(),
-            auto_inject: true,
-            auto_press_enter: true,
-            use_clipboard_paste: true,
-            preferred_device: None,
-            hud_enabled: true,
-            hotkey_accelerator: default_hotkey_accelerator(),
-            on_target_changed: TargetChangePolicy::Abort,
-            enter_delay_ms: DEFAULT_ENTER_DELAY_MS,
-            per_app_enter_delay_ms: HashMap::new(),
-            clipboard_restore_delay_ms: DEFAULT_CLIPBOARD_RESTORE_DELAY_MS,
-            arm_yaw_enter_deg: DEFAULT_ARM_YAW_ENTER_DEG,
-            arm_yaw_exit_deg: DEFAULT_ARM_YAW_EXIT_DEG,
-            arm_pitch_enter_deg: DEFAULT_ARM_PITCH_ENTER_DEG,
-            arm_pitch_exit_deg: DEFAULT_ARM_PITCH_EXIT_DEG,
-            arm_dwell_ms: DEFAULT_ARM_DWELL_MS,
-            disarm_dwell_ms: DEFAULT_DISARM_DWELL_MS,
-            min_speech_ms: DEFAULT_MIN_SPEECH_MS,
-            min_speech_hotkey_ms: DEFAULT_MIN_SPEECH_HOTKEY_MS,
-            post_roll_ms: DEFAULT_POST_ROLL_MS,
-            session_metrics_enabled: false,
-            save_tuning_audio_enabled: false,
-            calibrated_yaw_offset_deg: 0.0,
-            calibrated_pitch_offset_deg: 0.0,
-            calibrated_resting_mar: DEFAULT_CALIBRATED_RESTING_MAR,
-            wake_word_enabled: false,
-            wake_word: default_wake_word(),
-            wake_chime_enabled: true,
-            ui_palette: default_ui_palette(),
-            mood_colors: true,
-            side_camera_mode: false,
-            adaptive_fps_enabled: true,
-            custom_vocab: String::new(),
-            history_persistence_enabled: true,
-            llm_cleanup_enabled: false,
-            llm_endpoint_url: default_llm_endpoint_url(),
-            llm_model: default_llm_model(),
-            llm_api_key: String::new(),
-            voice_profile: None,
-        }
-    }
-}
-
-impl DictationConfig {
-    pub fn to_injection_timing(&self) -> InjectionTimingConfig {
-        InjectionTimingConfig {
-            use_clipboard_paste: self.use_clipboard_paste,
-            enter_delay_ms: self.enter_delay_ms,
-            per_app_enter_delay_ms: self.per_app_enter_delay_ms.clone(),
-            clipboard_restore_delay_ms: self.clipboard_restore_delay_ms,
-            on_target_changed: self.on_target_changed,
-        }
-    }
-
-    pub fn to_turn_taking_config(&self) -> TurnTakingConfig {
-        TurnTakingConfig {
-            hands_free_enabled: self.hands_free_enabled,
-            vad_threshold: self.vad_threshold,
-            silence_timeout_ms: self.silence_timeout_ms,
-            max_silence_timeout_ms: self.max_silence_timeout_ms,
-            auto_stop_on_silence: self.auto_stop_on_silence,
-            arm_yaw_enter_deg: self.arm_yaw_enter_deg,
-            arm_yaw_exit_deg: self.arm_yaw_exit_deg,
-            arm_pitch_enter_deg: self.arm_pitch_enter_deg,
-            arm_pitch_exit_deg: self.arm_pitch_exit_deg,
-            arm_dwell_ms: self.arm_dwell_ms,
-            disarm_dwell_ms: self.disarm_dwell_ms,
-            min_speech_ms: self.min_speech_ms,
-            min_speech_hotkey_ms: self.min_speech_hotkey_ms,
-            post_roll_ms: self.post_roll_ms,
-            calibrated_yaw_offset_deg: self.calibrated_yaw_offset_deg,
-            calibrated_pitch_offset_deg: self.calibrated_pitch_offset_deg,
-            calibrated_resting_mar: self.calibrated_resting_mar,
-            adaptive_fps_enabled: self.adaptive_fps_enabled,
-            side_camera_mode: self.side_camera_mode,
-        }
-    }
-
-    pub fn sanitize_after_parse(&mut self) {
-        self.auto_send_allowlist
-            .retain(|entry| !entry.trim().eq_ignore_ascii_case("saywhen"));
-        // Saving utterance audio for tuning must always turn itself off when the app restarts.
-        self.save_tuning_audio_enabled = false;
-        self.calibrated_yaw_offset_deg = self
-            .calibrated_yaw_offset_deg
-            .clamp(-MAX_CALIBRATED_YAW_OFFSET_DEG, MAX_CALIBRATED_YAW_OFFSET_DEG);
-        self.calibrated_resting_mar = self
-            .calibrated_resting_mar
-            .clamp(0.006, MAX_CALIBRATED_RESTING_MAR);
-    }
-
-    /// Writable settings file. Lives next to utterance history so saves do not depend on
-    /// the process working directory (a `.app` launch uses `/`, which is read-only).
-    pub fn settings_file_path(app_data_dir: &std::path::Path) -> std::path::PathBuf {
-        app_data_dir.join("settings.local.json")
-    }
-
-    /// Older builds stored settings next to the repo, relative to the working directory.
-    fn legacy_settings_candidates() -> Vec<std::path::PathBuf> {
-        let mut paths = vec![
-            std::path::PathBuf::from("../settings.local.json"),
-            std::path::PathBuf::from("settings.local.json"),
-        ];
-        // Dev binaries are often opened with cwd `/`. This compile-time path still finds
-        // the repo copy on the machine that built the app, and is a no-op if it is absent.
-        paths.push(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../settings.local.json"),
-        );
-        paths
-    }
-
-    fn read_settings_file(path: &std::path::Path) -> Option<Self> {
-        let raw = std::fs::read_to_string(path).ok()?;
-        let mut parsed = serde_json::from_str::<DictationConfig>(&raw).ok()?;
-        parsed.sanitize_after_parse();
-        Some(parsed)
-    }
-
-    /// Loads `<app_data_dir>/settings.local.json`. If that file does not exist yet, copies
-    /// the first readable legacy `settings.local.json` into the app data directory.
-    pub fn load_with_legacy(
-        app_data_dir: &std::path::Path,
-        legacy: &[std::path::PathBuf],
-    ) -> Self {
-        let path = Self::settings_file_path(app_data_dir);
-        if let Some(parsed) = Self::read_settings_file(&path) {
-            return parsed;
-        }
-        for candidate in legacy {
-            if let Some(parsed) = Self::read_settings_file(candidate) {
-                if let Err(err) = parsed.save_to_path(&path) {
-                    eprintln!(
-                        "saywhen: could not migrate settings from {} to {}: {err}",
-                        candidate.display(),
-                        path.display()
-                    );
-                }
-                return parsed;
-            }
-        }
-        Self::default()
-    }
-
-    pub fn load_for_app_data(app_data_dir: &std::path::Path) -> Self {
-        Self::load_with_legacy(app_data_dir, &Self::legacy_settings_candidates())
-    }
-
-    pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    format!(
-                        "Could not create settings directory {}: {e}",
-                        parent.display()
-                    )
-                })?;
-            }
-        }
-        let mut persisted = self.clone();
-        // Never persist `save_tuning_audio_enabled: true` across restarts.
-        persisted.save_tuning_audio_enabled = false;
-        let json = serde_json::to_string_pretty(&persisted)
-            .map_err(|e| format!("Could not save settings: {e}"))?;
-        std::fs::write(path, json).map_err(|e| {
-            format!("Could not save settings to {}: {e}", path.display())
-        })
-    }
-}
+pub use crate::config::DictationConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -968,6 +592,9 @@ pub struct AudioPipelineController {
     config: Arc<Mutex<DictationConfig>>,
     shared: Arc<Mutex<SharedCaptureBuffer>>,
     settings_path: std::path::PathBuf,
+    /// Opt-in clean-up API key. Never serialized with settings.
+    llm_api_key: Arc<Mutex<String>>,
+    app_data_dir: std::path::PathBuf,
 }
 
 impl AudioPipelineController {
@@ -975,13 +602,28 @@ impl AudioPipelineController {
         let (cmd_tx, cmd_rx) = mpsc::channel::<AudioCommand>();
         let app_data_dir = resolve_settings_dir(&app_handle);
         let settings_path = DictationConfig::settings_file_path(&app_data_dir);
-        let config = Arc::new(Mutex::new(DictationConfig::load_for_app_data(&app_data_dir)));
+        let store = DefaultSecretStore::open(&app_data_dir);
+        if let Some(legacy) = take_legacy_llm_api_key(&settings_path) {
+            if validate_secret_value(&legacy).is_ok() {
+                let _ = store.set(LLM_CLEANUP_API_KEY, &legacy);
+            }
+        }
+        let loaded_key = store
+            .get(LLM_CLEANUP_API_KEY)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let llm_api_key = Arc::new(Mutex::new(loaded_key));
+        let config = Arc::new(Mutex::new(DictationConfig::load_for_app_data(
+            &app_data_dir,
+        )));
         let shared = Arc::new(Mutex::new(SharedCaptureBuffer::new()));
 
         let config_clone = Arc::clone(&config);
         let shared_clone = Arc::clone(&shared);
         let cmd_tx_for_worker = cmd_tx.clone();
         let settings_path_for_worker = settings_path.clone();
+        let llm_api_key_for_worker = Arc::clone(&llm_api_key);
 
         thread::spawn(move || {
             run_audio_worker(
@@ -992,6 +634,7 @@ impl AudioPipelineController {
                 config_clone,
                 shared_clone,
                 settings_path_for_worker,
+                llm_api_key_for_worker,
             );
         });
 
@@ -1000,6 +643,8 @@ impl AudioPipelineController {
             config,
             shared,
             settings_path,
+            llm_api_key,
+            app_data_dir,
         }
     }
 
@@ -1029,6 +674,52 @@ impl AudioPipelineController {
         }
         // The new settings are live either way; a failed save is reported so it is not silent.
         saved.map(|_| new_cfg)
+    }
+
+    pub fn set_llm_api_key(&self, api_key: &str) -> Result<(), String> {
+        let trimmed = api_key.trim();
+        validate_secret_value(trimmed)?;
+        DefaultSecretStore::open(&self.app_data_dir).set(LLM_CLEANUP_API_KEY, trimmed)?;
+        *self.llm_api_key.lock().unwrap() = trimmed.to_string();
+        Ok(())
+    }
+
+    pub fn clear_llm_api_key(&self) -> Result<(), String> {
+        DefaultSecretStore::open(&self.app_data_dir).delete(LLM_CLEANUP_API_KEY)?;
+        *self.llm_api_key.lock().unwrap() = String::new();
+        Ok(())
+    }
+
+    pub fn license_decision(&self) -> LicenseDecision {
+        let cfg = self.get_config();
+        let key = DefaultSecretStore::open(&self.app_data_dir)
+            .get(LICENSE_KEY_ACCOUNT)
+            .ok()
+            .flatten();
+        evaluate_license(
+            &self.app_data_dir,
+            unix_timestamp_ms(),
+            LicenseEnforcement::parse(&cfg.license_enforcement),
+            &cfg.license_endpoint,
+            key.as_deref(),
+        )
+    }
+
+    pub fn set_license_key(&self, license_key: &str) -> Result<(), String> {
+        let trimmed = license_key.trim();
+        validate_secret_value(trimmed)?;
+        DefaultSecretStore::open(&self.app_data_dir).set(LICENSE_KEY_ACCOUNT, trimmed)
+    }
+
+    pub fn clear_license_key(&self) -> Result<(), String> {
+        DefaultSecretStore::open(&self.app_data_dir).delete(LICENSE_KEY_ACCOUNT)
+    }
+
+    pub fn llm_api_key_status(&self) -> (bool, String) {
+        let store = DefaultSecretStore::open(&self.app_data_dir);
+        let backend = store.backend(LLM_CLEANUP_API_KEY);
+        let present = !self.llm_api_key.lock().unwrap().trim().is_empty() || backend != "none";
+        (present, if present { backend } else { "none".to_string() })
     }
 
     pub fn reset_voice_profile(&self) -> Result<DictationConfig, String> {
@@ -1107,9 +798,12 @@ fn build_cpal_stream(
     let device_name = device
         .name()
         .unwrap_or_else(|_| "Default Microphone".to_string());
-    let supported_config = device
-        .default_input_config()
-        .map_err(|e| format!("Failed to read microphone config for {}: {}", device_name, e))?;
+    let supported_config = device.default_input_config().map_err(|e| {
+        format!(
+            "Failed to read microphone config for {}: {}",
+            device_name, e
+        )
+    })?;
 
     let in_sample_rate = supported_config.sample_rate().0;
     let in_channels = supported_config.channels() as usize;
@@ -1122,7 +816,10 @@ fn build_cpal_stream(
         if let Ok(mut guard) = err_shared.lock() {
             guard.stream_faulted = true;
         }
-        let _ = err_handle.emit("pipeline-error", format!("Microphone stream error: {}", err));
+        let _ = err_handle.emit(
+            "pipeline-error",
+            format!("Microphone stream error: {}", err),
+        );
     };
 
     let process_samples = move |mono_input: &[f32]| {
@@ -1187,8 +884,7 @@ fn build_cpal_stream(
                         let mono: Vec<f32> = data
                             .chunks(in_channels.max(1))
                             .map(|frame| {
-                                let sum: f32 =
-                                    frame.iter().map(|&s| s as f32 / 32768.0).sum();
+                                let sum: f32 = frame.iter().map(|&s| s as f32 / 32768.0).sum();
                                 sum / frame.len() as f32
                             })
                             .collect();
@@ -1208,10 +904,8 @@ fn build_cpal_stream(
                         let mono: Vec<f32> = data
                             .chunks(in_channels.max(1))
                             .map(|frame| {
-                                let sum: f32 = frame
-                                    .iter()
-                                    .map(|&s| (s as f32 - 32768.0) / 32768.0)
-                                    .sum();
+                                let sum: f32 =
+                                    frame.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
                                 sum / frame.len() as f32
                             })
                             .collect();
@@ -1232,37 +926,6 @@ fn build_cpal_stream(
         .map_err(|e| format!("Failed to play microphone stream: {}", e))?;
 
     Ok((stream, device_name))
-}
-
-fn downmix_to_mono_f32(data: &[f32], channels: usize) -> Vec<f32> {
-    let ch = channels.max(1);
-    if ch == 1 {
-        return data.to_vec();
-    }
-    data.chunks(ch)
-        .map(|frame| frame.iter().copied().sum::<f32>() / frame.len() as f32)
-        .collect()
-}
-
-fn resample_to_16k(input: &[f32], in_rate: u32) -> Vec<f32> {
-    if in_rate == TARGET_SAMPLE_RATE || input.is_empty() {
-        return input.to_vec();
-    }
-    let ratio = in_rate as f64 / TARGET_SAMPLE_RATE as f64;
-    let out_len = ((input.len() as f64) / ratio).floor() as usize;
-    if out_len == 0 {
-        return Vec::new();
-    }
-    let mut output = Vec::with_capacity(out_len);
-    for i in 0..out_len {
-        let src_pos = i as f64 * ratio;
-        let idx = src_pos.floor() as usize;
-        let frac = (src_pos - idx as f64) as f32;
-        let s0 = input[idx.min(input.len() - 1)];
-        let s1 = input[(idx + 1).min(input.len() - 1)];
-        output.push(s0 + frac * (s1 - s0));
-    }
-    output
 }
 
 fn resolve_settings_dir(app_handle: &AppHandle) -> std::path::PathBuf {
@@ -1414,6 +1077,23 @@ fn finalize_preview_and_inject(
     let _ = app_handle.emit("utterance-complete", complete_event);
 }
 
+fn license_decision_for(cfg: &DictationConfig, settings_path: &std::path::Path) -> LicenseDecision {
+    let dir = settings_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let key = DefaultSecretStore::open(dir)
+        .get(LICENSE_KEY_ACCOUNT)
+        .ok()
+        .flatten();
+    evaluate_license(
+        dir,
+        unix_timestamp_ms(),
+        LicenseEnforcement::parse(&cfg.license_enforcement),
+        &cfg.license_endpoint,
+        key.as_deref(),
+    )
+}
+
 fn run_audio_worker(
     app_handle: AppHandle,
     transcriber: Arc<TranscriberEngine>,
@@ -1422,6 +1102,7 @@ fn run_audio_worker(
     config: Arc<Mutex<DictationConfig>>,
     shared: Arc<Mutex<SharedCaptureBuffer>>,
     settings_path: std::path::PathBuf,
+    llm_api_key: Arc<Mutex<String>>,
 ) {
     let mut vad = match VoiceActivityDetector::builder()
         .sample_rate(16000)
@@ -1592,9 +1273,7 @@ fn run_audio_worker(
                         guard.pending_preview.take();
                         guard.cancel_active_or_preview(&turn_cfg);
                     }
-                    if guard.state == PipelineState::IDLE
-                        || guard.state == PipelineState::ARMED
-                    {
+                    if guard.state == PipelineState::IDLE || guard.state == PipelineState::ARMED {
                         let seed = if source == "hands_free_multimodal" {
                             guard.consecutive_vad_frames.min(2)
                         } else if source == WAKE_WORD_TRIGGER {
@@ -1609,8 +1288,7 @@ fn run_audio_worker(
                                     guard.peak_speech_rms.max(vp.typical_rms * 0.70);
                             }
                         }
-                    } else if guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER
-                    {
+                    } else if guard.is_unconfirmed_wake_candidate() && source != WAKE_WORD_TRIGGER {
                         guard.upgrade_wake_candidate_to(&source);
                         if !source.starts_with("voice_enroll:") {
                             if let Some(ref vp) = cfg.voice_profile {
@@ -1882,8 +1560,9 @@ fn run_audio_worker(
                                     guard.post_roll_started_at_ms = Some(now_ms);
                                     guard.pending_end_reason = Some(EndReason::Nod);
                                 } else if cfg.post_roll_ms == 0 {
-                                    let _ = cmd_tx_self
-                                        .send(AudioCommand::StopAndTranscribe(Some(EndReason::Nod)));
+                                    let _ = cmd_tx_self.send(AudioCommand::StopAndTranscribe(
+                                        Some(EndReason::Nod),
+                                    ));
                                 }
                             }
                         }
@@ -2051,12 +1730,38 @@ fn run_audio_worker(
                     let config_for_tx = Arc::clone(&config);
                     let settings_path_for_tx = settings_path.clone();
                     let cfg_snapshot = config.lock().unwrap().clone();
+                    let llm_api_key_for_tx = llm_api_key.lock().unwrap().clone();
                     let turn_cfg_snapshot = cfg_snapshot.to_turn_taking_config();
                     let app_for_tx = app_handle.clone();
                     let tx_for_preview = cmd_tx_self.clone();
 
                     thread::spawn(move || {
-                        if let Some(step_str) = captured.trigger_source.strip_prefix("voice_enroll:") {
+                        let language_override = {
+                            let front = detect_frontmost_app();
+                            match_app_profile(
+                                &cfg_snapshot.app_profiles,
+                                &front.name,
+                                front.bundle_id.as_deref(),
+                                front.exe.as_deref(),
+                            )
+                            .and_then(|profile| profile.language.clone())
+                        };
+                        let mut language_for_turn = language_override
+                            .as_deref()
+                            .unwrap_or(cfg_snapshot.transcription_language.as_str())
+                            .to_string();
+                        if language_for_turn != "en"
+                            && !license_allows(
+                                LicenseFeature::Multilingual,
+                                &license_decision_for(&cfg_snapshot, &settings_path_for_tx),
+                            )
+                        {
+                            language_for_turn = "en".to_string();
+                        }
+                        transcriber_ref.set_language(&language_for_turn);
+                        if let Some(step_str) =
+                            captured.trigger_source.strip_prefix("voice_enroll:")
+                        {
                             let step: usize = step_str.parse().unwrap_or(0);
                             {
                                 let mut guard = shared_after.lock().unwrap();
@@ -2071,9 +1776,8 @@ fn run_audio_worker(
                                 String::new()
                             };
                             let wake_word = effective_wake_word(&cfg_snapshot.wake_word);
-                            let learned_alias = VOICE_ENROLL_COMMAND_SUFFIXES
-                                .get(step)
-                                .and_then(|suffix| {
+                            let learned_alias =
+                                VOICE_ENROLL_COMMAND_SUFFIXES.get(step).and_then(|suffix| {
                                     extract_leading_wake_alias(&heard_text, wake_word, suffix)
                                 });
                             let existing = if step == 0 {
@@ -2092,10 +1796,13 @@ fn run_audio_worker(
                                         cfg_guard.voice_profile = Some(new_profile.clone());
                                         cfg_guard.clone()
                                     };
-                                    if let Err(err) = updated_cfg.save_to_path(&settings_path_for_tx) {
+                                    if let Err(err) =
+                                        updated_cfg.save_to_path(&settings_path_for_tx)
+                                    {
                                         eprintln!("saywhen: voice profile save warning: {err}");
                                     }
-                                    let _ = app_for_tx.emit("dictation-config-updated", &updated_cfg);
+                                    let _ =
+                                        app_for_tx.emit("dictation-config-updated", &updated_cfg);
                                     let _ = app_for_tx.emit(
                                         "voice-enroll-step",
                                         VoiceEnrollStepEvent {
@@ -2179,11 +1886,91 @@ fn run_audio_worker(
                                     }
                                 }
 
+                                let delivery_app = detect_frontmost_app();
+                                let license_now =
+                                    license_decision_for(&cfg_snapshot, &settings_path_for_tx);
+                                let profile =
+                                    if license_allows(LicenseFeature::Profiles, &license_now) {
+                                        match_app_profile(
+                                            &cfg_snapshot.app_profiles,
+                                            &delivery_app.name,
+                                            delivery_app.bundle_id.as_deref(),
+                                            delivery_app.exe.as_deref(),
+                                        )
+                                    } else {
+                                        None
+                                    };
+                                let vocab = merge_vocab(
+                                    &cfg_snapshot.custom_vocab,
+                                    profile.map(|item| item.extra_vocab.as_str()).unwrap_or(""),
+                                );
+                                let resolved_send_mode = profile
+                                    .and_then(|item| item.send_mode)
+                                    .unwrap_or(cfg_snapshot.send_mode);
                                 let mut cleanup = run_local_developer_cleanup_with_vocab(
                                     &transcription.text,
                                     cfg_snapshot.cleanup_enabled,
-                                    &cfg_snapshot.custom_vocab,
+                                    &vocab,
                                 );
+                                if cfg_snapshot.spoken_punctuation {
+                                    let marked = crate::desk::apply_spoken_punctuation(
+                                        &cleanup.cleaned_text,
+                                    );
+                                    if marked != cleanup.cleaned_text {
+                                        cleanup.cleaned_text = marked;
+                                        cleanup.modified = true;
+                                    }
+                                }
+                                if cfg_snapshot.capitalize_sentences {
+                                    let capped =
+                                        crate::desk::capitalize_sentences(&cleanup.cleaned_text);
+                                    if capped != cleanup.cleaned_text {
+                                        cleanup.cleaned_text = capped;
+                                        cleanup.modified = true;
+                                    }
+                                }
+
+                                if !cleanup.canceled_by_voice {
+                                    if let Some(command) =
+                                        parse_voice_command(&cleanup.cleaned_text)
+                                    {
+                                        let updated = {
+                                            let mut guard = config_for_tx.lock().unwrap();
+                                            match command {
+                                                VoiceCommand::PauseListening => {
+                                                    guard.hands_free_enabled = false;
+                                                }
+                                                VoiceCommand::ResumeListening => {
+                                                    guard.hands_free_enabled = true;
+                                                }
+                                                VoiceCommand::SetSendMode(mode) => {
+                                                    guard.send_mode = mode;
+                                                }
+                                                VoiceCommand::SetVisionPower(mode) => {
+                                                    guard.vision_power_mode = mode;
+                                                    guard.adaptive_fps_enabled =
+                                                        mode != VisionPowerMode::Full;
+                                                }
+                                            }
+                                            let updated = guard.clone();
+                                            let _ = updated.save_to_path(&settings_path_for_tx);
+                                            updated
+                                        };
+                                        {
+                                            let mut guard = shared_after.lock().unwrap();
+                                            guard.state = guard.resting_state(&turn_cfg_snapshot);
+                                        }
+                                        let _ = app_for_tx.emit(
+                                            "voice-command",
+                                            VoiceCommandEvent {
+                                                message: describe_voice_command(command),
+                                            },
+                                        );
+                                        let _ =
+                                            app_for_tx.emit("dictation-config-updated", &updated);
+                                        return;
+                                    }
+                                }
 
                                 if cleanup.canceled_by_voice {
                                     {
@@ -2230,12 +2017,10 @@ fn run_audio_worker(
                                         let mut guard = shared_after.lock().unwrap();
                                         guard.state = guard.resting_state(&turn_cfg_snapshot);
                                     }
-                                    let reason = transcription
-                                        .discarded_reason
-                                        .clone()
-                                        .unwrap_or_else(|| {
-                                            "No speech recognized: nothing was sent".to_string()
-                                        });
+                                    let reason =
+                                        transcription.discarded_reason.clone().unwrap_or_else(
+                                            || "No speech recognized: nothing was sent".to_string(),
+                                        );
                                     let metrics_rec = UtteranceMetricsRecord {
                                         utterance_id: captured.utterance_id,
                                         timestamp_ms: unix_timestamp_ms(),
@@ -2287,17 +2072,45 @@ fn run_audio_worker(
                                     return;
                                 }
 
-                                if cfg_snapshot.llm_cleanup_enabled {
+                                let expanded = if license_allows(
+                                    LicenseFeature::Snippets,
+                                    &license_now,
+                                ) {
+                                    apply_snippets(&cleanup.cleaned_text, &cfg_snapshot.snippets)
+                                } else {
+                                    if !cfg_snapshot.snippets.is_empty() {
+                                        let _ = app_for_tx.emit(
+                                            "pipeline-error",
+                                            "Snippets stay off while license enforcement is required and this install is not Pro.",
+                                        );
+                                    }
+                                    cleanup.cleaned_text.clone()
+                                };
+                                if expanded != cleanup.cleaned_text {
+                                    cleanup.cleaned_text = expanded;
+                                    cleanup.modified = true;
+                                    cleanup.is_destructive_command =
+                                        check_destructive_command(&cleanup.cleaned_text);
+                                }
+
+                                if cfg_snapshot.llm_cleanup_enabled
+                                    && !license_allows(LicenseFeature::CloudCleanup, &license_now)
+                                {
+                                    let _ = app_for_tx.emit(
+                                        "pipeline-error",
+                                        "Cloud clean-up stays off while license enforcement is required and this install is not Pro. The local clean-up was kept.",
+                                    );
+                                } else if cfg_snapshot.llm_cleanup_enabled {
                                     let llm_cfg = LlmCleanupConfig {
                                         enabled: true,
                                         endpoint_url: cfg_snapshot.llm_endpoint_url.clone(),
                                         model: cfg_snapshot.llm_model.clone(),
-                                        api_key: cfg_snapshot.llm_api_key.clone(),
+                                        api_key: llm_api_key_for_tx.clone(),
                                         timeout_ms: 1200,
                                     };
                                     match run_opt_in_llm_cleanup(
                                         &cleanup.cleaned_text,
-                                        &cfg_snapshot.custom_vocab,
+                                        &vocab,
                                         &llm_cfg,
                                     ) {
                                         Ok(llm_out) => {
@@ -2319,7 +2132,7 @@ fn run_audio_worker(
                                 }
 
                                 let front_app = detect_frontmost_app();
-                                let wants_enter = cfg_snapshot.send_mode.wants_enter(
+                                let wants_enter = resolved_send_mode.wants_enter(
                                     cfg_snapshot.auto_press_enter,
                                     transcription.end_phrase_triggered,
                                 ) && !cleanup.force_paste_only;
@@ -2359,9 +2172,8 @@ fn run_audio_worker(
                                     None
                                 };
 
-                                let waits_for_nod = cfg_snapshot
-                                    .send_mode
-                                    .preview_waits_for_nod(captured.end_reason);
+                                let waits_for_nod =
+                                    resolved_send_mode.preview_waits_for_nod(captured.end_reason);
                                 let trailing_connective =
                                     ends_with_connective(&cleanup.cleaned_text);
                                 let item = PendingPreviewItem {
@@ -2374,7 +2186,7 @@ fn run_audio_worker(
                                     } else {
                                         cfg_snapshot.preview_countdown_ms
                                     },
-                                    send_mode: cfg_snapshot.send_mode,
+                                    send_mode: resolved_send_mode,
                                     waits_for_nod,
                                     transcription,
                                     cleanup,
@@ -2551,7 +2363,15 @@ fn run_audio_worker(
                 recent_voice_ms: prev_voice_ms.map(|t| now_ms.saturating_sub(t)),
                 consecutive_vad_frames: guard.consecutive_vad_frames,
             };
-            if should_auto_start(&gate_inputs, &turn_cfg) {
+            let quiet = cfg.quiet_hours_enabled
+                && guard.vision.local_minute.is_some_and(|minute| {
+                    crate::desk::in_quiet_hours(
+                        cfg.quiet_hours_start_minute,
+                        cfg.quiet_hours_end_minute,
+                        minute,
+                    )
+                });
+            if !quiet && should_auto_start(&gate_inputs, &turn_cfg) {
                 should_auto_start_listening = true;
             }
 
@@ -2755,7 +2575,10 @@ fn run_audio_worker(
                     && guard.partial_checked_speech_frames != guard.speech_frames_in_utterance
                     && transcriber.is_loaded()
                 {
-                    let tail_len = guard.utterance_pcm.len().min((TARGET_SAMPLE_RATE as usize) * 2);
+                    let tail_len = guard
+                        .utterance_pcm
+                        .len()
+                        .min((TARGET_SAMPLE_RATE as usize) * 2);
                     if tail_len >= (TARGET_SAMPLE_RATE as usize) / 2 {
                         let start_idx = guard.utterance_pcm.len() - tail_len;
                         let tail_samples = guard.utterance_pcm[start_idx..].to_vec();
@@ -2952,7 +2775,10 @@ mod tests {
             parsed.clipboard_restore_delay_ms,
             DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
         );
-        assert_eq!(parsed.max_silence_timeout_ms, DEFAULT_MAX_SILENCE_TIMEOUT_MS);
+        assert_eq!(
+            parsed.max_silence_timeout_ms,
+            DEFAULT_MAX_SILENCE_TIMEOUT_MS
+        );
         assert_eq!(parsed.arm_yaw_enter_deg, DEFAULT_ARM_YAW_ENTER_DEG);
         assert_eq!(parsed.arm_yaw_exit_deg, DEFAULT_ARM_YAW_EXIT_DEG);
         assert_eq!(parsed.arm_dwell_ms, DEFAULT_ARM_DWELL_MS);
@@ -2977,10 +2803,8 @@ mod tests {
 
     #[test]
     fn settings_save_in_app_data_dir_and_prefer_it_over_legacy() {
-        let root = std::env::temp_dir().join(format!(
-            "saywhen-settings-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("saywhen-settings-test-{}", std::process::id()));
         let app_data = root.join("appdata");
         let legacy = root.join("legacy").join("settings.local.json");
         let _ = std::fs::remove_dir_all(&root);

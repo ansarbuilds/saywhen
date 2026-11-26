@@ -27,6 +27,12 @@ ndarray = "0.16"
 enigo = "0.6.1"
 arboard = "3.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+keyring = { version = "3", optional = true }
+
+[features]
+default = ["os-keychain"]
+os-keychain = ["dep:keyring"]
 
 # Metal is macOS only. Enabling it unconditionally breaks Windows and Linux builds
 # (ggml's CMake looks for the Metal framework).

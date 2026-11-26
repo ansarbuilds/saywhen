@@ -1,11 +1,20 @@
 pub mod audio;
 pub mod cleanup;
+pub mod config;
+pub mod desk;
 pub mod history;
 pub mod hud;
 pub mod inject;
+pub mod license;
 pub mod parakeet;
+pub mod profiles;
+pub mod secrets;
+pub mod signal;
+pub mod snippets;
 pub mod transcribe;
+pub mod tray_menu;
 pub mod turn_taking;
+pub mod voice_commands;
 pub mod wake_word;
 
 use audio::{
@@ -13,13 +22,18 @@ use audio::{
     UtteranceCompleteEvent, VisionTelemetryPayload,
 };
 use cleanup::{run_local_developer_cleanup, run_local_developer_cleanup_with_vocab, CleanupResult};
+use desk::{
+    export_settings_bundle, import_settings_bundle, shortcut_catalog, summarize_history, DeskStats,
+};
 use history::{
-    clear_utterance_history_file, load_and_prune_history, update_history_false_trigger_flag,
+    clear_utterance_history_file, export_history, load_and_prune_history,
+    parse_history_export_format, update_history_false_trigger_flag,
 };
 use inject::{
     check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
     inject_text_into_focused_app, open_accessibility_settings, FrontmostApp, InjectionOutcome,
 };
+use license::{license_allows, LicenseFeature};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -78,11 +92,9 @@ fn get_system_status(app: AppHandle, state: State<'_, AppState>) -> SystemStatus
 
 #[tauri::command]
 fn start_listening(state: State<'_, AppState>, source: Option<String>) -> Result<(), String> {
-    state
-        .audio
-        .send_command(AudioCommand::StartListening(
-            source.unwrap_or_else(|| "ui_button".to_string()),
-        ))
+    state.audio.send_command(AudioCommand::StartListening(
+        source.unwrap_or_else(|| "ui_button".to_string()),
+    ))
 }
 
 #[tauri::command]
@@ -99,6 +111,114 @@ fn flag_false_trigger(app: AppHandle, utterance_id: u64, flagged: bool) -> Resul
         let _ = update_history_false_trigger_flag(&app_data_dir, utterance_id, flagged);
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShortcutRow {
+    action: String,
+    keys: String,
+}
+
+#[tauri::command]
+fn list_shortcuts() -> Vec<ShortcutRow> {
+    shortcut_catalog()
+        .into_iter()
+        .map(|(action, keys)| ShortcutRow {
+            action: action.to_string(),
+            keys: keys.to_string(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn desk_stats(app: AppHandle) -> DeskStats {
+    let entries = app
+        .path()
+        .app_data_dir()
+        .map(|dir| load_and_prune_history(&dir, unix_timestamp_ms()))
+        .unwrap_or_default();
+    summarize_history(&entries)
+}
+
+#[tauri::command]
+fn export_settings(state: State<'_, AppState>) -> String {
+    export_settings_bundle(&state.audio.get_config())
+}
+
+#[tauri::command]
+fn import_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    raw: String,
+) -> Result<DictationConfig, String> {
+    let config = import_settings_bundle(&raw)?;
+    let updated = state.audio.update_config(config)?;
+    let _ = app.emit("dictation-config-updated", &updated);
+    Ok(updated)
+}
+
+#[tauri::command]
+fn export_utterance_history(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    format: Option<String>,
+) -> Result<String, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Could not find the app data folder: {err}"))?;
+    let decision = state.audio.license_decision();
+    if !license_allows(LicenseFeature::HistoryExport, &decision) {
+        return Err(format!(
+            "{} History export waits for Pro while enforcement is required. Core dictation still works.",
+            decision.message
+        ));
+    }
+    let entries = load_and_prune_history(&app_data_dir, unix_timestamp_ms());
+    let format = parse_history_export_format(format.as_deref().unwrap_or("markdown"));
+    Ok(export_history(&entries, format))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LicenseStatusPayload {
+    tier: String,
+    enforcement: String,
+    trial_days_left: i64,
+    clock_tampered: bool,
+    key_present: bool,
+    checker: String,
+    message: String,
+}
+
+#[tauri::command]
+fn license_status(state: State<'_, AppState>) -> LicenseStatusPayload {
+    let decision = state.audio.license_decision();
+    LicenseStatusPayload {
+        tier: decision.tier.as_str().to_string(),
+        enforcement: decision.enforcement.as_str().to_string(),
+        trial_days_left: decision.trial_days_left,
+        clock_tampered: decision.clock_tampered,
+        key_present: decision.key_present,
+        checker: decision.checker.to_string(),
+        message: decision.message,
+    }
+}
+
+#[tauri::command]
+fn set_license_key(
+    state: State<'_, AppState>,
+    license_key: String,
+) -> Result<LicenseStatusPayload, String> {
+    state.audio.set_license_key(&license_key)?;
+    Ok(license_status(state))
+}
+
+#[tauri::command]
+fn clear_license_key(state: State<'_, AppState>) -> Result<LicenseStatusPayload, String> {
+    state.audio.clear_license_key()?;
+    Ok(license_status(state))
 }
 
 #[tauri::command]
@@ -165,8 +285,10 @@ fn update_dictation_config(
                 let _ = state.audio.update_config(previous);
                 return Err(format!("That shortcut is already taken: {}", err));
             }
-            *state.hotkey.lock().map_err(|_| "Shortcut lock failed".to_string())? =
-                requested_hotkey;
+            *state
+                .hotkey
+                .lock()
+                .map_err(|_| "Shortcut lock failed".to_string())? = requested_hotkey;
         }
     }
     if !updated.history_persistence_enabled {
@@ -320,6 +442,29 @@ fn request_accessibility_settings() -> Result<(), String> {
     open_accessibility_settings()
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LlmApiKeyStatus {
+    present: bool,
+    backend: String,
+}
+
+#[tauri::command]
+fn set_llm_api_key(state: State<'_, AppState>, api_key: String) -> Result<(), String> {
+    state.audio.set_llm_api_key(&api_key)
+}
+
+#[tauri::command]
+fn clear_llm_api_key(state: State<'_, AppState>) -> Result<(), String> {
+    state.audio.clear_llm_api_key()
+}
+
+#[tauri::command]
+fn llm_api_key_status(state: State<'_, AppState>) -> LlmApiKeyStatus {
+    let (present, backend) = state.audio.llm_api_key_status();
+    LlmApiKeyStatus { present, backend }
+}
+
 #[tauri::command]
 fn reset_voice_profile(
     app: AppHandle,
@@ -354,8 +499,7 @@ pub fn run() {
             let hotkey_for_handler = Arc::clone(&current_hotkey);
             let escape = hud::escape_shortcut();
             #[cfg(target_os = "macos")]
-            let paste_last =
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyV);
+            let paste_last = Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyV);
             #[cfg(not(target_os = "macos"))]
             let paste_last = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyV);
 
@@ -370,9 +514,8 @@ pub fn run() {
                             sc == &*hotkey
                         };
                         if is_hotkey {
-                            let _ = audio_for_shortcut.send_command(AudioCommand::ToggleListening(
-                                "hotkey".to_string(),
-                            ));
+                            let _ = audio_for_shortcut
+                                .send_command(AudioCommand::ToggleListening("hotkey".to_string()));
                         } else if sc == &escape {
                             // Only registered while in PREVIEW (see hud::spawn_preview_escape_guard).
                             let _ = audio_for_shortcut.send_command(AudioCommand::CancelPreview(
@@ -387,10 +530,16 @@ pub fn run() {
 
             let initial_hotkey = current_hotkey.lock().unwrap().clone();
             if let Err(err) = app.global_shortcut().register(initial_hotkey) {
-                eprintln!("Warning: could not register the push-to-talk shortcut: {}", err);
+                eprintln!(
+                    "Warning: could not register the push-to-talk shortcut: {}",
+                    err
+                );
             }
             if let Err(err) = app.global_shortcut().register(paste_last) {
-                eprintln!("Warning: could not register the paste-last shortcut: {}", err);
+                eprintln!(
+                    "Warning: could not register the paste-last shortcut: {}",
+                    err
+                );
             }
 
             hud::spawn_preview_escape_guard(app_handle.clone(), Arc::clone(&audio_controller));
@@ -448,7 +597,18 @@ pub fn run() {
             manual_inject_text,
             request_accessibility_settings,
             reset_voice_profile,
+            set_llm_api_key,
+            clear_llm_api_key,
+            llm_api_key_status,
             flag_false_trigger,
+            export_utterance_history,
+            list_shortcuts,
+            desk_stats,
+            export_settings,
+            import_settings,
+            license_status,
+            set_license_key,
+            clear_license_key,
             clear_utterance_history,
         ])
         .build(tauri::generate_context!())

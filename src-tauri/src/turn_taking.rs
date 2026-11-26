@@ -29,6 +29,24 @@ pub const MAX_CALIBRATED_RESTING_MAR: f32 = 0.030;
 pub const VISION_TICK_ACTIVE_MS: u64 = 66; // ~15.1 FPS when armed, listening, or facing screen
 pub const VISION_TICK_IDLE_AWAY_MS: u64 = 125; // 8.0 FPS when face present but turned away > 3s
 pub const VISION_TICK_IDLE_NO_FACE_MS: u64 = 200; // 5.0 FPS when no face in frame > 3s (66.7% fewer inferences)
+/// Low power while facing the screen but not inside an utterance. 8 FPS, 47.2% fewer
+/// inferences than the 15 FPS active tick. This is a scheduler budget, not a battery measurement.
+pub const VISION_TICK_LOW_FACING_MS: u64 = 125;
+pub const VISION_TICK_LOW_AWAY_MS: u64 = 250;
+pub const VISION_TICK_LOW_NO_FACE_MS: u64 = 500;
+
+/// How often the camera gate asks MediaPipe for a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VisionPowerMode {
+    /// 15 FPS while you are here, slower when you look away.
+    #[default]
+    Auto,
+    /// Stay at 15 FPS whenever the camera is on.
+    Full,
+    /// 8 FPS while facing the screen, slower when away. Listening still uses 15 FPS.
+    Low,
+}
 
 fn default_resting_mar() -> f32 {
     DEFAULT_CALIBRATED_RESTING_MAR
@@ -172,10 +190,7 @@ impl ArmingHysteresisState {
 
 /// Pure check whether a head pose (adjusted by the user's calibrated monitor center offset)
 /// is inside the tighter arm-enter cone.
-pub fn is_within_arm_enter_cone(
-    vision: &VisionTelemetryPayload,
-    cfg: &TurnTakingConfig,
-) -> bool {
+pub fn is_within_arm_enter_cone(vision: &VisionTelemetryPayload, cfg: &TurnTakingConfig) -> bool {
     if !vision.face_present {
         return false;
     }
@@ -197,10 +212,7 @@ pub fn is_within_arm_enter_cone(
 
 /// Pure check whether a head pose (adjusted by the user's calibrated monitor center offset)
 /// is still inside the wider arm-exit cone.
-pub fn is_within_arm_exit_cone(
-    vision: &VisionTelemetryPayload,
-    cfg: &TurnTakingConfig,
-) -> bool {
+pub fn is_within_arm_exit_cone(vision: &VisionTelemetryPayload, cfg: &TurnTakingConfig) -> bool {
     if !vision.face_present {
         return false;
     }
@@ -357,6 +369,49 @@ pub fn compute_calibration_baseline(samples: &[(f32, f32, f32)]) -> Option<(f32,
 
 /// Selects the Worker vision timer interval (ms) to save CPU/GPU when idle while keeping
 /// full `15 FPS` (`66 ms`) responsiveness whenever armed, listening, or facing the screen.
+pub fn choose_vision_tick_ms(
+    mode: VisionPowerMode,
+    adaptive_fps_enabled: bool,
+    pipeline_active: bool,
+    face_present: bool,
+    facing_screen: bool,
+    ms_since_last_on_screen: u64,
+) -> u64 {
+    match mode {
+        VisionPowerMode::Full => VISION_TICK_ACTIVE_MS,
+        VisionPowerMode::Low => {
+            if pipeline_active {
+                VISION_TICK_ACTIVE_MS
+            } else if facing_screen || ms_since_last_on_screen < 3000 {
+                VISION_TICK_LOW_FACING_MS
+            } else if face_present {
+                VISION_TICK_LOW_AWAY_MS
+            } else {
+                VISION_TICK_LOW_NO_FACE_MS
+            }
+        }
+        VisionPowerMode::Auto => choose_adaptive_vision_tick_ms(
+            adaptive_fps_enabled,
+            pipeline_active,
+            face_present,
+            facing_screen,
+            ms_since_last_on_screen,
+        ),
+    }
+}
+
+/// Inferences the scheduler would request in one minute at a fixed tick.
+/// `60_000 / 66 = 909` at the active rate and `60_000 / 125 = 480` in low power
+/// while facing the screen. That is a 47.2% reduction in MediaPipe calls, not a
+/// measured battery or CPU percentage.
+pub fn vision_inferences_per_minute(tick_ms: u64) -> u64 {
+    if tick_ms == 0 {
+        0
+    } else {
+        60_000 / tick_ms
+    }
+}
+
 pub fn choose_adaptive_vision_tick_ms(
     adaptive_fps_enabled: bool,
     pipeline_active: bool,
@@ -652,9 +707,9 @@ pub fn ends_with_connective(partial_text: &str) -> bool {
         .to_ascii_lowercase();
 
     const CONNECTIVES: &[&str] = &[
-        "and", "or", "but", "the", "a", "an", "to", "for", "with", "in", "on", "at", "from",
-        "by", "of", "as", "into", "like", "that", "which", "who", "when", "where", "while",
-        "if", "because", "since", "so", "then", "than",
+        "and", "or", "but", "the", "a", "an", "to", "for", "with", "in", "on", "at", "from", "by",
+        "of", "as", "into", "like", "that", "which", "who", "when", "where", "while", "if",
+        "because", "since", "so", "then", "than",
     ];
     CONNECTIVES.contains(&last_word.as_str())
 }
@@ -752,11 +807,7 @@ pub fn should_count_vad_frame_in_turn(
 /// Pure end-of-turn decision (`LISTENING -> post-roll / TRANSCRIBING`).
 ///
 /// Returns `Some(EndReason)` when the utterance should end, or `None` to keep listening.
-pub fn end_of_turn(
-    turn: &TurnState,
-    cfg: &TurnTakingConfig,
-    now_ms: u64,
-) -> Option<EndReason> {
+pub fn end_of_turn(turn: &TurnState, cfg: &TurnTakingConfig, now_ms: u64) -> Option<EndReason> {
     if turn.gesture == "nod" {
         return Some(EndReason::Nod);
     }
@@ -789,11 +840,7 @@ pub fn end_of_turn(
 
 /// Returns `(remaining_ms, total_timeout_ms)` for the HUD end-of-turn silence countdown.
 /// When the speaker is actively speaking or moving their lips, `remaining_ms == total_timeout_ms`.
-pub fn silence_countdown_ms(
-    turn: &TurnState,
-    cfg: &TurnTakingConfig,
-    now_ms: u64,
-) -> (u64, u64) {
+pub fn silence_countdown_ms(turn: &TurnState, cfg: &TurnTakingConfig, now_ms: u64) -> (u64, u64) {
     let total_ms = compute_adaptive_silence_timeout_ms(turn, cfg);
     if !cfg.auto_stop_on_silence
         || (turn.vision_fresh && turn.hands_free_enabled && turn.lips_moving)
@@ -1005,8 +1052,8 @@ pub fn write_wav_16k_mono_i16(path: &Path, samples: &[f32]) -> Result<(), String
 
 /// Read a 16-bit PCM or 32-bit float WAV file into mono `f32` samples.
 pub fn read_wav_mono_f32(path: &Path) -> Result<(Vec<f32>, u32), String> {
-    let mut file =
-        fs::File::open(path).map_err(|e| format!("Failed to open WAV {}: {}", path.display(), e))?;
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("Failed to open WAV {}: {}", path.display(), e))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
         .map_err(|e| format!("Failed to read WAV {}: {}", path.display(), e))?;
@@ -1305,14 +1352,21 @@ mod tests {
         };
         for t in (2250..4000).step_by(66) {
             armed = evaluate_arming_hysteresis(&mut h, armed, true, &edge_pose, &cfg, t);
-            assert!(armed, "Must stay ARMED inside exit hysteresis band at t={}", t);
+            assert!(
+                armed,
+                "Must stay ARMED inside exit hysteresis band at t={}",
+                t
+            );
         }
 
         // Brief spike to yaw = 31 deg for 200 ms (< 300 ms disarm dwell) stays ARMED
         armed = evaluate_arming_hysteresis(&mut h, armed, true, &way_off, &cfg, 4100);
         assert!(armed);
         armed = evaluate_arming_hysteresis(&mut h, armed, true, &way_off, &cfg, 4300);
-        assert!(armed, "200ms excursion outside exit cone must not disarm yet");
+        assert!(
+            armed,
+            "200ms excursion outside exit cone must not disarm yet"
+        );
 
         // Sustained look-away >= 300 ms disarms to IDLE
         armed = evaluate_arming_hysteresis(&mut h, armed, true, &way_off, &cfg, 4410);
@@ -1431,9 +1485,7 @@ mod tests {
     #[test]
     fn test_wav_write_and_read_roundtrip() {
         let tmp = std::env::temp_dir().join(format!("saywhen-wav-test-{}.wav", std::process::id()));
-        let orig: Vec<f32> = (0..1600)
-            .map(|i| ((i as f32) * 0.05).sin() * 0.5)
-            .collect();
+        let orig: Vec<f32> = (0..1600).map(|i| ((i as f32) * 0.05).sin() * 0.5).collect();
         write_wav_16k_mono_i16(&tmp, &orig).unwrap();
         let (decoded, rate) = read_wav_mono_f32(&tmp).unwrap();
         assert_eq!(rate, 16_000);
@@ -1477,9 +1529,15 @@ mod tests {
         };
 
         // Without calibration, yaw = -25 deg is outside the 20 deg enter cone.
-        assert!(!is_within_arm_enter_cone(&side_monitor_pose, &uncalibrated_cfg));
+        assert!(!is_within_arm_enter_cone(
+            &side_monitor_pose,
+            &uncalibrated_cfg
+        ));
         // With calibration (yaw0 = -24 deg), relative yaw is -1.0 deg -> inside enter cone!
-        assert!(is_within_arm_enter_cone(&side_monitor_pose, &calibrated_cfg));
+        assert!(is_within_arm_enter_cone(
+            &side_monitor_pose,
+            &calibrated_cfg
+        ));
         assert!(is_within_arm_exit_cone(&side_monitor_pose, &calibrated_cfg));
     }
 
@@ -1581,6 +1639,26 @@ mod tests {
         // When adaptive FPS is disabled -> always 66 ms
         assert_eq!(
             choose_adaptive_vision_tick_ms(false, false, false, false, 10_000),
+            VISION_TICK_ACTIVE_MS
+        );
+    }
+
+    #[test]
+    fn low_power_cuts_facing_inferences_and_keeps_listening_fast() {
+        let facing = choose_vision_tick_ms(VisionPowerMode::Low, true, false, true, true, 0);
+        assert_eq!(facing, VISION_TICK_LOW_FACING_MS);
+        let listening = choose_vision_tick_ms(VisionPowerMode::Low, true, true, true, true, 0);
+        assert_eq!(listening, VISION_TICK_ACTIVE_MS);
+        let away = choose_vision_tick_ms(VisionPowerMode::Low, true, false, true, false, 4000);
+        assert_eq!(away, VISION_TICK_LOW_AWAY_MS);
+        let active = vision_inferences_per_minute(VISION_TICK_ACTIVE_MS);
+        let low = vision_inferences_per_minute(facing);
+        assert_eq!(active, 909);
+        assert_eq!(low, 480);
+        let reduction_pct = ((active - low) as f64 / active as f64) * 100.0;
+        assert!((reduction_pct - 47.2).abs() < 0.15);
+        assert_eq!(
+            choose_vision_tick_ms(VisionPowerMode::Full, true, false, false, false, 9_000),
             VISION_TICK_ACTIVE_MS
         );
     }
@@ -1710,16 +1788,7 @@ mod tests {
         ));
         // With camera off, quieter speaker bleed (< 38% of user's peak voice RMS) after >= 8 frames of speech is ignored.
         assert!(!should_count_vad_frame_in_turn(
-            2_000,
-            false,
-            false,
-            false,
-            false,
-            true,
-            None,
-            10,
-            0.015,
-            0.065,
+            2_000, false, false, false, false, true, None, 10, 0.015, 0.065,
         ));
     }
 }

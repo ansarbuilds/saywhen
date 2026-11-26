@@ -44,6 +44,7 @@ pub struct TranscriberEngine {
     fast_cached_state: Mutex<Option<(String, WhisperState)>>,
     parakeet_model: Mutex<Option<ParakeetModel>>,
     selected_model_id: Mutex<String>,
+    language: Mutex<String>,
     app_models_dir: Option<PathBuf>,
     download_lock: Mutex<()>,
     shutting_down: AtomicBool,
@@ -55,6 +56,27 @@ struct InferGuard<'a>(&'a AtomicUsize);
 impl Drop for InferGuard<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub fn normalize_transcription_language(raw: &str) -> String {
+    let code = raw.trim().to_ascii_lowercase();
+    match code.as_str() {
+        "" | "english" => "en".to_string(),
+        "auto" | "en" | "es" | "fr" | "de" | "pt" | "it" | "ja" | "zh" | "ko" => code,
+        other if other.len() == 2 && other.chars().all(|ch| ch.is_ascii_alphabetic()) => {
+            other.to_string()
+        }
+        _ => "en".to_string(),
+    }
+}
+
+/// English-only models ignore a different language. Large v3 Turbo can follow the request.
+pub fn whisper_language_for_model(model_id: &str, requested: &str) -> String {
+    if model_id.ends_with(".en") || model_id.starts_with("parakeet") {
+        "en".to_string()
+    } else {
+        normalize_transcription_language(requested)
     }
 }
 
@@ -82,6 +104,7 @@ impl TranscriberEngine {
             fast_cached_state: Mutex::new(None),
             parakeet_model: Mutex::new(None),
             selected_model_id: Mutex::new("tiny.en".to_string()),
+            language: Mutex::new("en".to_string()),
             app_models_dir: app_data_dir.map(|d| d.join("models")),
             shutting_down: AtomicBool::new(false),
             active_infer: AtomicUsize::new(0),
@@ -151,7 +174,11 @@ impl TranscriberEngine {
             return Some(parakeet_model_dir(&self.resolve_models_dir()));
         }
         let filename = model_filename(model_id)?;
-        Some(self.resolve_models_dir().join(filename).with_extension("bin.part"))
+        Some(
+            self.resolve_models_dir()
+                .join(filename)
+                .with_extension("bin.part"),
+        )
     }
 
     /// Bytes downloaded so far for the active model download.
@@ -252,6 +279,10 @@ impl TranscriberEngine {
 
     pub fn get_selected_model_id(&self) -> String {
         self.selected_model_id.lock().unwrap().clone()
+    }
+
+    pub fn set_language(&self, language: &str) {
+        *self.language.lock().unwrap() = normalize_transcription_language(language);
     }
 
     fn ensure_parakeet_loaded(&self, models_dir: &Path) -> Result<(), String> {
@@ -415,7 +446,13 @@ impl TranscriberEngine {
 
             let mut params = FullParams::new(strategy);
             params.set_n_threads(n_threads);
-            params.set_language(Some("en"));
+            let requested = self.language.lock().unwrap().clone();
+            let language = whisper_language_for_model(model_id, &requested);
+            if language == "auto" {
+                params.set_language(None);
+            } else {
+                params.set_language(Some(&language));
+            }
             params.set_translate(false);
             params.set_temperature(0.0);
             params.set_temperature_inc(if fast_mode { 0.0 } else { 0.2 });
@@ -711,10 +748,7 @@ fn split_long_pcm_chunks(
         let mut best_energy = f32::MAX;
         let mut pos = search_lo;
         while pos + window <= search_hi {
-            let energy: f32 = samples_16k[pos..pos + window]
-                .iter()
-                .map(|s| s * s)
-                .sum();
+            let energy: f32 = samples_16k[pos..pos + window].iter().map(|s| s * s).sum();
             if energy < best_energy {
                 best_energy = energy;
                 best_split = pos + window / 2;
@@ -729,11 +763,7 @@ fn split_long_pcm_chunks(
 
 fn compute_percentile_gain(samples_16k: &[f32]) -> f32 {
     // Use the 99.5th percentile of absolute amplitude so a single mic pop never suppresses speech gain.
-    let mut mags: Vec<f32> = samples_16k
-        .iter()
-        .step_by(4)
-        .map(|s| s.abs())
-        .collect();
+    let mut mags: Vec<f32> = samples_16k.iter().step_by(4).map(|s| s.abs()).collect();
     let ref_amp = if mags.is_empty() {
         0.0
     } else {
@@ -954,10 +984,7 @@ fn clean_whisper_hallucinations(input: &str) -> String {
     result = strip_musical_note_spans(&result);
     result = strip_delimiters_if_cue(&result, '[', ']');
     result = strip_delimiters_if_cue(&result, '(', ')');
-    result
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    result.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 // Speech models are downloaded from one fixed revision of the whisper.cpp model repository
@@ -1024,6 +1051,21 @@ fn validate_downloaded_model(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn english_models_stay_in_english() {
+        assert_eq!(whisper_language_for_model("tiny.en", "es"), "en");
+        assert_eq!(
+            whisper_language_for_model("parakeet-tdt-0.6b-v2", "fr"),
+            "en"
+        );
+        assert_eq!(whisper_language_for_model("large-v3-turbo", "es"), "es");
+        assert_eq!(
+            whisper_language_for_model("large-v3-turbo", "Spanish"),
+            "en"
+        );
+        assert_eq!(normalize_transcription_language("auto"), "auto");
+    }
 
     #[test]
     fn download_validation_rejects_partial_and_error_responses() {
