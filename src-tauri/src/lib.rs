@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod cleanup;
 pub mod config;
+pub mod desk;
 pub mod history;
 pub mod hud;
 pub mod inject;
@@ -20,6 +21,9 @@ use audio::{
     UtteranceCompleteEvent, VisionTelemetryPayload,
 };
 use cleanup::{run_local_developer_cleanup, run_local_developer_cleanup_with_vocab, CleanupResult};
+use desk::{
+    export_settings_bundle, import_settings_bundle, shortcut_catalog, summarize_history, DeskStats,
+};
 use history::{
     clear_utterance_history_file, export_history, load_and_prune_history,
     parse_history_export_format, update_history_false_trigger_flag,
@@ -106,6 +110,51 @@ fn flag_false_trigger(app: AppHandle, utterance_id: u64, flagged: bool) -> Resul
         let _ = update_history_false_trigger_flag(&app_data_dir, utterance_id, flagged);
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShortcutRow {
+    action: String,
+    keys: String,
+}
+
+#[tauri::command]
+fn list_shortcuts() -> Vec<ShortcutRow> {
+    shortcut_catalog()
+        .into_iter()
+        .map(|(action, keys)| ShortcutRow {
+            action: action.to_string(),
+            keys: keys.to_string(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn desk_stats(app: AppHandle) -> DeskStats {
+    let entries = app
+        .path()
+        .app_data_dir()
+        .map(|dir| load_and_prune_history(&dir, unix_timestamp_ms()))
+        .unwrap_or_default();
+    summarize_history(&entries)
+}
+
+#[tauri::command]
+fn export_settings(state: State<'_, AppState>) -> String {
+    export_settings_bundle(&state.audio.get_config())
+}
+
+#[tauri::command]
+fn import_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    raw: String,
+) -> Result<DictationConfig, String> {
+    let config = import_settings_bundle(&raw)?;
+    let updated = state.audio.update_config(config)?;
+    let _ = app.emit("dictation-config-updated", &updated);
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -552,6 +601,10 @@ pub fn run() {
             llm_api_key_status,
             flag_false_trigger,
             export_utterance_history,
+            list_shortcuts,
+            desk_stats,
+            export_settings,
+            import_settings,
             license_status,
             set_license_key,
             clear_license_key,

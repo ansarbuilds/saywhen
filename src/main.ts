@@ -19,7 +19,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
 import { playWakeChime, unlockChimeOnFirstInteraction } from './chime';
-import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState } from './ui';
+import { isMac, refreshRangeFills, setAudioLevel, setSendModeUi, setUiState, switchTab } from './ui';
 import { initSetupChecklist, reopenSetupChecklist, updateSetupChecklist } from './setup';
 import { initCommandPalette } from './commands';
 import { initIntro } from './intro';
@@ -96,6 +96,14 @@ interface DictationConfig {
   transcriptionLanguage?: string;
   licenseEnforcement?: string;
   licenseEndpoint?: string;
+  quietHoursEnabled?: boolean;
+  quietHoursStartMinute?: number;
+  quietHoursEndMinute?: number;
+  spokenPunctuation?: boolean;
+  capitalizeSentences?: boolean;
+  hudAnchor?: string;
+  updateChannel?: string;
+  diagnosticsOptIn?: boolean;
   historyPersistenceEnabled: boolean;
   llmCleanupEnabled: boolean;
   llmEndpointUrl: string;
@@ -113,6 +121,7 @@ interface VisionTelemetryPayload {
   pitch: number;
   jawOpen: number;
   gesture: string;
+  localMinute?: number;
 }
 
 interface ModelInfo {
@@ -291,6 +300,14 @@ let currentConfig: DictationConfig = {
   transcriptionLanguage: 'en',
   licenseEnforcement: 'off',
   licenseEndpoint: '',
+  quietHoursEnabled: false,
+  quietHoursStartMinute: 22 * 60,
+  quietHoursEndMinute: 7 * 60,
+  spokenPunctuation: false,
+  capitalizeSentences: false,
+  hudAnchor: 'bottom-center',
+  updateChannel: 'stable',
+  diagnosticsOptIn: false,
   historyPersistenceEnabled: true,
   llmCleanupEnabled: false,
   llmEndpointUrl: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -2124,6 +2141,7 @@ function processVisionFrame(now: number) {
           pitch,
           jawOpen,
           gesture,
+          localMinute: new Date().getHours() * 60 + new Date().getMinutes(),
         } satisfies VisionTelemetryPayload,
       });
     } else {
@@ -2169,6 +2187,7 @@ function processVisionFrame(now: number) {
           pitch: 0,
           jawOpen: 0,
           gesture: 'none',
+          localMinute: new Date().getHours() * 60 + new Date().getMinutes(),
         } satisfies VisionTelemetryPayload,
       });
     }
@@ -2383,6 +2402,19 @@ function appendUtteranceCard(
   filterUtteranceFeed();
 }
 
+function minuteToClock(minute: number): string {
+  const clamped = Math.max(0, Math.min(1439, minute));
+  const hours = Math.floor(clamped / 60);
+  const mins = clamped % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function clockToMinute(value: string): number {
+  const [hours, mins] = value.split(':').map((part) => parseInt(part, 10));
+  if (!Number.isFinite(hours) || !Number.isFinite(mins)) return 0;
+  return Math.max(0, Math.min(1439, hours * 60 + mins));
+}
+
 function applyProductFields(config: DictationConfig) {
   const snippets = document.getElementById('snippets-input') as HTMLTextAreaElement | null;
   const profiles = document.getElementById('app-profiles-input') as HTMLTextAreaElement | null;
@@ -2405,6 +2437,22 @@ function applyProductFields(config: DictationConfig) {
   const endpoint = document.getElementById('license-endpoint') as HTMLInputElement | null;
   if (enforcement) enforcement.value = config.licenseEnforcement || 'off';
   if (endpoint) endpoint.value = config.licenseEndpoint || '';
+  const quiet = document.getElementById('toggle-quiet-hours') as HTMLInputElement | null;
+  const quietStart = document.getElementById('quiet-start') as HTMLInputElement | null;
+  const quietEnd = document.getElementById('quiet-end') as HTMLInputElement | null;
+  const punct = document.getElementById('toggle-spoken-punctuation') as HTMLInputElement | null;
+  const caps = document.getElementById('toggle-capitalize') as HTMLInputElement | null;
+  const anchor = document.getElementById('hud-anchor') as HTMLSelectElement | null;
+  const channel = document.getElementById('update-channel') as HTMLSelectElement | null;
+  const diagnostics = document.getElementById('toggle-diagnostics') as HTMLInputElement | null;
+  if (quiet) quiet.checked = Boolean(config.quietHoursEnabled);
+  if (quietStart) quietStart.value = minuteToClock(config.quietHoursStartMinute ?? 22 * 60);
+  if (quietEnd) quietEnd.value = minuteToClock(config.quietHoursEndMinute ?? 7 * 60);
+  if (punct) punct.checked = Boolean(config.spokenPunctuation);
+  if (caps) caps.checked = Boolean(config.capitalizeSentences);
+  if (anchor) anchor.value = config.hudAnchor || 'bottom-center';
+  if (channel) channel.value = config.updateChannel || 'stable';
+  if (diagnostics) diagnostics.checked = Boolean(config.diagnosticsOptIn);
   toggleHandsFree.checked = config.handsFreeEnabled !== false;
   renderSendMode();
 }
@@ -2431,6 +2479,14 @@ async function syncConfigToBackend() {
     transcriptionLanguage: (document.getElementById('language-select') as HTMLSelectElement | null)?.value || 'en',
     licenseEnforcement: (document.getElementById('license-enforcement') as HTMLSelectElement | null)?.value || 'off',
     licenseEndpoint: (document.getElementById('license-endpoint') as HTMLInputElement | null)?.value.trim() || '',
+    quietHoursEnabled: (document.getElementById('toggle-quiet-hours') as HTMLInputElement | null)?.checked || false,
+    quietHoursStartMinute: clockToMinute((document.getElementById('quiet-start') as HTMLInputElement | null)?.value || '22:00'),
+    quietHoursEndMinute: clockToMinute((document.getElementById('quiet-end') as HTMLInputElement | null)?.value || '07:00'),
+    spokenPunctuation: (document.getElementById('toggle-spoken-punctuation') as HTMLInputElement | null)?.checked || false,
+    capitalizeSentences: (document.getElementById('toggle-capitalize') as HTMLInputElement | null)?.checked || false,
+    hudAnchor: (document.getElementById('hud-anchor') as HTMLSelectElement | null)?.value || 'bottom-center',
+    updateChannel: (document.getElementById('update-channel') as HTMLSelectElement | null)?.value || 'stable',
+    diagnosticsOptIn: (document.getElementById('toggle-diagnostics') as HTMLInputElement | null)?.checked || false,
     // Enter is decided by the send mode now; app rules and the destructive guard still apply.
     autoPressEnter: true,
     sendMode: currentConfig.sendMode,
@@ -2561,6 +2617,7 @@ async function initApp() {
     updateCalibrationDisplay();
     updateHistoryBadgeDisplay();
     setupBackendReady = true;
+    void refreshDeskStats();
     syncSetupChecklist();
 
     if (Array.isArray(snapshot.recentHistory) && snapshot.recentHistory.length > 0) {
@@ -3139,6 +3196,51 @@ clearTerminalBtn.addEventListener('click', () => {
 
 historySearchInput.addEventListener('input', filterUtteranceFeed);
 
+document.getElementById('export-settings-btn')?.addEventListener('click', async () => {
+  try {
+    const raw = await invoke<string>('export_settings');
+    const blob = new Blob([raw], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'saywhen-settings.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showError(String(err));
+  }
+});
+
+document.getElementById('import-settings-btn')?.addEventListener('click', () => {
+  document.getElementById('import-settings-file')?.click();
+});
+
+document.getElementById('import-settings-file')?.addEventListener('change', async (event) => {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try {
+    const raw = await file.text();
+    const updated = await invoke<DictationConfig>('import_settings', { raw });
+    currentConfig = updated;
+    applyProductFields(currentConfig);
+    showError('Settings imported on this computer.');
+  } catch (err) {
+    showError(String(err));
+  }
+});
+
+async function refreshDeskStats() {
+  const badge = document.getElementById('desk-stats-badge');
+  if (!badge) return;
+  try {
+    const stats = await invoke<{ utterances: number; words: number; topApp: string }>('desk_stats');
+    const app = stats.topApp ? ` · ${stats.topApp}` : '';
+    badge.textContent = `${stats.utterances} said · ${stats.words} words${app}`;
+  } catch {
+    badge.textContent = 'Stats stay on this computer';
+  }
+}
+
 document.getElementById('export-history-btn')?.addEventListener('click', async () => {
   try {
     const markdown = await invoke<string>('export_utterance_history', { format: 'markdown' });
@@ -3429,6 +3531,11 @@ function applyDocumentationDemoState(demoMode: string) {
     updatePipelineUiState('IDLE', 0, 0);
     syncOnboardingBadges();
     openOnboardingModal();
+  } else if (demoMode === 'desk') {
+    switchTab('preferences');
+    document.getElementById('pref-listening')?.scrollIntoView();
+    const stats = document.getElementById('desk-stats-badge');
+    if (stats) stats.textContent = '12 said · 86 words · Terminal';
   }
 }
 

@@ -385,6 +385,7 @@
                   <div class="card-title">
                     <h4>Recent</h4>
                     <span class="gauge-tag tag-ok" id="history-ttl-badge" title="Anything older than 7 days is deleted automatically">7d Local</span>
+                    <span class="gauge-tag" id="desk-stats-badge" title="Counted on this computer from saved history">0 said</span>
                   </div>
                   <div class="feed-tools">
                     <label class="search-field">
@@ -602,6 +603,69 @@
                     </select>
                   </div>
                   <p class="pref-footnote">Say a whole command by itself to change saywhen instead of typing: &ldquo;pause listening&rdquo;, &ldquo;resume listening&rdquo;, &ldquo;type only mode&rdquo;, &ldquo;low power mode&rdquo;.</p>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Quiet hours</div>
+                      <div class="toggle-desc">Hands-free start stays off between these local times. The hotkey still works. A window that passes midnight is fine.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-quiet-hours" />
+                  </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="quiet-start">From</label>
+                    </div>
+                    <input type="time" id="quiet-start" class="text-control" value="22:00" />
+                    <label class="field-label" for="quiet-end">Until</label>
+                    <input type="time" id="quiet-end" class="text-control" value="07:00" />
+                  </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Spoken punctuation</div>
+                      <div class="toggle-desc">Saying period, comma, question mark, or new line inserts that mark.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-spoken-punctuation" />
+                  </label>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Capitalize sentences</div>
+                      <div class="toggle-desc">Capitalize the first letter after a period, question mark, or new line.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-capitalize" />
+                  </label>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="hud-anchor">Pill position</label>
+                      <span class="pref-desc">Where the floating status pill sits on the display.</span>
+                    </div>
+                    <select id="hud-anchor" class="text-control">
+                      <option value="bottom-center">Bottom center</option>
+                      <option value="bottom-left">Bottom left</option>
+                      <option value="bottom-right">Bottom right</option>
+                      <option value="top-center">Top center</option>
+                    </select>
+                  </div>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="update-channel">Update channel</label>
+                      <span class="pref-desc">Remembered for a future updater. Nothing is downloaded because of this choice.</span>
+                    </div>
+                    <select id="update-channel" class="text-control">
+                      <option value="stable">Stable</option>
+                      <option value="beta">Beta</option>
+                    </select>
+                  </div>
+                  <label class="toggle-row">
+                    <div>
+                      <div class="toggle-title">Keep diagnostic notes</div>
+                      <div class="toggle-desc">A short list of problems stays on this computer so you can copy it. It is never uploaded.</div>
+                    </div>
+                    <input type="checkbox" id="toggle-diagnostics" />
+                  </label>
+                  <div class="allowlist-editor">
+                    <button type="button" class="btn-xs btn-quiet" id="export-settings-btn">Export settings</button>
+                    <button type="button" class="btn-xs btn-quiet" id="import-settings-btn">Import settings</button>
+                    <input type="file" id="import-settings-file" accept="application/json" class="hidden" />
+                  </div>
                 </div>
               </section>
 

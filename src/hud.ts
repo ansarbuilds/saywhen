@@ -55,6 +55,7 @@ interface DictationConfigLite {
   saveTuningAudioEnabled?: boolean;
   partialTranscript?: string;
   partialEndsWithConnective?: boolean;
+  hudAnchor?: string;
 }
 
 const FLASH_MS = 2600;
@@ -314,6 +315,7 @@ async function initHud() {
     if (e.payload.sendMode) sendMode = e.payload.sendMode;
     if (typeof e.payload.cancelOnSpeech === 'boolean') cancelOnSpeech = e.payload.cancelOnSpeech;
     if (e.payload.uiPalette) root.dataset.palette = e.payload.uiPalette;
+    if (e.payload.hudAnchor) root.dataset.anchor = e.payload.hudAnchor;
     root.dataset.moodColors = e.payload.moodColors === false ? 'off' : 'on';
     if (recBadge && typeof e.payload.saveTuningAudioEnabled === 'boolean') {
       recBadge.classList.toggle('hidden', !e.payload.saveTuningAudioEnabled);

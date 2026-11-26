@@ -146,6 +146,28 @@ pub struct DictationConfig {
     /// HTTPS license server. Empty means the public development checker, which must not be used to charge money.
     #[serde(default)]
     pub license_endpoint: String,
+    /// Do not auto-start during this local-time window. The window can cross midnight.
+    #[serde(default)]
+    pub quiet_hours_enabled: bool,
+    #[serde(default)]
+    pub quiet_hours_start_minute: u16,
+    #[serde(default = "default_quiet_end_minute")]
+    pub quiet_hours_end_minute: u16,
+    /// Turn spoken "period" and "comma" into characters.
+    #[serde(default)]
+    pub spoken_punctuation: bool,
+    /// Capitalize the first letter after a sentence.
+    #[serde(default)]
+    pub capitalize_sentences: bool,
+    /// Where the floating pill sits: bottom-center, bottom-left, bottom-right, top-center.
+    #[serde(default = "default_hud_anchor")]
+    pub hud_anchor: String,
+    /// stable or beta. The app does not phone home for this. It is remembered for a future updater.
+    #[serde(default = "default_update_channel")]
+    pub update_channel: String,
+    /// Keep a short local list of error notes the user can copy. Off by default. Never uploaded.
+    #[serde(default)]
+    pub diagnostics_opt_in: bool,
     /// Persist recent utterances locally in `<app_data_dir>/utterance-history.jsonl`, auto-purged after 7 days.
     #[serde(default = "default_true")]
     pub history_persistence_enabled: bool,
@@ -182,6 +204,18 @@ fn default_transcription_language() -> String {
 
 fn default_license_enforcement() -> String {
     "off".to_string()
+}
+
+fn default_quiet_end_minute() -> u16 {
+    7 * 60
+}
+
+fn default_hud_anchor() -> String {
+    "bottom-center".to_string()
+}
+
+fn default_update_channel() -> String {
+    "stable".to_string()
 }
 
 fn default_wake_word() -> String {
@@ -302,6 +336,14 @@ impl Default for DictationConfig {
             transcription_language: default_transcription_language(),
             license_enforcement: default_license_enforcement(),
             license_endpoint: String::new(),
+            quiet_hours_enabled: false,
+            quiet_hours_start_minute: 22 * 60,
+            quiet_hours_end_minute: default_quiet_end_minute(),
+            spoken_punctuation: false,
+            capitalize_sentences: false,
+            hud_anchor: default_hud_anchor(),
+            update_channel: default_update_channel(),
+            diagnostics_opt_in: false,
             history_persistence_enabled: true,
             llm_cleanup_enabled: false,
             llm_endpoint_url: default_llm_endpoint_url(),
@@ -366,6 +408,14 @@ impl DictationConfig {
             .as_str()
             .to_string();
         self.license_endpoint = self.license_endpoint.trim().to_string();
+        self.quiet_hours_start_minute = crate::desk::clamp_minute(self.quiet_hours_start_minute);
+        self.quiet_hours_end_minute = crate::desk::clamp_minute(self.quiet_hours_end_minute);
+        self.hud_anchor = crate::desk::HudAnchor::parse(&self.hud_anchor)
+            .as_str()
+            .to_string();
+        self.update_channel = crate::desk::UpdateChannel::parse(&self.update_channel)
+            .as_str()
+            .to_string();
     }
 
     /// Writable settings file. Lives next to utterance history so saves do not depend on

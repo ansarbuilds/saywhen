@@ -64,6 +64,10 @@ body {
   transition: opacity 260ms var(--ease-out), transform 360ms var(--ease-out);
 }
 
+.hud-root[data-anchor='bottom-left'] { align-items: flex-start; }
+.hud-root[data-anchor='bottom-right'] { align-items: flex-end; }
+.hud-root[data-anchor='top-center'] { justify-content: flex-start; }
+
 .hud-root.hud-off {
   opacity: 0;
   transform: translateY(6px) scale(0.98);

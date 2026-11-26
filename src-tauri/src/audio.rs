@@ -100,6 +100,9 @@ pub struct VisionTelemetryPayload {
     pub pitch: f32,
     pub jaw_open: f32,
     pub gesture: String,
+    /// Local minute of the day, 0 to 1439, from the window clock. Used for quiet hours.
+    #[serde(default)]
+    pub local_minute: Option<u16>,
 }
 
 impl Default for VisionTelemetryPayload {
@@ -115,6 +118,7 @@ impl Default for VisionTelemetryPayload {
             pitch: 0.0,
             jaw_open: 0.0,
             gesture: "none".to_string(),
+            local_minute: None,
         }
     }
 }
@@ -1908,6 +1912,23 @@ fn run_audio_worker(
                                     cfg_snapshot.cleanup_enabled,
                                     &vocab,
                                 );
+                                if cfg_snapshot.spoken_punctuation {
+                                    let marked = crate::desk::apply_spoken_punctuation(
+                                        &cleanup.cleaned_text,
+                                    );
+                                    if marked != cleanup.cleaned_text {
+                                        cleanup.cleaned_text = marked;
+                                        cleanup.modified = true;
+                                    }
+                                }
+                                if cfg_snapshot.capitalize_sentences {
+                                    let capped =
+                                        crate::desk::capitalize_sentences(&cleanup.cleaned_text);
+                                    if capped != cleanup.cleaned_text {
+                                        cleanup.cleaned_text = capped;
+                                        cleanup.modified = true;
+                                    }
+                                }
 
                                 if !cleanup.canceled_by_voice {
                                     if let Some(command) =
@@ -2342,7 +2363,15 @@ fn run_audio_worker(
                 recent_voice_ms: prev_voice_ms.map(|t| now_ms.saturating_sub(t)),
                 consecutive_vad_frames: guard.consecutive_vad_frames,
             };
-            if should_auto_start(&gate_inputs, &turn_cfg) {
+            let quiet = cfg.quiet_hours_enabled
+                && guard.vision.local_minute.is_some_and(|minute| {
+                    crate::desk::in_quiet_hours(
+                        cfg.quiet_hours_start_minute,
+                        cfg.quiet_hours_end_minute,
+                        minute,
+                    )
+                });
+            if !quiet && should_auto_start(&gate_inputs, &turn_cfg) {
                 should_auto_start_listening = true;
             }
 
