@@ -10,11 +10,16 @@ use crate::inject::{
     InjectionOutcome, InjectionTimingConfig, TargetChangePolicy,
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
+use crate::profiles::{match_app_profile, merge_vocab};
 use crate::secrets::{
     take_legacy_llm_api_key, validate_secret_value, DefaultSecretStore, SecretStore,
     LLM_CLEANUP_API_KEY,
 };
+use crate::snippets::{apply_snippets, sanitize_snippets, Snippet};
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
+use crate::voice_commands::{
+    describe_voice_command, parse_voice_command, VoiceCommand, VoiceCommandEvent,
+};
 /// Wake word decision log (terminal, plus a temp file in development builds).
 macro_rules! wake_log {
     ($($arg:tt)*) => {
@@ -30,12 +35,12 @@ use crate::turn_taking::{
     should_auto_start, should_cancel_preview_on_speech, should_count_vad_frame_in_turn,
     silence_countdown_ms, ArmingHysteresisState, AudioStreamRecoveryAction, EndReason, GateInputs,
     PreviewDeadline, RecordedVisionSample, SendMode, TuningRecordingSidecar, TurnState,
-    TurnTakingConfig, UtteranceMetricsRecord, DEFAULT_ARM_DWELL_MS, DEFAULT_ARM_PITCH_ENTER_DEG,
-    DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG, DEFAULT_ARM_YAW_EXIT_DEG,
-    DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS, DEFAULT_MAX_SILENCE_TIMEOUT_MS,
-    DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_POST_ROLL_MS,
-    MAX_CALIBRATED_RESTING_MAR, MAX_CALIBRATED_YAW_OFFSET_DEG, NOD_WAIT_TIMEOUT_MS,
-    SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
+    TurnTakingConfig, UtteranceMetricsRecord, VisionPowerMode, DEFAULT_ARM_DWELL_MS,
+    DEFAULT_ARM_PITCH_ENTER_DEG, DEFAULT_ARM_PITCH_EXIT_DEG, DEFAULT_ARM_YAW_ENTER_DEG,
+    DEFAULT_ARM_YAW_EXIT_DEG, DEFAULT_CALIBRATED_RESTING_MAR, DEFAULT_DISARM_DWELL_MS,
+    DEFAULT_MAX_SILENCE_TIMEOUT_MS, DEFAULT_MIN_SPEECH_HOTKEY_MS, DEFAULT_MIN_SPEECH_MS,
+    DEFAULT_POST_ROLL_MS, MAX_CALIBRATED_RESTING_MAR, MAX_CALIBRATED_YAW_OFFSET_DEG,
+    NOD_WAIT_TIMEOUT_MS, SYSTEM_SLEEP_JUMP_THRESHOLD_MS, VAD_FRAME_MS,
 };
 use crate::wake_word::{
     early_wake_verdict_with_profile, effective_wake_word, extract_leading_wake_alias, first_word,
@@ -224,6 +229,18 @@ pub struct DictationConfig {
     /// Optional user-configured developer vocabulary terms (comma- or newline-separated).
     #[serde(default)]
     pub custom_vocab: String,
+    /// Spoken phrase replacements, applied after clean-up.
+    #[serde(default)]
+    pub snippets: Vec<Snippet>,
+    /// Send style, extra words, or language for one app.
+    #[serde(default)]
+    pub app_profiles: Vec<crate::profiles::AppProfile>,
+    /// Camera frame budget: auto, full, or low.
+    #[serde(default)]
+    pub vision_power_mode: VisionPowerMode,
+    /// Whisper language. English-only models stay on English.
+    #[serde(default = "default_transcription_language")]
+    pub transcription_language: String,
     /// Persist recent utterances locally in `<app_data_dir>/utterance-history.jsonl`, auto-purged after 7 days.
     #[serde(default = "default_true")]
     pub history_persistence_enabled: bool,
@@ -252,6 +269,10 @@ fn default_llm_endpoint_url() -> String {
 
 fn default_llm_model() -> String {
     "qwen2.5-coder:1.5b".to_string()
+}
+
+fn default_transcription_language() -> String {
+    "en".to_string()
 }
 
 fn default_wake_word() -> String {
@@ -366,6 +387,10 @@ impl Default for DictationConfig {
             side_camera_mode: false,
             adaptive_fps_enabled: true,
             custom_vocab: String::new(),
+            snippets: Vec::new(),
+            app_profiles: Vec::new(),
+            vision_power_mode: VisionPowerMode::Auto,
+            transcription_language: default_transcription_language(),
             history_persistence_enabled: true,
             llm_cleanup_enabled: false,
             llm_endpoint_url: default_llm_endpoint_url(),
@@ -422,6 +447,10 @@ impl DictationConfig {
         self.calibrated_resting_mar = self
             .calibrated_resting_mar
             .clamp(0.006, MAX_CALIBRATED_RESTING_MAR);
+        sanitize_snippets(&mut self.snippets);
+        crate::profiles::sanitize_profiles(&mut self.app_profiles);
+        self.transcription_language =
+            crate::transcribe::normalize_transcription_language(&self.transcription_language);
     }
 
     /// Writable settings file. Lives next to utterance history so saves do not depend on
@@ -2098,6 +2127,21 @@ fn run_audio_worker(
                     let tx_for_preview = cmd_tx_self.clone();
 
                     thread::spawn(move || {
+                        let language_override = {
+                            let front = detect_frontmost_app();
+                            match_app_profile(
+                                &cfg_snapshot.app_profiles,
+                                &front.name,
+                                front.bundle_id.as_deref(),
+                                front.exe.as_deref(),
+                            )
+                            .and_then(|profile| profile.language.clone())
+                        };
+                        transcriber_ref.set_language(
+                            language_override
+                                .as_deref()
+                                .unwrap_or(cfg_snapshot.transcription_language.as_str()),
+                        );
                         if let Some(step_str) =
                             captured.trigger_source.strip_prefix("voice_enroll:")
                         {
@@ -2225,11 +2269,67 @@ fn run_audio_worker(
                                     }
                                 }
 
+                                let delivery_app = detect_frontmost_app();
+                                let profile = match_app_profile(
+                                    &cfg_snapshot.app_profiles,
+                                    &delivery_app.name,
+                                    delivery_app.bundle_id.as_deref(),
+                                    delivery_app.exe.as_deref(),
+                                );
+                                let vocab = merge_vocab(
+                                    &cfg_snapshot.custom_vocab,
+                                    profile.map(|item| item.extra_vocab.as_str()).unwrap_or(""),
+                                );
+                                let resolved_send_mode = profile
+                                    .and_then(|item| item.send_mode)
+                                    .unwrap_or(cfg_snapshot.send_mode);
                                 let mut cleanup = run_local_developer_cleanup_with_vocab(
                                     &transcription.text,
                                     cfg_snapshot.cleanup_enabled,
-                                    &cfg_snapshot.custom_vocab,
+                                    &vocab,
                                 );
+
+                                if !cleanup.canceled_by_voice {
+                                    if let Some(command) =
+                                        parse_voice_command(&cleanup.cleaned_text)
+                                    {
+                                        let updated = {
+                                            let mut guard = config_for_tx.lock().unwrap();
+                                            match command {
+                                                VoiceCommand::PauseListening => {
+                                                    guard.hands_free_enabled = false;
+                                                }
+                                                VoiceCommand::ResumeListening => {
+                                                    guard.hands_free_enabled = true;
+                                                }
+                                                VoiceCommand::SetSendMode(mode) => {
+                                                    guard.send_mode = mode;
+                                                }
+                                                VoiceCommand::SetVisionPower(mode) => {
+                                                    guard.vision_power_mode = mode;
+                                                    guard.adaptive_fps_enabled =
+                                                        mode != VisionPowerMode::Full;
+                                                }
+                                            }
+                                            let updated = guard.clone();
+                                            let _ = updated.save_to_path(&settings_path_for_tx);
+                                            updated
+                                        };
+                                        {
+                                            let mut guard = shared_after.lock().unwrap();
+                                            guard.state = guard.resting_state(&turn_cfg_snapshot);
+                                        }
+                                        let _ = app_for_tx.emit(
+                                            "voice-command",
+                                            VoiceCommandEvent {
+                                                message: describe_voice_command(command),
+                                            },
+                                        );
+                                        let _ =
+                                            app_for_tx.emit("dictation-config-updated", &updated);
+                                        return;
+                                    }
+                                }
 
                                 if cleanup.canceled_by_voice {
                                     {
@@ -2331,6 +2431,15 @@ fn run_audio_worker(
                                     return;
                                 }
 
+                                let expanded =
+                                    apply_snippets(&cleanup.cleaned_text, &cfg_snapshot.snippets);
+                                if expanded != cleanup.cleaned_text {
+                                    cleanup.cleaned_text = expanded;
+                                    cleanup.modified = true;
+                                    cleanup.is_destructive_command =
+                                        check_destructive_command(&cleanup.cleaned_text);
+                                }
+
                                 if cfg_snapshot.llm_cleanup_enabled {
                                     let llm_cfg = LlmCleanupConfig {
                                         enabled: true,
@@ -2341,7 +2450,7 @@ fn run_audio_worker(
                                     };
                                     match run_opt_in_llm_cleanup(
                                         &cleanup.cleaned_text,
-                                        &cfg_snapshot.custom_vocab,
+                                        &vocab,
                                         &llm_cfg,
                                     ) {
                                         Ok(llm_out) => {
@@ -2363,7 +2472,7 @@ fn run_audio_worker(
                                 }
 
                                 let front_app = detect_frontmost_app();
-                                let wants_enter = cfg_snapshot.send_mode.wants_enter(
+                                let wants_enter = resolved_send_mode.wants_enter(
                                     cfg_snapshot.auto_press_enter,
                                     transcription.end_phrase_triggered,
                                 ) && !cleanup.force_paste_only;
@@ -2403,9 +2512,8 @@ fn run_audio_worker(
                                     None
                                 };
 
-                                let waits_for_nod = cfg_snapshot
-                                    .send_mode
-                                    .preview_waits_for_nod(captured.end_reason);
+                                let waits_for_nod =
+                                    resolved_send_mode.preview_waits_for_nod(captured.end_reason);
                                 let trailing_connective =
                                     ends_with_connective(&cleanup.cleaned_text);
                                 let item = PendingPreviewItem {
@@ -2418,7 +2526,7 @@ fn run_audio_worker(
                                     } else {
                                         cfg_snapshot.preview_countdown_ms
                                     },
-                                    send_mode: cfg_snapshot.send_mode,
+                                    send_mode: resolved_send_mode,
                                     waits_for_nod,
                                     transcription,
                                     cleanup,

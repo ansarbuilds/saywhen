@@ -120,6 +120,68 @@ pub fn clear_utterance_history_file(app_data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryExportFormat {
+    Text,
+    Markdown,
+    Json,
+}
+
+pub fn parse_history_export_format(raw: &str) -> HistoryExportFormat {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "json" => HistoryExportFormat::Json,
+        "text" | "txt" => HistoryExportFormat::Text,
+        _ => HistoryExportFormat::Markdown,
+    }
+}
+
+/// Renders saved utterances for a file the user asked to download.
+/// The text stays on this computer until they save that file.
+pub fn export_history(entries: &[UtteranceCompleteEvent], format: HistoryExportFormat) -> String {
+    match format {
+        HistoryExportFormat::Json => {
+            let rows: Vec<_> = entries
+                .iter()
+                .map(|entry| {
+                    serde_json::json!({
+                        "timestampMs": entry.timestamp_ms,
+                        "app": entry.target_policy.app_name,
+                        "text": entry.cleanup.cleaned_text,
+                        "raw": entry.transcription.text,
+                    })
+                })
+                .collect();
+            serde_json::to_string_pretty(&rows).unwrap_or_else(|_| "[]".to_string())
+        }
+        HistoryExportFormat::Text => entries
+            .iter()
+            .map(|entry| {
+                format!(
+                    "{}\t{}\t{}",
+                    entry.timestamp_ms,
+                    entry.target_policy.app_name,
+                    entry.cleanup.cleaned_text.replace(['\n', '\r', '\t'], " ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        HistoryExportFormat::Markdown => {
+            let mut out = String::from("# saywhen history\n\n");
+            if entries.is_empty() {
+                out.push_str("Nothing saved.\n");
+                return out;
+            }
+            for entry in entries {
+                out.push_str(&format!(
+                    "## {}\n\nApp: {}\n\n{}\n\n",
+                    entry.timestamp_ms, entry.target_policy.app_name, entry.cleanup.cleaned_text
+                ));
+            }
+            out
+        }
+    }
+}
+
 fn write_history_entries(
     app_data_dir: &Path,
     entries: &[UtteranceCompleteEvent],
@@ -203,11 +265,8 @@ mod tests {
 
     #[test]
     fn test_seven_day_history_prunes_expired_entries_and_persists_recent() {
-        let tmp_dir = std::env::temp_dir().join(format!(
-            "saywhen_history_test_{}_{}",
-            std::process::id(),
-            1
-        ));
+        let tmp_dir =
+            std::env::temp_dir().join(format!("saywhen_history_test_{}_{}", std::process::id(), 1));
         let _ = fs::remove_dir_all(&tmp_dir);
 
         let now_ms = 1_750_000_000_000u64;
@@ -238,11 +297,8 @@ mod tests {
 
     #[test]
     fn test_history_false_trigger_flag_and_clear_purges_disk() {
-        let tmp_dir = std::env::temp_dir().join(format!(
-            "saywhen_history_test_{}_{}",
-            std::process::id(),
-            2
-        ));
+        let tmp_dir =
+            std::env::temp_dir().join(format!("saywhen_history_test_{}_{}", std::process::id(), 2));
         let _ = fs::remove_dir_all(&tmp_dir);
 
         let now_ms = 1_750_000_000_000u64;
@@ -259,5 +315,16 @@ mod tests {
         assert!(load_and_prune_history(&tmp_dir, now_ms).is_empty());
 
         let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn export_contains_cleaned_text_and_not_a_secret_field() {
+        let entry = sample_event(1, 10, "cargo test");
+        let markdown = export_history(&[entry.clone()], HistoryExportFormat::Markdown);
+        assert!(markdown.contains("cargo test"));
+        assert!(markdown.contains("# saywhen history"));
+        let json = export_history(&[entry], HistoryExportFormat::Json);
+        assert!(json.contains("\"text\": \"cargo test\""));
+        assert!(!json.contains("apiKey"));
     }
 }

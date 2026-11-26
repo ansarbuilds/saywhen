@@ -4,9 +4,12 @@ pub mod history;
 pub mod hud;
 pub mod inject;
 pub mod parakeet;
+pub mod profiles;
 pub mod secrets;
+pub mod snippets;
 pub mod transcribe;
 pub mod turn_taking;
+pub mod voice_commands;
 pub mod wake_word;
 
 use audio::{
@@ -15,7 +18,8 @@ use audio::{
 };
 use cleanup::{run_local_developer_cleanup, run_local_developer_cleanup_with_vocab, CleanupResult};
 use history::{
-    clear_utterance_history_file, load_and_prune_history, update_history_false_trigger_flag,
+    clear_utterance_history_file, export_history, load_and_prune_history,
+    parse_history_export_format, update_history_false_trigger_flag,
 };
 use inject::{
     check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
@@ -98,6 +102,17 @@ fn flag_false_trigger(app: AppHandle, utterance_id: u64, flagged: bool) -> Resul
         let _ = update_history_false_trigger_flag(&app_data_dir, utterance_id, flagged);
     }
     Ok(())
+}
+
+#[tauri::command]
+fn export_utterance_history(app: AppHandle, format: Option<String>) -> Result<String, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Could not find the app data folder: {err}"))?;
+    let entries = load_and_prune_history(&app_data_dir, unix_timestamp_ms());
+    let format = parse_history_export_format(format.as_deref().unwrap_or("markdown"));
+    Ok(export_history(&entries, format))
 }
 
 #[tauri::command]
@@ -480,6 +495,7 @@ pub fn run() {
             clear_llm_api_key,
             llm_api_key_status,
             flag_false_trigger,
+            export_utterance_history,
             clear_utterance_history,
         ])
         .build(tauri::generate_context!())

@@ -1,6 +1,8 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
 import { initByokSettings } from './byok';
+import { formatProfileLines, formatSnippetLines, parseProfileLines, parseSnippetLines } from './product-settings';
+import { chooseVisionTickMs, VISION_TICK_ACTIVE_MS, type VisionPowerMode } from './vision-budget';
 import { getVersion } from '@tauri-apps/api/app';
 import { listen } from '@tauri-apps/api/event';
 import './fonts';
@@ -76,6 +78,10 @@ interface DictationConfig {
   uiPalette: string;
   moodColors: boolean;
   customVocab: string;
+  snippets?: { trigger: string; expansion: string }[];
+  appProfiles?: { app: string; sendMode?: SendMode; extraVocab?: string; language?: string }[];
+  visionPowerMode?: VisionPowerMode;
+  transcriptionLanguage?: string;
   historyPersistenceEnabled: boolean;
   llmCleanupEnabled: boolean;
   llmEndpointUrl: string;
@@ -265,6 +271,10 @@ let currentConfig: DictationConfig = {
   uiPalette: 'saywhen',
   moodColors: true,
   customVocab: '',
+  snippets: [],
+  appProfiles: [],
+  visionPowerMode: 'auto',
+  transcriptionLanguage: 'en',
   historyPersistenceEnabled: true,
   llmCleanupEnabled: false,
   llmEndpointUrl: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -299,9 +309,6 @@ let releaseVisionKeepAlive: (() => void) | null = null;
 // rAF stops entirely when the main window is hidden or occluded, and main-thread
 // timers get throttled, but messages posted from a dedicated worker keep arriving.
 // This is what lets the camera gate keep working while saywhen runs in the background.
-const VISION_TICK_ACTIVE_MS = 66; // ~15.1 FPS when armed, listening, or facing screen
-const VISION_TICK_IDLE_AWAY_MS = 125; // 8.0 FPS when face present in IDLE but turned away > 3s
-const VISION_TICK_IDLE_NO_FACE_MS = 200; // 5.0 FPS when no face in frame > 3s (66.7% fewer inferences)
 let currentVisionTickMs = VISION_TICK_ACTIVE_MS;
 let lastFaceOnScreenTimestamp = 0;
 let currentPipelineState = 'IDLE';
@@ -2187,13 +2194,14 @@ function processVisionFrame(now: number) {
 
       // Adaptive FPS scheduling: 15 FPS when active or on-screen, 8 FPS when face away > 3s in IDLE
       const pipelineActive = currentPipelineState !== 'IDLE' || isCalibrating;
-      const desiredTickMs =
-        !currentConfig.adaptiveFpsEnabled ||
-        pipelineActive ||
-        facingScreen ||
-        now - lastFaceOnScreenTimestamp < 3000
-          ? VISION_TICK_ACTIVE_MS
-          : VISION_TICK_IDLE_AWAY_MS;
+      const desiredTickMs = chooseVisionTickMs(
+        currentConfig.visionPowerMode || 'auto',
+        currentConfig.adaptiveFpsEnabled !== false,
+        pipelineActive,
+        true,
+        facingScreen,
+        now - lastFaceOnScreenTimestamp,
+      );
       setVisionTickerInterval(desiredTickMs);
 
       if (renderUi) {
@@ -2248,12 +2256,14 @@ function processVisionFrame(now: number) {
       }
 
       const pipelineActive = currentPipelineState !== 'IDLE' || isCalibrating;
-      const desiredTickMs =
-        !currentConfig.adaptiveFpsEnabled ||
-        pipelineActive ||
-        now - lastFaceOnScreenTimestamp < 3000
-          ? VISION_TICK_ACTIVE_MS
-          : VISION_TICK_IDLE_NO_FACE_MS;
+      const desiredTickMs = chooseVisionTickMs(
+        currentConfig.visionPowerMode || 'auto',
+        currentConfig.adaptiveFpsEnabled !== false,
+        pipelineActive,
+        false,
+        false,
+        now - lastFaceOnScreenTimestamp,
+      );
       setVisionTickerInterval(desiredTickMs);
 
       if (renderUi) {
@@ -2523,6 +2533,28 @@ function appendUtteranceCard(
   filterUtteranceFeed();
 }
 
+function applyProductFields(config: DictationConfig) {
+  const snippets = document.getElementById('snippets-input') as HTMLTextAreaElement | null;
+  const profiles = document.getElementById('app-profiles-input') as HTMLTextAreaElement | null;
+  const power = document.getElementById('vision-power-select') as HTMLSelectElement | null;
+  const language = document.getElementById('language-select') as HTMLSelectElement | null;
+  if (snippets) snippets.value = formatSnippetLines(config.snippets);
+  if (profiles) {
+    profiles.value = formatProfileLines(
+      (config.appProfiles ?? []).map((item) => ({
+        app: item.app,
+        sendMode: item.sendMode,
+        extraVocab: item.extraVocab ?? '',
+        language: item.language,
+      })),
+    );
+  }
+  if (power) power.value = config.visionPowerMode || 'auto';
+  if (language) language.value = config.transcriptionLanguage || 'en';
+  toggleHandsFree.checked = config.handsFreeEnabled !== false;
+  renderSendMode();
+}
+
 async function syncConfigToBackend() {
   const allowlist = allowlistInput.value
     .split(',')
@@ -2539,6 +2571,10 @@ async function syncConfigToBackend() {
     perAppRulesEnabled: togglePerApp.checked,
     autoSendAllowlist: allowlist,
     customVocab: customVocabInput.value.trim(),
+    snippets: parseSnippetLines((document.getElementById('snippets-input') as HTMLTextAreaElement | null)?.value || ''),
+    appProfiles: parseProfileLines((document.getElementById('app-profiles-input') as HTMLTextAreaElement | null)?.value || ''),
+    visionPowerMode: ((document.getElementById('vision-power-select') as HTMLSelectElement | null)?.value || 'auto') as VisionPowerMode,
+    transcriptionLanguage: (document.getElementById('language-select') as HTMLSelectElement | null)?.value || 'en',
     // Enter is decided by the send mode now; app rules and the destructive guard still apply.
     autoPressEnter: true,
     sendMode: currentConfig.sendMode,
@@ -2625,6 +2661,7 @@ async function initApp() {
     previewCountdownDisplay.textContent = formatCountdownSec(currentConfig.previewCountdownMs);
     allowlistInput.value = currentConfig.autoSendAllowlist.join(', ');
     customVocabInput.value = currentConfig.customVocab || '';
+    applyProductFields(currentConfig);
 
     toggleCleanup.checked = currentConfig.cleanupEnabled;
     togglePerApp.checked = currentConfig.perAppRulesEnabled;
@@ -2799,6 +2836,15 @@ async function initApp() {
     }
   });
 
+  await listen<{ message: string }>('voice-command', (event) => {
+    const message = event.payload?.message || 'Updated from your voice.';
+    errorBannerText.textContent = message;
+    const hint = document.getElementById('error-banner-hint');
+    if (hint) hint.textContent = 'Nothing was typed.';
+    errorBanner.classList.remove('hidden');
+    pulseAction('sent');
+  });
+
   await listen<string>('pipeline-error', (event) => {
     if (activeVoiceEnrollStep !== null) {
       const retryStep = activeVoiceEnrollStep;
@@ -2835,6 +2881,7 @@ async function initApp() {
     toggleSaveAudio.checked = Boolean(currentConfig.saveTuningAudioEnabled);
     updateCalibrationDisplay();
     updateHistoryBadgeDisplay();
+    applyProductFields(currentConfig);
   });
 
   await listen<string[]>('audio-devices-changed', (event) => {
@@ -3235,6 +3282,21 @@ clearTerminalBtn.addEventListener('click', () => {
 });
 
 historySearchInput.addEventListener('input', filterUtteranceFeed);
+
+document.getElementById('export-history-btn')?.addEventListener('click', async () => {
+  try {
+    const markdown = await invoke<string>('export_utterance_history', { format: 'markdown' });
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'saywhen-history.md';
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showError(String(err));
+  }
+});
 
 clearFeedBtn.addEventListener('click', () => {
   lastTranscriptText = '';
