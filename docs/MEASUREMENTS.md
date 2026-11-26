@@ -11,8 +11,9 @@ These numbers come from prototype sessions on an Apple Silicon Mac. The films an
 | Developer word clean-up | 34 spoken commands | 34 of 34 exact (was 44.1%) |
 | Speech to text (Whisper tiny.en, GPU) | 1.5 s of audio | 87 to 473 ms |
 | Finding the front app (macOS) | Median of 20 calls | 1 to 2 microseconds |
+| Camera frame budget | Scheduled MediaPipe calls per minute, from `60_000 / tick` | 909 at 66 ms (about 15 FPS). Low power while facing the screen is 480 at 125 ms, a 47.2% cut. Not a CPU or battery measurement. |
 
-The start-and-end-of-speech clips are generated speech with simulated camera traces, not live users. Real-user accuracy, CPU and battery use are not measured yet. The [launch checklist](LAUNCH_CHECKLIST.md) lists what has been checked on which hardware.
+The start-and-end-of-speech clips are generated speech with simulated camera traces, not live users. Real-user accuracy, CPU and battery use are not measured yet. The camera row above is how often the scheduler asks for a frame. It is not a watt-hour or a CPU sample. The [launch checklist](LAUNCH_CHECKLIST.md) lists what has been checked on which hardware.
 
 Run the replay benchmark yourself:
 

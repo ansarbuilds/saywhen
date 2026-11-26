@@ -107,6 +107,32 @@ jobs:
             echo "::warning::Signing is on but notarization secrets are missing. The build will be signed but NOT notarized."
           fi
 
+      # Windows Authenticode. Empty secrets leave the installer unsigned.
+      #   WINDOWS_CERTIFICATE           base64 of the .pfx
+      #   WINDOWS_CERTIFICATE_PASSWORD  password for that .pfx
+      - name: Enable Windows signing (when secrets exist)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          S_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          S_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$S_WINDOWS_CERTIFICATE" ]; then
+            echo "::warning::No Windows certificate secret found. This Windows build is UNSIGNED and SmartScreen will warn."
+            exit 0
+          fi
+          for name in WINDOWS_CERTIFICATE WINDOWS_CERTIFICATE_PASSWORD; do
+            src="S_$name"
+            value="${!src}"
+            if [ -n "$value" ]; then
+              {
+                echo "$name<<__SAYWHEN_EOF__"
+                echo "$value"
+                echo "__SAYWHEN_EOF__"
+              } >> "$GITHUB_ENV"
+            fi
+          done
+
       - name: Build Tauri desktop bundle
         uses: tauri-apps/tauri-action@v0
         env:

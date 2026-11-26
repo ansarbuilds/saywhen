@@ -454,6 +454,7 @@
               <button type="button" class="settings-nav-item" data-settings-target="pref-sending">Sending</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-words">Words</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-privacy">Privacy</button>
+              <button type="button" class="settings-nav-item" data-settings-target="pref-license">License</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-appearance">Appearance</button>
               <button type="button" class="settings-nav-item" data-settings-target="pref-about">About</button>
             </nav>
@@ -765,9 +766,48 @@
                 </div>
               </section>
 
-              <section class="pref-section" id="pref-appearance">
+              <section class="pref-section" id="pref-license">
                 <header class="pref-section-head">
                   <span class="pref-num" aria-hidden="true">05</span>
+                  <div>
+                    <h3>License</h3>
+                    <p>A 14-day trial is tracked on this computer. Enforcement is off, so nothing is locked.</p>
+                  </div>
+                </header>
+                <div class="pref-group">
+                  <p class="pref-footnote" id="license-status" role="status">Checking the trial...</p>
+                  <div class="pref-row">
+                    <div class="pref-text">
+                      <label class="field-label" for="license-enforcement">Enforcement</label>
+                      <span class="pref-desc">Off keeps every feature. Required holds snippets, per-app profiles, history export, cloud clean-up, and other languages for Pro. Dictation itself stays available.</span>
+                    </div>
+                    <select id="license-enforcement" class="text-control">
+                      <option value="off">Off</option>
+                      <option value="soft">Soft, warn only</option>
+                      <option value="required">Required</option>
+                    </select>
+                  </div>
+                  <div class="pref-row pref-row-stack">
+                    <div class="pref-text">
+                      <label class="field-label" for="license-endpoint">License server</label>
+                      <span class="pref-desc">Leave this empty during development. The built-in checker uses a public test secret and must not be how you charge money. A real Lemon Squeezy, Paddle, or Stripe check belongs on your server, which returns valid, tier, and expiresAtMs.</span>
+                    </div>
+                    <input type="url" id="license-endpoint" class="text-control" placeholder="https://licenses.example.com/check" spellcheck="false" autocomplete="off" />
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="license-key-input">License key</label>
+                    <input type="password" id="license-key-input" class="text-control" autocomplete="off" spellcheck="false" />
+                    <div class="allowlist-editor">
+                      <button type="button" class="btn-xs btn-accent" id="license-key-save">Save key</button>
+                      <button type="button" class="btn-xs btn-quiet" id="license-key-clear">Remove key</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="pref-section" id="pref-appearance">
+                <header class="pref-section-head">
+                  <span class="pref-num" aria-hidden="true">06</span>
                   <div>
                     <h3>Appearance</h3>
                     <p>Theme and accent. It also colours the floating pill.</p>
@@ -865,7 +905,7 @@
               </section>
               <section class="pref-section" id="pref-about">
                 <header class="pref-section-head">
-                  <span class="pref-num" aria-hidden="true">06</span>
+                  <span class="pref-num" aria-hidden="true">07</span>
                   <div>
                     <h3>About</h3>
                     <p>Version, support and the diagnostics to copy when something fails.</p>

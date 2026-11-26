@@ -3,6 +3,7 @@ pub mod cleanup;
 pub mod history;
 pub mod hud;
 pub mod inject;
+pub mod license;
 pub mod parakeet;
 pub mod profiles;
 pub mod secrets;
@@ -25,6 +26,7 @@ use inject::{
     check_accessibility_permission, detect_frontmost_app, evaluate_app_injection_policy,
     inject_text_into_focused_app, open_accessibility_settings, FrontmostApp, InjectionOutcome,
 };
+use license::{license_allows, LicenseFeature};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -105,14 +107,66 @@ fn flag_false_trigger(app: AppHandle, utterance_id: u64, flagged: bool) -> Resul
 }
 
 #[tauri::command]
-fn export_utterance_history(app: AppHandle, format: Option<String>) -> Result<String, String> {
+fn export_utterance_history(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    format: Option<String>,
+) -> Result<String, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|err| format!("Could not find the app data folder: {err}"))?;
+    let decision = state.audio.license_decision();
+    if !license_allows(LicenseFeature::HistoryExport, &decision) {
+        return Err(format!(
+            "{} History export waits for Pro while enforcement is required. Core dictation still works.",
+            decision.message
+        ));
+    }
     let entries = load_and_prune_history(&app_data_dir, unix_timestamp_ms());
     let format = parse_history_export_format(format.as_deref().unwrap_or("markdown"));
     Ok(export_history(&entries, format))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LicenseStatusPayload {
+    tier: String,
+    enforcement: String,
+    trial_days_left: i64,
+    clock_tampered: bool,
+    key_present: bool,
+    checker: String,
+    message: String,
+}
+
+#[tauri::command]
+fn license_status(state: State<'_, AppState>) -> LicenseStatusPayload {
+    let decision = state.audio.license_decision();
+    LicenseStatusPayload {
+        tier: decision.tier.as_str().to_string(),
+        enforcement: decision.enforcement.as_str().to_string(),
+        trial_days_left: decision.trial_days_left,
+        clock_tampered: decision.clock_tampered,
+        key_present: decision.key_present,
+        checker: decision.checker.to_string(),
+        message: decision.message,
+    }
+}
+
+#[tauri::command]
+fn set_license_key(
+    state: State<'_, AppState>,
+    license_key: String,
+) -> Result<LicenseStatusPayload, String> {
+    state.audio.set_license_key(&license_key)?;
+    Ok(license_status(state))
+}
+
+#[tauri::command]
+fn clear_license_key(state: State<'_, AppState>) -> Result<LicenseStatusPayload, String> {
+    state.audio.clear_license_key()?;
+    Ok(license_status(state))
 }
 
 #[tauri::command]
@@ -496,6 +550,9 @@ pub fn run() {
             llm_api_key_status,
             flag_false_trigger,
             export_utterance_history,
+            license_status,
+            set_license_key,
+            clear_license_key,
             clear_utterance_history,
         ])
         .build(tauri::generate_context!())

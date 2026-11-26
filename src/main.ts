@@ -1,6 +1,7 @@
 import { FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { invoke } from '@tauri-apps/api/core';
 import { initByokSettings } from './byok';
+import { initLicenseSettings } from './license-ui';
 import { formatProfileLines, formatSnippetLines, parseProfileLines, parseSnippetLines } from './product-settings';
 import { chooseVisionTickMs, VISION_TICK_ACTIVE_MS, type VisionPowerMode } from './vision-budget';
 import { getVersion } from '@tauri-apps/api/app';
@@ -82,6 +83,8 @@ interface DictationConfig {
   appProfiles?: { app: string; sendMode?: SendMode; extraVocab?: string; language?: string }[];
   visionPowerMode?: VisionPowerMode;
   transcriptionLanguage?: string;
+  licenseEnforcement?: string;
+  licenseEndpoint?: string;
   historyPersistenceEnabled: boolean;
   llmCleanupEnabled: boolean;
   llmEndpointUrl: string;
@@ -275,6 +278,8 @@ let currentConfig: DictationConfig = {
   appProfiles: [],
   visionPowerMode: 'auto',
   transcriptionLanguage: 'en',
+  licenseEnforcement: 'off',
+  licenseEndpoint: '',
   historyPersistenceEnabled: true,
   llmCleanupEnabled: false,
   llmEndpointUrl: 'http://127.0.0.1:11434/v1/chat/completions',
@@ -2551,6 +2556,10 @@ function applyProductFields(config: DictationConfig) {
   }
   if (power) power.value = config.visionPowerMode || 'auto';
   if (language) language.value = config.transcriptionLanguage || 'en';
+  const enforcement = document.getElementById('license-enforcement') as HTMLSelectElement | null;
+  const endpoint = document.getElementById('license-endpoint') as HTMLInputElement | null;
+  if (enforcement) enforcement.value = config.licenseEnforcement || 'off';
+  if (endpoint) endpoint.value = config.licenseEndpoint || '';
   toggleHandsFree.checked = config.handsFreeEnabled !== false;
   renderSendMode();
 }
@@ -2575,6 +2584,8 @@ async function syncConfigToBackend() {
     appProfiles: parseProfileLines((document.getElementById('app-profiles-input') as HTMLTextAreaElement | null)?.value || ''),
     visionPowerMode: ((document.getElementById('vision-power-select') as HTMLSelectElement | null)?.value || 'auto') as VisionPowerMode,
     transcriptionLanguage: (document.getElementById('language-select') as HTMLSelectElement | null)?.value || 'en',
+    licenseEnforcement: (document.getElementById('license-enforcement') as HTMLSelectElement | null)?.value || 'off',
+    licenseEndpoint: (document.getElementById('license-endpoint') as HTMLInputElement | null)?.value.trim() || '',
     // Enter is decided by the send mode now; app rules and the destructive guard still apply.
     autoPressEnter: true,
     sendMode: currentConfig.sendMode,
@@ -3580,6 +3591,7 @@ initSettingsUi();
 initCommandPalette();
 initIntro();
 initByokSettings();
+initLicenseSettings();
 
 const urlParams = new URLSearchParams(window.location.search);
 const demoParam = urlParams.get('demo');

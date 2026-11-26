@@ -59,3 +59,7 @@ jobs:
 
       - name: Run Rust unit tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Smoke-test the talking classifier script
+        shell: bash
+        run: python3 training/talking-to-screen/train.py --smoke || py -3 training/talking-to-screen/train.py --smoke

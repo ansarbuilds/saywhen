@@ -10,10 +10,13 @@ use crate::inject::{
     InjectionOutcome, InjectionTimingConfig, TargetChangePolicy,
     DEFAULT_CLIPBOARD_RESTORE_DELAY_MS, DEFAULT_ENTER_DELAY_MS,
 };
+use crate::license::{
+    evaluate_license, license_allows, LicenseDecision, LicenseEnforcement, LicenseFeature,
+};
 use crate::profiles::{match_app_profile, merge_vocab};
 use crate::secrets::{
     take_legacy_llm_api_key, validate_secret_value, DefaultSecretStore, SecretStore,
-    LLM_CLEANUP_API_KEY,
+    LICENSE_KEY_ACCOUNT, LLM_CLEANUP_API_KEY,
 };
 use crate::snippets::{apply_snippets, sanitize_snippets, Snippet};
 use crate::transcribe::{TranscriberEngine, TranscriptionResult};
@@ -241,6 +244,12 @@ pub struct DictationConfig {
     /// Whisper language. English-only models stay on English.
     #[serde(default = "default_transcription_language")]
     pub transcription_language: String,
+    /// `off` keeps every feature available. `soft` only warns. `required` gates Pro features.
+    #[serde(default = "default_license_enforcement")]
+    pub license_enforcement: String,
+    /// HTTPS license server. Empty means the public development checker, which must not be used to charge money.
+    #[serde(default)]
+    pub license_endpoint: String,
     /// Persist recent utterances locally in `<app_data_dir>/utterance-history.jsonl`, auto-purged after 7 days.
     #[serde(default = "default_true")]
     pub history_persistence_enabled: bool,
@@ -273,6 +282,10 @@ fn default_llm_model() -> String {
 
 fn default_transcription_language() -> String {
     "en".to_string()
+}
+
+fn default_license_enforcement() -> String {
+    "off".to_string()
 }
 
 fn default_wake_word() -> String {
@@ -391,6 +404,8 @@ impl Default for DictationConfig {
             app_profiles: Vec::new(),
             vision_power_mode: VisionPowerMode::Auto,
             transcription_language: default_transcription_language(),
+            license_enforcement: default_license_enforcement(),
+            license_endpoint: String::new(),
             history_persistence_enabled: true,
             llm_cleanup_enabled: false,
             llm_endpoint_url: default_llm_endpoint_url(),
@@ -451,6 +466,10 @@ impl DictationConfig {
         crate::profiles::sanitize_profiles(&mut self.app_profiles);
         self.transcription_language =
             crate::transcribe::normalize_transcription_language(&self.transcription_language);
+        self.license_enforcement = LicenseEnforcement::parse(&self.license_enforcement)
+            .as_str()
+            .to_string();
+        self.license_endpoint = self.license_endpoint.trim().to_string();
     }
 
     /// Writable settings file. Lives next to utterance history so saves do not depend on
@@ -1092,6 +1111,31 @@ impl AudioPipelineController {
         Ok(())
     }
 
+    pub fn license_decision(&self) -> LicenseDecision {
+        let cfg = self.get_config();
+        let key = DefaultSecretStore::open(&self.app_data_dir)
+            .get(LICENSE_KEY_ACCOUNT)
+            .ok()
+            .flatten();
+        evaluate_license(
+            &self.app_data_dir,
+            unix_timestamp_ms(),
+            LicenseEnforcement::parse(&cfg.license_enforcement),
+            &cfg.license_endpoint,
+            key.as_deref(),
+        )
+    }
+
+    pub fn set_license_key(&self, license_key: &str) -> Result<(), String> {
+        let trimmed = license_key.trim();
+        validate_secret_value(trimmed)?;
+        DefaultSecretStore::open(&self.app_data_dir).set(LICENSE_KEY_ACCOUNT, trimmed)
+    }
+
+    pub fn clear_license_key(&self) -> Result<(), String> {
+        DefaultSecretStore::open(&self.app_data_dir).delete(LICENSE_KEY_ACCOUNT)
+    }
+
     pub fn llm_api_key_status(&self) -> (bool, String) {
         let store = DefaultSecretStore::open(&self.app_data_dir);
         let backend = store.backend(LLM_CLEANUP_API_KEY);
@@ -1483,6 +1527,23 @@ fn finalize_preview_and_inject(
     }
 
     let _ = app_handle.emit("utterance-complete", complete_event);
+}
+
+fn license_decision_for(cfg: &DictationConfig, settings_path: &std::path::Path) -> LicenseDecision {
+    let dir = settings_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let key = DefaultSecretStore::open(dir)
+        .get(LICENSE_KEY_ACCOUNT)
+        .ok()
+        .flatten();
+    evaluate_license(
+        dir,
+        unix_timestamp_ms(),
+        LicenseEnforcement::parse(&cfg.license_enforcement),
+        &cfg.license_endpoint,
+        key.as_deref(),
+    )
 }
 
 fn run_audio_worker(
@@ -2137,11 +2198,19 @@ fn run_audio_worker(
                             )
                             .and_then(|profile| profile.language.clone())
                         };
-                        transcriber_ref.set_language(
-                            language_override
-                                .as_deref()
-                                .unwrap_or(cfg_snapshot.transcription_language.as_str()),
-                        );
+                        let mut language_for_turn = language_override
+                            .as_deref()
+                            .unwrap_or(cfg_snapshot.transcription_language.as_str())
+                            .to_string();
+                        if language_for_turn != "en"
+                            && !license_allows(
+                                LicenseFeature::Multilingual,
+                                &license_decision_for(&cfg_snapshot, &settings_path_for_tx),
+                            )
+                        {
+                            language_for_turn = "en".to_string();
+                        }
+                        transcriber_ref.set_language(&language_for_turn);
                         if let Some(step_str) =
                             captured.trigger_source.strip_prefix("voice_enroll:")
                         {
@@ -2270,12 +2339,19 @@ fn run_audio_worker(
                                 }
 
                                 let delivery_app = detect_frontmost_app();
-                                let profile = match_app_profile(
-                                    &cfg_snapshot.app_profiles,
-                                    &delivery_app.name,
-                                    delivery_app.bundle_id.as_deref(),
-                                    delivery_app.exe.as_deref(),
-                                );
+                                let license_now =
+                                    license_decision_for(&cfg_snapshot, &settings_path_for_tx);
+                                let profile =
+                                    if license_allows(LicenseFeature::Profiles, &license_now) {
+                                        match_app_profile(
+                                            &cfg_snapshot.app_profiles,
+                                            &delivery_app.name,
+                                            delivery_app.bundle_id.as_deref(),
+                                            delivery_app.exe.as_deref(),
+                                        )
+                                    } else {
+                                        None
+                                    };
                                 let vocab = merge_vocab(
                                     &cfg_snapshot.custom_vocab,
                                     profile.map(|item| item.extra_vocab.as_str()).unwrap_or(""),
@@ -2431,8 +2507,20 @@ fn run_audio_worker(
                                     return;
                                 }
 
-                                let expanded =
-                                    apply_snippets(&cleanup.cleaned_text, &cfg_snapshot.snippets);
+                                let expanded = if license_allows(
+                                    LicenseFeature::Snippets,
+                                    &license_now,
+                                ) {
+                                    apply_snippets(&cleanup.cleaned_text, &cfg_snapshot.snippets)
+                                } else {
+                                    if !cfg_snapshot.snippets.is_empty() {
+                                        let _ = app_for_tx.emit(
+                                            "pipeline-error",
+                                            "Snippets stay off while license enforcement is required and this install is not Pro.",
+                                        );
+                                    }
+                                    cleanup.cleaned_text.clone()
+                                };
                                 if expanded != cleanup.cleaned_text {
                                     cleanup.cleaned_text = expanded;
                                     cleanup.modified = true;
@@ -2440,7 +2528,14 @@ fn run_audio_worker(
                                         check_destructive_command(&cleanup.cleaned_text);
                                 }
 
-                                if cfg_snapshot.llm_cleanup_enabled {
+                                if cfg_snapshot.llm_cleanup_enabled
+                                    && !license_allows(LicenseFeature::CloudCleanup, &license_now)
+                                {
+                                    let _ = app_for_tx.emit(
+                                        "pipeline-error",
+                                        "Cloud clean-up stays off while license enforcement is required and this install is not Pro. The local clean-up was kept.",
+                                    );
+                                } else if cfg_snapshot.llm_cleanup_enabled {
                                     let llm_cfg = LlmCleanupConfig {
                                         enabled: true,
                                         endpoint_url: cfg_snapshot.llm_endpoint_url.clone(),
